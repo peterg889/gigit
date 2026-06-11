@@ -55,10 +55,11 @@ Secondary: **comedy/music producer** (books lineups of multiple acts into a slot
 Informed directly by the competitive research (§7 and §11 of the research doc):
 
 1. **Free for performers and sound techs. Forever. No fee to join, apply, or message.** Charging the supply side to apply is the historically fatal mistake (Sonicbids).
-2. **Venues pay**, GigPig-style: per-booking flat fee (~$10–20/gig) at launch, with a venue subscription (~$49–99/mo, unlimited bookings + premium features) introduced once value is proven. Exact pricing TBD via launch-metro testing.
-3. **Payment processing margin:** all gig payments flow through Stripe Connect; Gigit prices in a small processing spread.
-4. **Pay transparency is policy:** every slot shows the budget; every party sees what every other party is paid on their booking. (Sofar's opaque-spread model produced lasting damage; transparency is our wedge and a trust moat.)
-5. Take rate stays low/flat — the anti-disintermediation strategy is value (workflow, protection, scheduling), not lock-in (see §8 Risks).
+2. **Free (or near-free) for venues until momentum.** AI-leveraged development, support, and outreach give Gigit a structurally lower cost base than any prior entrant in this category (GigFinesse carries a concierge ops team; GigTown burned $2M subsidizing liquidity). We spend that advantage on the hardest problem — liquidity — by removing all price friction at launch. Payment processing margin (see #3) provides modest revenue from day one, so "free" ≠ zero revenue.
+3. **Payment processing margin:** all gig payments flow through Stripe Connect; Gigit prices in a small processing spread. This is the only monetization until momentum triggers fire.
+4. **Monetization triggers, not a timeline.** Venue pricing (low flat per-gig fee ~$5–15 and/or a low subscription ~$19–49/mo) switches on per-metro only when: fill rate ≥70% for 8 consecutive weeks, ≥100 bookings/month in metro, and venue 90-day retention ≥60%. Existing venues get grandfathered pricing for 12 months — early adopters should never feel punished for joining early.
+5. **Price to stay cheap forever.** Even post-momentum, pricing stays well below the value of one filled slot and below GigPig's £15/gig benchmark. The AI-driven cost structure means we don't need GigSalad-style subscription tiers or 5% takes to be sustainable; low price is itself the anti-disintermediation strategy (cheaper to stay than to leave).
+6. **Pay transparency is policy:** every slot shows the budget; every party sees what every other party is paid on their booking. (Sofar's opaque-spread model produced lasting damage; transparency is our wedge and a trust moat.)
 
 ## 5. The marketplace model
 
@@ -183,7 +184,8 @@ Priorities: **P0** = MVP launch blocker; **P1** = fast-follow (first 1–2 quart
 | **Quality control at open-marketplace scale** | Venues can't assess talent; one bad night burns a venue | Media-required profiles, reviews only from real bookings, reliability scores, "first gig" badge with money-back guarantee for the venue's first booking |
 | **Worker classification / labor law** | Sofar's $460K NYS DOL settlement | Gigit is a true marketplace: performers set rates, accept/decline freely, work for many venues; we never direct the performance; no volunteer labor anywhere in ops; counsel review pre-launch |
 | **Payment regulation / tax** | 1099-K state patchwork | Stripe Connect handles KYC/1099 generation; W-9 at onboarding before first payout |
-| **Low transaction values strain unit economics** | $150 coffee-shop gig × ~$15 fee must cover CAC + support | Recurring series = one acquisition, 50 bookings/yr; venue subscription ARPU; ops automation targets (<1 support touch per 20 bookings) |
+| **Low transaction values strain unit economics** | $150 coffee-shop gig × low/no fee must cover CAC + support | AI-leveraged cost base: AI-assisted venue outreach and onboarding (personalized at near-zero marginal cost), AI-first support (target <1 human touch per 20 bookings), and small-team AI-accelerated engineering. Recurring series = one acquisition, 50 bookings/yr. Monetization triggers (§4) flip on per-metro once liquidity is proven |
+| **Free-period revenue gap** | No venue fees until momentum triggers fire | Processing margin from day one; burn stays low because the cost base is AI-leveraged, not headcount-leveraged; triggers are metric-based so the free period self-terminates exactly when the product has earned pricing power |
 
 ## 9. Success metrics
 
@@ -205,18 +207,18 @@ Business:
 
 ## 10. Launch plan (phased)
 
-**Phase 0 — Supply seeding (pre-launch, ~8 weeks):** pick metro (criteria: dense brewery/coffee scene, active open-mic circuit, no GigFinesse presence; candidates to be validated with primary research — note the biggest market-sizing unknown is % of venues hosting live entertainment, so run a 50-venue survey in the candidate metros). Onboard 150+ performers, 20+ techs via scene partnerships; hand-sign 25 anchor venues with committed recurring series.
+**Phase 0 — Supply seeding (pre-launch, ~8 weeks):** pick metro (criteria: dense brewery/coffee scene, active open-mic circuit, no GigFinesse presence; candidates to be validated with primary research — note the biggest market-sizing unknown is % of venues hosting live entertainment, so run a 50-venue survey in the candidate metros). Onboard 150+ performers, 20+ techs via scene partnerships; hand-sign 25 anchor venues with committed recurring series. Outreach is AI-leveraged: personalized venue prospecting (scrape metro venue lists + event calendars, draft individualized pitches citing the venue's actual programming), performer onboarding from existing EPK/social links in <10 minutes, and AI-drafted local-scene content — founder time goes to the 25 anchor-venue relationships, not the long tail.
 
-**Phase 1 — MVP launch (P0 scope):** slots, apply/invite, booking + auto-contract, Stripe payments with post-gig release, sound-plan + tech sub-slots, reviews, ops dashboards. Venue fee waived for 90 days, then flat per-gig fee.
+**Phase 1 — MVP launch (P0 scope):** slots, apply/invite, booking + auto-contract, Stripe payments with post-gig release, sound-plan + tech sub-slots, reviews, ops dashboards. **Venues free** (processing margin only) until the §4 momentum triggers fire.
 
-**Phase 2 — Retention & differentiation (P1 scope):** replacement engine, lineup/producer tools, split payouts, promotion syndication, reliability scores, COI handling, house-tech relationships, venue subscription introduction.
+**Phase 2 — Retention & differentiation (P1 scope):** replacement engine, lineup/producer tools, split payouts, promotion syndication, reliability scores, COI handling, house-tech relationships. Venue pricing introduced per-metro per the §4 triggers, with early-adopter grandfathering.
 
 **Phase 3 — Scale (P2 + expansion):** second metro (playbook-ized), native apps, standalone tech bookings, ticketed-show support, ML matching.
 
 ## 11. Open questions
 
 1. **Metro selection** — needs the 50-venue primary survey; research found no authoritative "% of venues hosting live entertainment" statistic anywhere.
-2. **Venue pricing point** — £15/gig works in the UK (GigPig); test $10 vs $20 vs subscription-first in phase 1.
+2. **Post-momentum venue pricing point** — £15/gig works in the UK (GigPig), but our AI-leveraged cost base lets us undercut it; test ~$5–15/gig vs low subscription (~$19–49/mo) once the §4 triggers fire. Also decide: does the processing margin alone ever suffice as the permanent model?
 3. **Comedy lineup payouts at MVP** — single payout to producer (simple, but producer becomes a payment intermediary) vs split payouts at P0 (more build)? Current call: single payout at MVP, splits in Phase 2 — revisit if comedy traction outpaces music.
 4. **Should venues see each other's budgets?** (Market-rate transparency helps performers; venues may resist. Current call: show metro-level rate benchmarks, not individual venue history.)
 5. **Guarantee design** — what exactly does Gigit pay/do on a performer no-show? (Refund fee + priority refill at MVP; "we cover the replacement premium" later?)
