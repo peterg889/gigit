@@ -2,7 +2,7 @@
 
 **Status:** Draft for review
 **Date:** June 2026
-**Companion doc:** [`research/competitive-landscape.md`](research/competitive-landscape.md) — competitor research and sourcing for every market claim referenced here.
+**Companion docs:** [`research/competitive-landscape.md`](research/competitive-landscape.md) — competitor research and sourcing for every market claim referenced here · [`research/ai-era-features.md`](research/ai-era-features.md) — analysis behind the F-AI requirements referenced below · [`research/metro-selection.md`](research/metro-selection.md) — launch metro shortlist.
 
 ---
 
@@ -37,6 +37,13 @@ Live sound techs — required for most amplified shows, since many small venues 
 - National coverage. One metro until liquidity metrics are hit.
 - Becoming the promoter (Sofar model). Gigit never owns the show, the door, or the audience relationship.
 - Artist development features (EPK hosting beyond what booking requires, fan followings, streaming embeds beyond profile media).
+
+### Anti-requirements (trust policy — deliberately never built)
+Per the AI-era analysis (`research/ai-era-features.md` §7):
+- **No AI-generated or AI-enhanced performer media.** We detect misrepresentation (F7.5); we never enable it.
+- **No fully autonomous booking commitments.** AI agents draft, watch, and propose; a human confirms anything binding.
+- **No algorithmic/dynamic setting of performer pay.** Recreates the Sofar opacity problem we position against.
+- **No AI-composed background-music product for venues.** A different business that would existentially alienate the supply side.
 
 ## 3. Users and personas
 
@@ -84,6 +91,7 @@ Priorities: **P0** = MVP launch blocker; **P1** = fast-follow (first 1–2 quart
 | F1.5 | Identity verification (email + phone) at signup; Stripe identity verification before first payout. | P0 |
 | F1.6 | Badges earned from platform behavior: gigs completed, on-time rate, response rate. No pay-to-rank placement, ever. | P1 |
 | F1.7 | COI (certificate of insurance) upload on performer/tech profiles; venues can require COI per slot; expiry tracking. | P1 |
+| F1.8 | **Link-in onboarding (F-AI.7):** performer/tech pastes one URL (Instagram/Bandcamp/YouTube/Linktree) → AI drafts the complete profile (bio, genre tags, media embeds, set lengths, inferred tech needs) for review. Target: bookable profile in <5 minutes from one link. AI drafts, human approves — nothing publishes unconfirmed. | P0 |
 
 ### F2. Slot posting & discovery
 
@@ -95,7 +103,8 @@ Priorities: **P0** = MVP launch blocker; **P1** = fast-follow (first 1–2 quart
 | F2.4 | Venue-facing **performer search**: filter by format/genre, availability, rate range, distance; invite-to-slot action. | P0 |
 | F2.5 | One-tap **apply** (profile is the application; optional short note). Venue sees applicant list with profiles, media, badges, and reviews inline. | P0 |
 | F2.6 | Comedy **lineup support**: a slot can request multiple acts (host + feature + headliner with per-act pay), and a producer-role performer can apply with a packaged lineup. | P1 (single-act comedy slots are P0) |
-| F2.7 | Matching/ranking algorithm v1 = filters + recency + reliability score. ML recommendation later. | P0 (v1), P2 (ML) |
+| F2.7 | Matching/ranking algorithm v1 = filters + recency + reliability score. ML recommendation later; long-term, ranking trains on business outcomes from F8.5. | P0 (v1), P2 (ML) |
+| F2.8 | **Natural-language/SMS slot posting (F-AI.2):** venue texts or types a plain-English request ("something chill for Sunday brunch, $200ish") → parsed into a structured slot using venue-profile defaults → confirmed before publishing. SMS is a first-class posting surface — venue managers live in texts, not apps. | P0 |
 
 ### F3. Booking flow & contracts
 
@@ -136,6 +145,7 @@ Priorities: **P0** = MVP launch blocker; **P1** = fast-follow (first 1–2 quart
 | F6.3 | Tech sub-slot inherits gig context automatically: room specs, input list from the performer's profile, set times — "know exactly what I'm walking into" is the tech's core unmet need. | P0 |
 | F6.4 | Standing venue↔tech relationships: a venue can designate a house tech who auto-attaches to its bookings. | P1 |
 | F6.5 | Standalone tech bookings (band hires a tech for an off-platform gig; venue hires a tech to install/tune a house PA) — keeps tech-side liquidity healthy independent of slot volume. | P2 |
+| F6.6 | **Photo-to-specs ingestion (F-AI.11):** venue photographs their PA/gear closet and room, tech photographs their rig → multimodal extraction drafts the structured inventory (mixer channels, speakers, mics) for a confirmation tap. This is the data capture that makes F6.1 feasible at scale — uncapturable gear data is plausibly why no sound-tech marketplace has ever existed. | P0 |
 
 ### F7. Reviews & trust
 
@@ -144,7 +154,8 @@ Priorities: **P0** = MVP launch blocker; **P1** = fast-follow (first 1–2 quart
 | F7.1 | Double-blind post-gig reviews (each side reviews; published simultaneously or at +7 days). Venue→performer: draw/professionalism/quality. Performer→venue: hospitality, accuracy of listing, payment promptness (auto-five-star via platform pay). Tech reviewed by both. | P0 |
 | F7.2 | Reviews only from completed platform bookings — no drive-by reviews (a top performer complaint about GigSalad/The Bash). | P0 |
 | F7.3 | **Reliability score** (show-up rate, on-time rate, cancellation history) displayed as a badge, factored into feed ranking. | P1 |
-| F7.4 | Dispute resolution: structured flow (no-show, gross misrepresentation, partial performance) with ops adjudication SLA of 5 business days; payout held meanwhile. | P0 (basic), P1 (full tooling) |
+| F7.4 | Dispute resolution: structured flow (no-show, gross misrepresentation, partial performance) with ops adjudication SLA of 5 business days; payout held meanwhile. Evidence packs auto-assembled from the booking record with drafted adjudications for human sign-off (F-AI.13). | P0 (basic), P1 (full tooling) |
+| F7.5 | **Synthetic-act and media-fraud detection (F-AI.8):** screen profile media at upload for AI-generated performances, stolen/stock footage, and misrepresentation; flagged profiles held for review. A fraud class prior platforms never faced — table stakes for venue trust. | P0 |
 
 ### F8. Promotion & compliance helpers (venue retention features)
 
@@ -154,6 +165,7 @@ Priorities: **P0** = MVP launch blocker; **P1** = fast-follow (first 1–2 quart
 | F8.2 | Syndication: push confirmed events to Bandsintown (700K artists / 100M fans, open APIs) and Google Business Profile events. | P1 |
 | F8.3 | **PRO licensing guidance** in venue onboarding: plain-English explainer of ASCAP/BMI/SESAC/GMR obligations (~$1,500+/yr typical for live music), with an "originals-only" slot toggle that documents reduced covers exposure. Positioning: guidance, not legal advice; venue attests to compliance in ToS. | P1 (static guidance P0 in onboarding) |
 | F8.4 | Venue compliance checklist: entertainment permit reminder, noise-curfew field surfaced on every booking, COI collection per F1.7. | P1 |
+| F8.5 | **POS-integrated ROI loop (F-AI.1) — Phase 2 flagship.** Venue connects Toast/Square/Clover → every booking gets a revenue-lift receipt vs. matched baseline nights ("this act lifted your Friday net +$640 / 22%"). Converts live entertainment from a faith-based expense into a measurable channel; gives performers the industry's first provable "draw" credential; trains matching on business outcomes. **Baseline data accrual (gig-night vs. non-gig-night patterns) begins at MVP**, before the integration ships. | P1 (flagship); baseline accrual P0 |
 
 ### F9. Admin & ops (internal)
 
@@ -162,6 +174,7 @@ Priorities: **P0** = MVP launch blocker; **P1** = fast-follow (first 1–2 quart
 | F9.1 | Ops dashboard: user/booking search, manual booking edits, refunds, payout holds, account suspension. | P0 |
 | F9.2 | Liquidity dashboard: slots posted/filled, time-to-fill, application depth per slot, supply/demand balance by format and neighborhood. | P0 |
 | F9.3 | Content moderation queue (profiles, media, reviews) + dispute queue. | P0 |
+| F9.4 | **AI-first support (F-AI.13):** conversational first-line support across all three sides with human escalation. This is what makes the <1 human touch per 20 bookings target — and therefore $150-gig unit economics — writable at all. | P0 |
 
 ---
 
@@ -207,11 +220,11 @@ Business:
 
 ## 10. Launch plan (phased)
 
-**Phase 0 — Supply seeding (pre-launch, ~8 weeks):** pick metro (criteria: dense brewery/coffee scene, active open-mic circuit, no GigFinesse presence; candidates to be validated with primary research — note the biggest market-sizing unknown is % of venues hosting live entertainment, so run a 50-venue survey in the candidate metros). Onboard 150+ performers, 20+ techs via scene partnerships; hand-sign 25 anchor venues with committed recurring series. Outreach is AI-leveraged: personalized venue prospecting (scrape metro venue lists + event calendars, draft individualized pitches citing the venue's actual programming), performer onboarding from existing EPK/social links in <10 minutes, and AI-drafted local-scene content — founder time goes to the 25 anchor-venue relationships, not the long tail.
+**Phase 0 — Supply seeding (pre-launch, ~8 weeks):** metro selection per `research/metro-selection.md` — **Milwaukee primary, Pittsburgh second**; final call made by running the prospect-intelligence scrape (F-AI.14) in both metros to measure actual live-programming density (the "% of venues hosting live entertainment" stat that doesn't exist publicly — buildable ourselves from venue event calendars and social feeds, and the output doubles as the launch prospect list). Onboard 150+ performers, 20+ techs via scene partnerships; hand-sign 25 anchor venues with committed recurring series. Outreach is AI-leveraged: personalized venue prospecting (scrape metro venue lists + event calendars, draft individualized pitches citing the venue's actual programming), performer onboarding from existing EPK/social links in <10 minutes, and AI-drafted local-scene content — founder time goes to the 25 anchor-venue relationships, not the long tail.
 
-**Phase 1 — MVP launch (P0 scope):** slots, apply/invite, booking + auto-contract, Stripe payments with post-gig release, sound-plan + tech sub-slots, reviews, ops dashboards. **Venues free** (processing margin only) until the §4 momentum triggers fire.
+**Phase 1 — MVP launch (P0 scope):** slots (incl. SMS/natural-language posting, F2.8), link-in onboarding (F1.8), apply/invite, booking + auto-contract, Stripe payments with post-gig release, sound-plan + tech sub-slots with photo-to-specs capture (F6.6), reviews + media-fraud screening (F7.5), AI-first support (F9.4), ops dashboards, POS-baseline data accrual (F8.5). **Venues free** (processing margin only) until the §4 momentum triggers fire.
 
-**Phase 2 — Retention & differentiation (P1 scope):** replacement engine, lineup/producer tools, split payouts, promotion syndication, reliability scores, COI handling, house-tech relationships. Venue pricing introduced per-metro per the §4 triggers, with early-adopter grandfathering.
+**Phase 2 — Retention & differentiation (P1 scope):** **flagship: the POS-integrated ROI loop (F8.5)** — every venue gets per-act revenue-lift receipts, built on baseline data accrued since MVP. Plus: replacement engine, lineup/producer tools, split payouts, auto-generated gig promotion (F-AI.4), reliability scores, COI handling, house-tech relationships. Venue pricing introduced per-metro per the §4 triggers, with early-adopter grandfathering.
 
 **Phase 3 — Scale (P2 + expansion):** second metro (playbook-ized), native apps, standalone tech bookings, ticketed-show support, ML matching.
 
