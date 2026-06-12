@@ -10,6 +10,9 @@ const envSchema = z.object({
   // Payments: unset → NullGateway (dev). Both required together for Stripe.
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+  // AI gateway: Gemini. Unset → heuristic fallbacks / "not configured" errors.
+  GEMINI_API_KEY: z.string().optional(),
+  GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
   // Notifications: unset → structured-log sink (dev).
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),

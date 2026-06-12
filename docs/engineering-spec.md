@@ -61,7 +61,7 @@
         └────────────────────────────────────────────────┘   │  External                  │
                                                              │   Stripe Connect           │
                                                              │   Twilio (SMS)             │
-                                                             │   Anthropic API (AI)       │
+                                                             │   Gemini API (AI)          │
                                                              │   YouTube/Vimeo (embeds)   │
                                                              │   Sentry (errors)          │
                                                              └───────────────────────────┘

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ApiForm } from "@/components/ApiForm";
+import { ProfileIngestWidget } from "@/components/AiAssist";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,8 @@ export default async function MePage() {
             <span className="muted">{performer.bio}</span>
           </p>
         ) : (
+          <>
+          <ProfileIngestWidget />
           <ApiForm
             endpoint="/api/performers"
             submitLabel="Create performer profile"
@@ -48,6 +51,7 @@ export default async function MePage() {
               { name: "genreTags", label: "Genres (comma-separated)" },
             ]}
           />
+          </>
         )}
       </div>
 

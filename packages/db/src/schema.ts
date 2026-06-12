@@ -250,6 +250,19 @@ export const messages = pgTable(
   (t) => [index("messages_thread_idx").on(t.threadId, t.createdAt)],
 );
 
+// ── ai task log (engineering-spec K9: every model call recorded) ────────────
+export const aiTasks = pgTable("ai_tasks", {
+  id: text("id").primaryKey(),
+  taskType: text("task_type").notNull(), // profile_ingest | slot_parse | gear_extract
+  actorUserId: text("actor_user_id"),
+  input: jsonb("input").$type<Record<string, unknown>>().notNull(),
+  output: jsonb("output").$type<Record<string, unknown>>(),
+  model: text("model"), // null = heuristic fallback (no API key)
+  promptVersion: text("prompt_version").notNull(),
+  status: text("status").notNull(), // done | failed | needs_review
+  createdAt: ts("created_at").notNull().defaultNow(),
+});
+
 // ── reviews (PRD F7.1: double-blind; from completed platform bookings only) ──
 export const reviews = pgTable(
   "reviews",

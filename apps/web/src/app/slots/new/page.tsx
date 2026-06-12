@@ -1,7 +1,10 @@
 import { ApiForm } from "@/components/ApiForm";
+import { SlotParseWidget } from "@/components/AiAssist";
 
 export default function NewSlotPage() {
   return (
+    <div>
+    <SlotParseWidget />
     <div className="card">
       <h1>Post a slot</h1>
       <p className="muted">
@@ -19,6 +22,7 @@ export default function NewSlotPage() {
           { name: "notes", label: "Notes for performers", type: "textarea" },
         ]}
       />
+    </div>
     </div>
   );
 }
