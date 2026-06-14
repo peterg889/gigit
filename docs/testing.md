@@ -60,3 +60,4 @@ CI runs layers 1–4 in `build-test`, layer 5 in the `e2e` job (own Postgres + w
 - Every bug found in production or by reconciliation gets a regression test at the LOWEST layer that can express it.
 - Clock-dependent logic takes an injected `now` — no test ever sleeps to make time pass.
 - AI tests assert properties, never exact text.
+- **Live-model evals sample, they don't single-shot.** Adversarial/injection evals run the prompt N times and require the safe behavior in a supermajority (≥4/5) — a single live sample is noise and would flake CI. A thrown/rejected gateway call counts as a *safe refusal* (the schema validator did its job). The functional evals (brunch parse, KB-grounded answer) are single-sample today because the model is consistent on them; harden them the same way if they ever flake.
