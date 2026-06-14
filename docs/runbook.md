@@ -40,9 +40,29 @@ Web (Next.js, App Runner) takes requests and webhooks, writes transactionally, a
 
 Launch math: hundreds of bookings/month ≈ single-digit requests/second peak. 100× ≈ ~200 rps on the read paths. `node scripts/loadtest.mjs https://<staging-host> 200 30` runs 200 concurrent loops for 30s over the feed, a slot detail, and a profile, and prints p50/p95/p99 + error rate. Pass = p95 < 500ms, errors < 0.1%, and no RDS CPU alarm. Writes are deliberately excluded (they'd create junk bookings); the state machine's concurrency is covered by the version-conflict integration tests.
 
-## Deploy & secrets
+## First deploy (one-time, from a keyboard with AWS admin creds)
 
-- Merge to `main` → CI `deploy-staging` (images → ECR, migrations, worker redeploy via SSM). Prod is the `promote-production` job behind the GitHub `production` environment (required reviewer = the manual promote).
+The infra is two stacks per stage: a **foundation** (`GigitBootstrap-{stage}` — ECR repos + GitHub OIDC + deploy role) that must exist before images, and the **service** stack (`GigitStaging`/`GigitProd` — RDS, S3/CloudFront, App Runner web, EC2 worker, alarms) that imports those repos. `scripts/deploy.sh` orders the whole sequence so you don't have to:
+
+```bash
+export AWS_PROFILE=…           # creds for the target account
+export CDK_REGION=us-east-1
+./scripts/deploy.sh staging    # cdk bootstrap → foundation → build+push images → service → worker redeploy
+```
+
+Then, the four things the script reminds you of (it can't do them for you):
+1. **Fill `AppSecrets`** in Secrets Manager — `DATABASE_URL`, `SESSION_SECRET` (≥32 chars), and any of `STRIPE_*`, `TWILIO_*`, `GEMINI_API_KEY`, `SENTRY_DSN` you have. Without `DATABASE_URL`/`SESSION_SECRET` the app won't boot (fail-fast by design).
+2. **Run migrations**: `DATABASE_URL=<rds-url> pnpm db:migrate` (the RDS endpoint is in the stack outputs / `/tmp/gigit-staging-outputs.json`).
+3. **Wire CI**: put the foundation's `DeployRoleArn` output into the GitHub repo secret `AWS_DEPLOY_ROLE_ARN` (and `…_PROD` for prod), set the `AWS_REGION` repo variable, and add `STAGING_DATABASE_URL`. After this, merges to `main` deploy app code automatically.
+4. **Subscribe to alarms**: `aws sns subscribe --topic-arn <OpsAlertsTopic output> --protocol email --notification-endpoint you@…`.
+
+Gotchas the synth can't catch but the deploy will:
+- **OIDC provider already exists** in the account → the foundation stack errors on create. Re-run with `-c oidcProviderArn=arn:aws:iam::<acct>:oidc-provider/token.actions.githubusercontent.com` to import it instead.
+- App Runner takes a few minutes to go healthy after the first image lands; the service-stack deploy waits on it.
+
+## Ongoing deploys & secrets
+
+- Merge to `main` → CI `deploy-staging` (build/push images → ECR, migrations, worker redeploy via SSM). App Runner auto-deploys web on the `:latest` push. **Infra changes** (anything in `infra/cdk`) are NOT deployed by CI — re-run `./scripts/deploy.sh <stage>` or `cdk deploy` by hand. Prod app promotion is the `promote-production` job behind the GitHub `production` environment (required reviewer = the manual promote).
 - **Cross-account note:** if prod ECR can't pull staging images, grant cross-account pull on the staging repos (or rebuild in the promote job) — current workflow assumes the grant.
 - Secrets live in AWS Secrets Manager (`DATABASE_URL`, `SESSION_SECRET`, `STRIPE_*`, `TWILIO_*`, `GEMINI_API_KEY`, `SENTRY_DSN`); the worker materializes env from there at redeploy. Rotate quarterly (spec §11).
 - Subscribe a human to the `OpsAlerts` SNS topic after each `cdk deploy` (output `OpsAlertsTopic`).

@@ -75,13 +75,19 @@ export class GigitStack extends cdk.Stack {
       },
     });
 
-    // ── container registries ────────────────────────────────────────────────
-    const webRepo = new ecr.Repository(this, "WebRepo", {
-      repositoryName: `gigit-web-${props.stage}`,
-    });
-    const workerRepo = new ecr.Repository(this, "WorkerRepo", {
-      repositoryName: `gigit-worker-${props.stage}`,
-    });
+    // ── container registries (created by the bootstrap stack, imported here) ─
+    // Imported by name so images can be pushed BEFORE this stack creates the
+    // App Runner service / worker that reference `:latest`.
+    const webRepo = ecr.Repository.fromRepositoryName(
+      this,
+      "WebRepo",
+      `gigit-web-${props.stage}`,
+    );
+    const workerRepo = ecr.Repository.fromRepositoryName(
+      this,
+      "WorkerRepo",
+      `gigit-worker-${props.stage}`,
+    );
 
     // ── app secrets (DATABASE_URL, SESSION_SECRET, STRIPE_*, TWILIO_*) ──────
     const appSecrets = new secretsmanager.Secret(this, "AppSecrets", {
@@ -132,10 +138,12 @@ export class GigitStack extends cdk.Stack {
       new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] }),
     );
 
+    // ECR registry host (token-safe — do NOT .split() a repositoryUri token).
+    const registry = `${this.account}.dkr.ecr.${this.region}.amazonaws.com`;
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
       "dnf install -y docker && systemctl enable --now docker",
-      `aws ecr get-login-password --region ${this.region} | docker login --username AWS --password-stdin ${workerRepo.repositoryUri.split("/")[0]}`,
+      `aws ecr get-login-password --region ${this.region} | docker login --username AWS --password-stdin ${registry}`,
       // env is materialized from Secrets Manager by the redeploy script (SSM doc, M1 follow-up)
       `docker run -d --restart=always --name worker ${workerRepo.repositoryUri}:latest`,
     );

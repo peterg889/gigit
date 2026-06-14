@@ -10,7 +10,10 @@
     "db:generate": "pnpm --filter @gigit/db generate",
     "db:migrate": "pnpm --filter @gigit/db migrate",
     "db:seed": "pnpm --filter @gigit/db seed",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "deploy:staging": "./scripts/deploy.sh staging",
+    "deploy:prod": "./scripts/deploy.sh prod",
+    "cdk:synth": "pnpm --filter @gigit/infra exec cdk synth"
   },
   "engines": {
     "node": ">=22"
