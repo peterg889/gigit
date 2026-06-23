@@ -1,4 +1,5 @@
-import { db, schema } from "@gigit/db";
+import { performerReliability } from "@gigit/domain";
+import { db, performerReliabilityStats, schema } from "@gigit/db";
 import { and, asc, eq, sql } from "drizzle-orm";
 import Link from "next/link";
 import { venueOwnedBy } from "@/lib/auth";
@@ -37,6 +38,7 @@ export default async function PerformerSearchPage({
     .where(and(...conditions))
     .orderBy(asc(schema.performers.reliabilityStrikes), asc(schema.performers.createdAt))
     .limit(100);
+  const relStats = await performerReliabilityStats(acts.map((p) => p.id));
 
   return (
     <div>
@@ -66,12 +68,17 @@ export default async function PerformerSearchPage({
       {acts.length === 0 && (
         <div className="card">No acts match those filters yet — loosen one.</div>
       )}
-      {acts.map((p) => (
+      {acts.map((p) => {
+        const rel = performerReliability(
+          relStats.get(p.id) ?? { gigsCompleted: 0, cancellations: 0 },
+        );
+        return (
         <div className="card" key={p.id}>
           <strong>
             <Link href={`/p/${p.id}`}>{p.name}</Link>
           </strong>{" "}
-          <span className="badge">{p.kind}</span>
+          <span className="badge">{p.kind}</span>{" "}
+          <span className="badge" title="show-up history">{rel.label}</span>
           {p.genreTags.length > 0 && (
             <span className="muted"> · {p.genreTags.join(", ")}</span>
           )}
@@ -100,7 +107,8 @@ export default async function PerformerSearchPage({
             extra={{ performerId: p.id }}
           />
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
