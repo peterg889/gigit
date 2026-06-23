@@ -21,9 +21,9 @@ const mono = Spline_Sans_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gigit — get the gig. get paid.",
+  title: "Gigit — get the gig.",
   description:
-    "Live music, comedy, and sound for small rooms. Every slot shows its pay. Booked, papered, and paid on Gigit.",
+    "Live music, comedy, and sound for small rooms. Every slot shows its pay. Find the room, book the night, on Gigit.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icon.svg" },
 };

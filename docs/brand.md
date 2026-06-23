@@ -45,7 +45,7 @@ Working alternatives if "square deal" reads too retro: "Where the scene does bus
 2. **Use the scene's words.** Gig, slot, set, room, the door, load-in, house PA, input list, rider, mark played. Say "the band," "the act," "the room," "your tech." Never "talent" as a noun for people, never "content" for someone's music, never "users," "supply," or "vendors."
 3. **Short sentences. One ask per message.** SMS is a first-class surface; write everything as if it costs 160 characters.
 4. **The spotlight is theirs.** We say "you" a lot and "we" rarely; Gigit is the rigging, not the headliner. No "we're thrilled to announce."
-5. **Honest on the bad path.** Cancellations, disputes, failed payments get the calmest, clearest copy in the product — that's where the brand is actually earned. State what happened, what the policy says, what happens next, in that order. Never blame, never bury the fee.
+5. **Honest on the bad path.** Cancellations and disputes (and, once payments are on, failed charges) get the calmest, clearest copy in the product — that's where the brand is actually earned. State what happened, what the policy says, what happens next, in that order. Never blame, never bury the fee.
 6. **No hype vocabulary, ever:** revolutionize, disrupt, unleash, supercharge, rockstar/ninja, "magic," emoji pile-ups. One exclamation point per relationship, maybe.
 
 **Voice samples:**

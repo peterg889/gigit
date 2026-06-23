@@ -71,7 +71,7 @@ export default async function TechsPage() {
               {subslot.needs.gaps.length > 0 && <> · gaps: {subslot.needs.gaps.join("; ")}</>}
               {subslot.needs.notes && <> · {subslot.needs.notes}</>}
             </p>
-            <p className="muted">Paid by the {subslot.payer}, through Gigit, after the show.</p>
+            <p className="muted">Paid by the {subslot.payer}, after the show.</p>
             {myTech ? (
               <ActionButton
                 endpoint={`/api/tech-subslots/${subslot.id}/applications`}
@@ -84,8 +84,8 @@ export default async function TechsPage() {
         ))}
       </div>
       <p className="muted">
-        Live engineers, with or without a rig — booked like the band, paid like
-        the band. Venues and performers can message them directly to cover a
+        Live engineers, with or without a rig — booked like the band, reviewed
+        like the band. Venues and performers can message them directly to cover a
         night.
       </p>
       {techs.length === 0 && (

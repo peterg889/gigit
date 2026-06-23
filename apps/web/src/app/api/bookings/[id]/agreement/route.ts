@@ -1,5 +1,5 @@
 import { renderAgreement } from "@gigit/domain";
-import { db, schema } from "@gigit/db";
+import { db, paymentsEnabled, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
@@ -40,6 +40,7 @@ export async function GET(_req: Request, { params }: Params) {
         venueName: row.venueName,
         performerName: row.performerName,
         terms: row.booking.terms,
+        paymentsEnabled: paymentsEnabled(),
       }),
       venueAcceptedAt: row.booking.venueAcceptedAt,
       performerAcceptedAt: row.booking.performerAcceptedAt,

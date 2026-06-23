@@ -294,6 +294,7 @@ export default async function BookingPage({
             venueName: row.venueName,
             performerName: row.performerName,
             terms: b.terms,
+            paymentsEnabled: paymentsEnabled(),
           })}
         </pre>
         <p className="muted">
