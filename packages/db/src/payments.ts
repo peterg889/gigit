@@ -250,6 +250,11 @@ export function paymentGateway(): PaymentGateway {
   return gateway;
 }
 
+/** Test seam: drop the memoized gateway so a later env change re-selects it. */
+export function resetGateway(): void {
+  gateway = undefined;
+}
+
 /** Webhook signature verification (web route uses this). */
 export function constructStripeEvent(
   payload: string | Buffer,
