@@ -8,11 +8,73 @@ import { and, eq, gt, inArray } from "drizzle-orm";
 import { newId, nextOccurrences } from "@gigit/domain";
 import type { SeriesPattern } from "@gigit/domain";
 import type { Db } from "./client.js";
-import { db } from "./client.js";
+import { db, getPool } from "./client.js";
 import { appendEvent } from "./events.js";
 import { slotSeries, slots } from "./schema.js";
 
 export const SERIES_HORIZON = 4; // occurrences kept open ahead (spec lean: next-N)
+
+export interface RebookTarget {
+  slotId: string;
+  startsAt: Date;
+  durationMinutes: number;
+  performerId: string;
+  venueId: string;
+  amountCents: number;
+}
+
+/**
+ * Recurring-series re-book (PRD F2.2, anti-leakage): from a booking the venue
+ * actually engaged, find the soonest OPEN future occurrence of the SAME series
+ * to offer the same act again, at the same pay — provided that night has no
+ * active booking and no existing application from this act. Residencies are the
+ * #1 leakage case (a16z/Hagiu-Wright); re-booking the next night in one tap
+ * keeps it on-platform. Returns null when the booking isn't rebook-eligible
+ * (must be confirmed or later) or the series has no open night ahead.
+ */
+export async function findRebookTarget(
+  bookingId: string,
+): Promise<RebookTarget | null> {
+  const { rows } = await getPool().query(
+    `select tgt.id as slot_id, tgt.starts_at, tgt.duration_minutes,
+            b.performer_id, b.venue_id, (b.terms->>'amountCents')::int as amount_cents
+       from bookings b
+       join slots orig on orig.id = b.slot_id
+       join lateral (
+         select s.id, s.starts_at, s.duration_minutes
+           from slots s
+          where s.series_id = orig.series_id
+            and orig.series_id is not null
+            and s.status = 'open'
+            and s.starts_at > now()
+            and not exists (
+              select 1 from bookings b2
+               where b2.slot_id = s.id
+                 and b2.state not in ('collapsed','cancelled_by_venue',
+                                      'cancelled_by_performer','refunded')
+            )
+            and not exists (
+              select 1 from applications a
+               where a.slot_id = s.id and a.performer_id = b.performer_id
+            )
+          order by s.starts_at asc
+          limit 1
+       ) tgt on true
+      where b.id = $1
+        and b.state in ('confirmed','awaiting_confirmation','released','partially_released')`,
+    [bookingId],
+  );
+  const r = rows[0];
+  if (!r) return null;
+  return {
+    slotId: r.slot_id,
+    startsAt: r.starts_at,
+    durationMinutes: r.duration_minutes,
+    performerId: r.performer_id,
+    venueId: r.venue_id,
+    amountCents: r.amount_cents,
+  };
+}
 
 export interface CreateSeriesInput {
   venueId: string;

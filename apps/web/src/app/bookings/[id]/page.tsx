@@ -1,6 +1,6 @@
 import { TERMINAL_STATES, renderAgreement, soundPlan } from "@gigit/domain";
 import type { BookingState } from "@gigit/domain";
-import { db, paymentsEnabled, schema } from "@gigit/db";
+import { db, findRebookTarget, paymentsEnabled, schema } from "@gigit/db";
 import { and, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -50,6 +50,10 @@ export default async function BookingPage({
   const state = b.state as BookingState;
   const terminal = TERMINAL_STATES.has(state);
   const myRole = asVenue ? "venue" : "performer";
+
+  // Recurring-series re-book (PRD F2.2): one-tap re-offer of this act into the
+  // next open series night, at the same pay — the residency anti-leakage hook.
+  const rebookTarget = asVenue ? await findRebookTarget(id) : null;
 
   // Tech sub-slots on this booking (PRD F6.2/F6.3)
   const subslots = await d
@@ -285,6 +289,26 @@ export default async function BookingPage({
       )}
       {myReview && (
         <div className="card muted">You reviewed this booking (★ {myReview.ratings.overall}).</div>
+      )}
+
+      {rebookTarget && (
+        <div className="card">
+          <p>
+            Liked working with {row.performerName}?{" "}
+            <ActionButton
+              endpoint={`/api/bookings/${id}/rebook`}
+              label={`Book them again — ${new Date(rebookTarget.startsAt).toLocaleDateString(
+                "en-US",
+                { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" },
+              )}`}
+            />
+          </p>
+          <p className="muted">
+            Sends {row.performerName} an offer for your next series night at the
+            same pay (${(rebookTarget.amountCents / 100).toFixed(0)}). Keeping the
+            residency here makes the next booking one tap, not a text thread.
+          </p>
+        </div>
       )}
 
       <div className="card">
