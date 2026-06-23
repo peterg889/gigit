@@ -1,5 +1,5 @@
-import { visibleReviews } from "@gigit/domain";
-import { db, schema } from "@gigit/db";
+import { performerReliability, visibleReviews } from "@gigit/domain";
+import { db, performerReliabilityStats, schema } from "@gigit/db";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
@@ -47,6 +47,15 @@ export default async function PerformerPage({
       ? visible.reduce((s, r) => s + (r.ratings.overall ?? 0), 0) / visible.length
       : null;
 
+  // Reliability badge (PRD F7.3): the trust signal that matters most with
+  // payments deferred — does this act show up?
+  const rel = performerReliability(
+    (await performerReliabilityStats([id])).get(id) ?? {
+      gigsCompleted: 0,
+      cancellations: 0,
+    },
+  );
+
   const mediaWithUrls = await Promise.all(
     media.map(async (m) => ({
       ...m,
@@ -61,7 +70,8 @@ export default async function PerformerPage({
     <div>
       <div className="card">
         <h1>
-          {p.name} <span className="badge">{p.kind}</span>
+          {p.name} <span className="badge">{p.kind}</span>{" "}
+          <span className="badge" title="show-up history">{rel.label}</span>
           {avg !== null && (
             <span className="badge">
               ★ {avg.toFixed(1)} ({visible.length})

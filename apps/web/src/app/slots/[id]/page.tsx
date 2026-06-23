@@ -1,5 +1,5 @@
-import { soundPlan } from "@gigit/domain";
-import { db, paymentsEnabled, schema } from "@gigit/db";
+import { performerReliability, soundPlan } from "@gigit/domain";
+import { db, paymentsEnabled, performerReliabilityStats, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -36,6 +36,12 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
         .where(eq(schema.applications.slotId, slot.id))
     : [];
 
+  // Reliability is the trust layer with payments deferred — surface it where
+  // the venue actually picks an act (PRD F7.3).
+  const relStats = isOwner
+    ? await performerReliabilityStats(applicants.map((a) => a.performer.id))
+    : new Map();
+
   return (
     <div>
       <div className="card">
@@ -70,12 +76,16 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
           <h2>Applicants ({applicants.length})</h2>
           {applicants.map(({ application, performer: p }) => {
             const plan = soundPlan(venue.paInventory, p.techNeeds);
+            const rel = performerReliability(
+              relStats.get(p.id) ?? { gigsCompleted: 0, cancellations: 0 },
+            );
             return (
             <div className="card" key={application.id}>
               <strong>
                 <Link href={`/p/${p.id}`}>{p.name}</Link>
               </strong>{" "}
               <span className="badge">{p.kind}</span>{" "}
+              <span className="badge" title="show-up history">{rel.label}</span>{" "}
               <span className="badge">{application.status}</span>{" "}
               <span className="badge">
                 {plan.verdict === "covered"
