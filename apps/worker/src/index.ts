@@ -9,6 +9,8 @@
  */
 import {
   env,
+  db,
+  appendEvent,
   closeDb,
   getPool,
   runBookingTransition,
@@ -26,6 +28,7 @@ import { recheckEmbeds, screenMedia } from "./media.js";
 import {
   matchSavedSearches,
   matchOpenSlotsForPerformer,
+  staleOpenSlots,
   outboxLagMs,
   reconcileMoney,
   snapshotNightFacts,
@@ -127,6 +130,26 @@ async function main() {
   await boss.work(EMBED_QUEUE, async () => {
     const dead = await recheckEmbeds();
     log("embeds.rechecked", { dead });
+  });
+
+  // Daily re-engagement nudge (PRD F2.3, anti-leakage): a slot still open and
+  // unfilled 48h after posting pulls the venue back to the feed — once per slot
+  // (a `slot.reengaged` marker dedups). The feed is the moat with payments off.
+  const REENGAGE_QUEUE = "reengage-slots";
+  await boss.createQueue(REENGAGE_QUEUE);
+  await boss.schedule(REENGAGE_QUEUE, "0 16 * * *"); // daily 16:00 UTC
+  await boss.work(REENGAGE_QUEUE, async () => {
+    const stale = await staleOpenSlots();
+    for (const s of stale) {
+      await notifyUser(s.ownerUserId, "slot_quiet");
+      await appendEvent(db(), {
+        actor: "system",
+        kind: "slot.reengaged",
+        subjectType: "slot",
+        subjectId: s.slotId,
+      });
+    }
+    if (stale.length > 0) log("reengage.nudged", { count: stale.length });
   });
 
   void outboxLoop(boss);

@@ -5,7 +5,9 @@ import {
   matchOpenSlotsForPerformer,
   matchSavedSearches,
   snapshotNightFacts,
+  staleOpenSlots,
 } from "./analytics.js";
+import { appendEvent } from "./events.js";
 import {
   applications,
   bookings,
@@ -235,5 +237,54 @@ describe("night facts + saved-search matching (integration)", () => {
     });
     const m2 = await matchOpenSlotsForPerformer(comicId);
     expect(m2.filter((u) => u === vOwner)).toHaveLength(1);
+  });
+
+  it("staleOpenSlots: aged, unfilled, future, un-nudged surfaces; others don't", async () => {
+    const d = db();
+    const future = () => new Date(Date.now() + 30 * 86_400_000);
+    const threeDaysAgo = new Date(Date.now() - 3 * 86_400_000);
+    const mkOpen = async (createdAt?: Date) => {
+      const id = newId("slot");
+      await d.insert(slots).values({
+        id,
+        venueId, // owned by userId (beforeAll)
+        metro: "analytics-testville",
+        startsAt: future(),
+        durationMinutes: 120,
+        format: "music",
+        budgetCents: 20_000,
+        status: "open",
+        ...(createdAt ? { createdAt } : {}),
+      });
+      return id;
+    };
+
+    const aged = await mkOpen(threeDaysAgo);
+    let stale = await staleOpenSlots();
+    expect(stale.map((s) => s.slotId)).toContain(aged);
+    expect(stale.find((s) => s.slotId === aged)?.ownerUserId).toBe(userId);
+
+    // a fresh slot (default created_at = now) is NOT stale
+    const fresh = await mkOpen();
+    expect((await staleOpenSlots()).map((s) => s.slotId)).not.toContain(fresh);
+
+    // an aged slot WITH an applicant is NOT stale
+    const withApp = await mkOpen(threeDaysAgo);
+    await d.insert(applications).values({
+      id: newId("application"),
+      slotId: withApp,
+      performerId, // from beforeAll
+      status: "submitted",
+    });
+    expect((await staleOpenSlots()).map((s) => s.slotId)).not.toContain(withApp);
+
+    // once nudged, the marker dedups it out
+    await appendEvent(d, {
+      actor: "system",
+      kind: "slot.reengaged",
+      subjectType: "slot",
+      subjectId: aged,
+    });
+    expect((await staleOpenSlots()).map((s) => s.slotId)).not.toContain(aged);
   });
 });

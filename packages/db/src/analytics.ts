@@ -53,6 +53,37 @@ export async function matchSavedSearches(slotId: string): Promise<string[]> {
   return rows.map((r) => r.owner_user_id);
 }
 
+export interface StaleSlot {
+  slotId: string;
+  ownerUserId: string;
+}
+
+/**
+ * Re-engagement sweep (PRD F2.3, anti-leakage): open slots still unfilled 48h
+ * after posting, with a future gig date and zero applicants, that haven't been
+ * nudged yet. The daily worker job pulls these venues back to the feed — the
+ * feed is the moat with payments deferred. Dedup is a one-per-slot
+ * `slot.reengaged` event (appended after the nudge), so a long-open slot is
+ * nudged once, not every night.
+ */
+export async function staleOpenSlots(): Promise<StaleSlot[]> {
+  const { rows } = await getPool().query(
+    `select s.id as slot_id, v.owner_user_id
+       from slots s
+       join venues v on v.id = s.venue_id
+      where s.status = 'open'
+        and s.starts_at > now()
+        and s.created_at < now() - interval '48 hours'
+        and v.owner_user_id is not null
+        and not exists (select 1 from applications a where a.slot_id = s.id)
+        and not exists (
+          select 1 from events e
+           where e.kind = 'slot.reengaged' and e.subject_id = s.id
+        )`,
+  );
+  return rows.map((r) => ({ slotId: r.slot_id, ownerUserId: r.owner_user_id }));
+}
+
 /**
  * Reverse of matchSavedSearches (PRD F2.4, anti-leakage): when a new act joins,
  * which venue owners have an OPEN, future slot it fits? This is the "next new
