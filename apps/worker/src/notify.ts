@@ -72,11 +72,11 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
   slot_match: {
     subject: "A slot just posted that fits",
-    body: "A new slot matches your alert — pay's on the listing, one tap to apply: {url}",
+    body: "A new slot matches your alert — pay's on the listing, one tap to apply: {url}/slots/{slotId}",
   },
   new_act: {
     subject: "A new act that fits",
-    body: "A new act just joined that fits one of your open slots — take a look and send an invite: {url}",
+    body: "A new act just joined that fits one of your open slots — take a look and send an invite: {url}/p/{performerId}",
   },
   slot_quiet: {
     subject: "Your slot still needs an act",
@@ -202,7 +202,11 @@ export async function notifySubslotParties(
   for (const userId of userIds) await notifyUser(userId, template);
 }
 
-export async function notifyUser(userId: string, template: string): Promise<void> {
+export async function notifyUser(
+  userId: string,
+  template: string,
+  vars: Record<string, string> = {},
+): Promise<void> {
   const base = TEMPLATES[template] ?? {
     subject: "Gigit update",
     body: `Update (${template}): {url}`,
@@ -211,7 +215,11 @@ export async function notifyUser(userId: string, template: string): Promise<void
   const t = override
     ? { subject: override.subject ?? base.subject, body: override.body }
     : base;
-  const body = t.body.replaceAll("{url}", env().APP_URL);
+  // {url} plus any per-subject vars (e.g. {slotId}) → deep links straight to
+  // the thing the message is about, not the app root.
+  const subs: Record<string, string> = { url: env().APP_URL, ...vars };
+  let body = t.body;
+  for (const [k, v] of Object.entries(subs)) body = body.replaceAll(`{${k}}`, v);
   const [user] = await db()
     .select()
     .from(schema.users)
