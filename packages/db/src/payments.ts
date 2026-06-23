@@ -1,8 +1,10 @@
 /**
  * Payment gateway (engineering-spec K3): Stripe Connect Express, destination
  * charges held in platform balance, transfers on release. The Null gateway
- * (no STRIPE_SECRET_KEY configured) auto-succeeds so the full state machine
- * runs in dev and M0-style environments.
+ * auto-succeeds so the full state machine runs with no money moving — this is
+ * the DISCOVERY-FIRST launch default (PAYMENTS_ENABLED unset/false; the venue
+ * pays the act directly — see docs/pricing.md), as well as dev. The real
+ * Stripe gateway activates only when PAYMENTS_ENABLED=true and keys are set.
  *
  * The gateway is called by the WORKER (charge/transfer/refund execution) and
  * by the WEB webhook route (signature verification). State transitions remain
@@ -227,12 +229,23 @@ class StripeGateway implements PaymentGateway {
   }
 }
 
+/**
+ * Whether the gig-payments rail is live. Discovery-first launch: false (the
+ * venue pays the act directly; NullGateway, no money moves — docs/pricing.md).
+ * Requires BOTH the explicit PAYMENTS_ENABLED switch and a Stripe key, so the
+ * rail is never turned on by accident. The web UI reads this to decide whether
+ * to surface payout/payment-method prompts at all.
+ */
+export function paymentsEnabled(): boolean {
+  return env().PAYMENTS_ENABLED && !!env().STRIPE_SECRET_KEY;
+}
+
 let gateway: PaymentGateway | undefined;
 
 export function paymentGateway(): PaymentGateway {
   if (!gateway) {
     const key = env().STRIPE_SECRET_KEY;
-    gateway = key ? new StripeGateway(key) : new NullGateway();
+    gateway = env().PAYMENTS_ENABLED && key ? new StripeGateway(key) : new NullGateway();
   }
   return gateway;
 }

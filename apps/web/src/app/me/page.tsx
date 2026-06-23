@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db, seriesForVenue } from "@gigit/db";
+import { db, paymentsEnabled, seriesForVenue } from "@gigit/db";
 import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm, RedirectButton } from "@/components/ApiForm";
@@ -43,13 +43,19 @@ export default async function MePage() {
             <br />
             <span className="muted">{performer.bio}</span>
           </p>
-          <p>
-            <RedirectButton
-              endpoint="/api/payments/connect"
-              label="Set up payouts"
-            />{" "}
-            <span className="muted">— where your money lands. Stripe handles the bank details; we never see them.</span>
-          </p>
+          {paymentsEnabled() ? (
+            <p>
+              <RedirectButton
+                endpoint="/api/payments/connect"
+                label="Set up payouts"
+              />{" "}
+              <span className="muted">— where your money lands. Stripe handles the bank details; we never see them.</span>
+            </p>
+          ) : (
+            <p className="muted">
+              You arrange pay directly with the venue — Gigit never touches your money.
+            </p>
+          )}
           <MediaManager subjectType="performer" />
           </>
         ) : (
@@ -108,13 +114,19 @@ export default async function MePage() {
             <br />
             <span className="muted">{venue.bio}</span>
           </p>
-          <p>
-            <RedirectButton
-              endpoint="/api/payments/setup"
-              label="Add a payment method"
-            />{" "}
-            <span className="muted">— the card charged when an act accepts your offer. Required before you can send offers.</span>
-          </p>
+          {paymentsEnabled() ? (
+            <p>
+              <RedirectButton
+                endpoint="/api/payments/setup"
+                label="Add a payment method"
+              />{" "}
+              <span className="muted">— the card charged when an act accepts your offer. Required before you can send offers.</span>
+            </p>
+          ) : (
+            <p className="muted">
+              You pay the act directly — no card needed to post slots or send offers.
+            </p>
+          )}
           {series.length > 0 && (
             <div>
               <h3>Recurring nights</h3>

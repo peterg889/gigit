@@ -1,5 +1,5 @@
 import { soundPlan } from "@gigit/domain";
-import { db, schema } from "@gigit/db";
+import { db, paymentsEnabled, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -104,8 +104,10 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
                     ]}
                   />
                   <p className="muted">
-                    Terms lock when they accept — the contract and payment run
-                    through Gigit.
+                    Terms lock when they accept.{" "}
+                    {paymentsEnabled()
+                      ? "The contract and payment run through Gigit."
+                      : "You and the act settle pay directly — Gigit keeps the booking, not the money."}
                   </p>
                 </>
               )}

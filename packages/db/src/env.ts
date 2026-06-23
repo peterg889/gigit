@@ -7,7 +7,16 @@ const envSchema = z.object({
   STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
   S3_BUCKET: z.string().optional(),
   AWS_REGION: z.string().default("us-east-1"),
-  // Payments: unset → NullGateway (dev). Both required together for Stripe.
+  // Payments master switch (docs/pricing.md). Discovery-first launch leaves this
+  // false: Gigit processes no gig money — the venue pays the act directly. Set
+  // true (together with the Stripe keys below) to turn the payments rail on at
+  // monetization. Requiring an explicit flag means payments are never activated
+  // by accident just because a key is present.
+  PAYMENTS_ENABLED: z
+    .string()
+    .optional()
+    .transform((v) => v === "true" || v === "1"),
+  // Payments: unset → NullGateway. Both required together for Stripe.
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   // AI gateway: Gemini. Unset → heuristic fallbacks / "not configured" errors.
