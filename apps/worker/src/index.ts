@@ -311,7 +311,8 @@ async function dispatchEvent(
   // of the outbox; a duplicate notification beats a missed gig.
   if (row.kind === "slot.created") {
     const userIds = await matchSavedSearches(row.subject_id);
-    for (const userId of userIds) await notifyUser(userId, "slot_match");
+    for (const userId of userIds)
+      await notifyUser(userId, "slot_match", { slotId: row.subject_id });
     if (userIds.length > 0)
       log("alerts.slot_match", { slot: row.subject_id, notified: userIds.length });
   }
@@ -322,7 +323,8 @@ async function dispatchEvent(
   // (one event per new performer, distinct venue owners).
   if (row.kind === "performer.created") {
     const userIds = await matchOpenSlotsForPerformer(row.subject_id);
-    for (const userId of userIds) await notifyUser(userId, "new_act");
+    for (const userId of userIds)
+      await notifyUser(userId, "new_act", { performerId: row.subject_id });
     if (userIds.length > 0)
       log("alerts.new_act", { performer: row.subject_id, notified: userIds.length });
   }
