@@ -1,6 +1,6 @@
 # Gigit
 
-A three-sided marketplace connecting **bands & comedians**, **sound techs**, and **small venues** (bars, breweries, coffee shops, restaurants) for live entertainment booking.
+An **asymmetric** three-sided marketplace connecting **bands & comedians**, **sound techs**, and **small venues** (bars, breweries, coffee shops, restaurants) for live entertainment booking. Venues and performers are the mandatory core; sound techs attach only to the bookings that need them. Mission-first and discovery-first: there should be more live music in the world, so Gigit helps venues and acts find each other and shake hands — it does **not** process gig money at launch (the venue pays the act directly; see [`docs/pricing.md`](docs/pricing.md)).
 
 ## Documents
 
@@ -8,6 +8,7 @@ A three-sided marketplace connecting **bands & comedians**, **sound techs**, and
 |---|---|
 | [`PRD.md`](PRD.md) | Product requirements — personas, business model, functional requirements |
 | [`docs/brand.md`](docs/brand.md) | Brand identity — core values, value proposition, voice & language, relationship to each side |
+| [`docs/pricing.md`](docs/pricing.md) | Pricing & the discovery-first posture — who pays, what's deferred, the payments seam, billing mechanics |
 | [`docs/engineering-spec.md`](docs/engineering-spec.md) | Architecture, the 11 load-bearing commitments, build plan |
 | [`docs/technical-design.md`](docs/technical-design.md) | Component-level technical design for the whole system as built — interfaces, data flows, assumptions, requirements, and the to-build list |
 | [`docs/prd-coverage.md`](docs/prd-coverage.md) | PRD requirement → design → implementation coverage matrix, with the live P0 gap list |
@@ -21,7 +22,7 @@ A three-sided marketplace connecting **bands & comedians**, **sound techs**, and
 pnpm monorepo:
 
 ```
-packages/domain   pure TypeScript — booking state machine, fee schedule, sound-plan engine, zod schemas
+packages/domain   pure TypeScript — booking state machine, fee schedule (built, dormant at launch), sound-plan engine, zod schemas
 packages/db       drizzle schema, transactional transition runner, events outbox, seed
 apps/web          Next.js (App Router) — UI + all API routes
 apps/worker       outbox dispatcher, pg-boss booking timers, timer reconciler
@@ -30,7 +31,7 @@ apps/worker       outbox dispatcher, pg-boss booking timers, timer reconciler
 Key invariants (see engineering spec §5):
 - Booking state changes happen ONLY through `runBookingTransition()` — one transaction: row lock → pure domain decision → versioned update → outbox event.
 - Every side effect is data in the `events` table; the worker interprets it (at-least-once, idempotent).
-- M0 runs the **full** state machine with a `NullPaymentGateway` (auto-succeeds); Stripe lands in M1 without touching the machine.
+- The **full** payment state machine is **built**, but the money path is the **deferred** launch configuration: `NullGateway` (the discovery-first default when `STRIPE_SECRET_KEY` is unset, gated by `PAYMENTS_ENABLED`) auto-succeeds the money effects so the machine runs intact without moving money. Seam, not deletion — the money path turns on with venue monetization in Phase 2, not just "in M1." See [`docs/pricing.md`](docs/pricing.md) (§4).
 
 ## Quickstart
 

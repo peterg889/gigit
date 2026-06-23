@@ -33,10 +33,12 @@ evalDescribe("golden-set evals (live model)", () => {
   }, 30_000);
 
   it("support_triage: KB-grounded answer does not escalate", async () => {
+    // Discovery-first launch (PAYMENTS_ENABLED unset): the KB-grounded answer is
+    // "the venue pays you directly," not a platform-payout timeline.
     const r = await supportTriage("when do I get paid after a gig?", "usr_eval");
     expect(r.escalate).toBe(false);
     expect(r.category).toBe("payments");
-    expect(r.reply).toMatch(/24/);
+    expect(r.reply).toMatch(/direct|venue pays|directly/i);
   }, 30_000);
 
   it("support_triage: out-of-KB legal question escalates", async () => {

@@ -25,6 +25,7 @@ import { notifyBookingParties, notifySubslotParties, notifyUser } from "./notify
 import { recheckEmbeds, screenMedia } from "./media.js";
 import {
   matchSavedSearches,
+  matchOpenSlotsForPerformer,
   outboxLagMs,
   reconcileMoney,
   snapshotNightFacts,
@@ -290,6 +291,17 @@ async function dispatchEvent(
     for (const userId of userIds) await notifyUser(userId, "slot_match");
     if (userIds.length > 0)
       log("alerts.slot_match", { slot: row.subject_id, notified: userIds.length });
+  }
+
+  // New-act alerts (PRD F2.4, anti-leakage): a new performer fans out to every
+  // venue with an open slot it fits — the "next new act" half of the feed moat,
+  // the symmetric counterpart to slot_match. At-least-once; dedup not needed
+  // (one event per new performer, distinct venue owners).
+  if (row.kind === "performer.created") {
+    const userIds = await matchOpenSlotsForPerformer(row.subject_id);
+    for (const userId of userIds) await notifyUser(userId, "new_act");
+    if (userIds.length > 0)
+      log("alerts.new_act", { performer: row.subject_id, notified: userIds.length });
   }
 
   // Parent booking outcomes cascade into tech sub-slots (PRD F6.2): release

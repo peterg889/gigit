@@ -17,6 +17,17 @@
 > access, Stripe live keys, GuardDuty S3 scanning, counsel review). The matrix
 > below is preserved as the pre-sprint audit record.
 
+> **Discovery-first launch posture (June 2026 reframe — see [`docs/pricing.md`](pricing.md)):**
+> Gigit launches mission-first and discovery-first: it touches **no gig money** —
+> the venue pays the act directly. So **F4 (Payments) in full**, **F3.2 (the e-signed
+> performance agreement)**, the **monetary part of F3.3 (the cancellation fee schedule)**,
+> and **dispute *money*-resolution in F7.4** are now **D = deferred** for launch:
+> designed and seam-ready, switched off, and they turn on together with venue
+> monetization (Phase 2). This changes the **launch scope, not what's built** — the code
+> below remains as assessed; the deferral is a configuration default, not a deletion.
+> Per the PRD §6 legend: **D = deferred** — designed and seam-ready, but switched off
+> for the discovery-first launch; turns on with venue monetization.
+
 ## Summary of P0 gaps (launch blockers not yet built — CLOSED, see update above)
 
 | # | Gap | PRD ref | Notes |
@@ -30,7 +41,7 @@
 | 7 | **Media fraud screening** | F7.5 (P0) | `media/complete` has a stub comment only. No `fraud_flags` table, no `media_fraud_screen` AI task, no ops review queue. Also missing: virus scan, EXIF strip, content-type sniffing, image renditions (the whole §8 processing pipeline — uploads go straight to `ready`). |
 | 8 | **AI-first support** (`support_triage`) | F9.4 (P0) | Not built. No support thread scope handling, no KB, no triage task. This underwrites the unit-economics claim (<1 human touch per 20 bookings). |
 | 9 | **POS-baseline data accrual** (`venue_night_facts`) | F8.5-P0 | No table, no nightly job. Cheap to build, impossible to backfill — every week unbuilt is lost baseline data for the Phase 2 flagship. |
-| 10 | **Stripe onboarding gate before acceptance** | F1.5 / spec §6 | Connect onboarding link exists, but `bookings/accept` does **not** check the performer has a payouts-enabled Stripe account. A booking can confirm with nowhere to send the money. |
+| 10 | **Stripe onboarding gate before acceptance** | F1.5 / spec §6 | Connect onboarding link exists, but `bookings/accept` does **not** check the performer has a payouts-enabled Stripe account. A booking can confirm with nowhere to send the money. **Discovery-first:** moot at launch — there are no payouts, so there is nowhere money needs to go; this gate lands with the payments rail when monetization turns on (see [`pricing.md`](pricing.md)). |
 | 11 | **Ops dashboard beyond disputes** | F9.1, F9.3 (P0) | Admin can resolve disputes and view liquidity metrics. Missing: user/booking search, manual edits, refunds, payout holds, suspension, moderation queue. |
 | 12 | **Distance/ranking in the feed** | F2.7 (P0 v1) | Feed filters by format/metro/date only. No radius (haversine designed in M0 spec, not present), no reliability/recency ranking. |
 | 13 | **PRO licensing static guidance in venue onboarding** | F8.3 (P0 portion) | Content-only task; not present. |
@@ -67,22 +78,24 @@
 | Req | Priority | Architecture home | Design home | Status | Notes |
 |---|---|---|---|---|---|
 | F3.1 offer→accept, locked terms | P0 | K4, spec §5 | tech-design §4.4, §6.1 | ✅ | `createOffer` + state machine; both-party re-confirmation on term change is moot (terms immutable post-offer; a change = new offer). |
-| F3.2 auto-generated agreement | P0 | K7 | tech-design §4.4 | ✅ | Click-wrap v1, template hash + acceptance timestamps recorded. Rider items from tech needs not yet merged into the text (minor). |
-| F3.3 cancellation policy | P0 | spec §5 | tech-design §6.2 | 🟡 | Fee schedule ✅, ledgered + paid ✅, reliability strike ✅, slot auto-reopen ✅. "Repeated late cancels → suspension" not enforced (no suspension logic). Auto-repost-with-priority is P1 (replacement engine). |
+| F3.2 auto-generated agreement | P0 (terms summary), D (e-sign) | K7 | tech-design §4.4 | ✅ built; 📋 e-sign deferred at launch | Click-wrap v1, template hash + acceptance timestamps recorded. Rider items from tech needs not yet merged into the text (minor). **Discovery-first:** the plain-language terms summary stays ON (the booking record is the receipt); the formal click-wrap / e-signed **performance agreement is deferred** and turns on with payments (see [`pricing.md`](pricing.md)). |
+| F3.3 cancellation policy | P0 (reliability + repost), D (fees) | spec §5 | tech-design §6.2 | 🟡 built; 📋 fee schedule deferred at launch | Fee schedule ✅, ledgered + paid ✅, reliability strike ✅, slot auto-reopen ✅. "Repeated late cancels → suspension" not enforced (no suspension logic). Auto-repost-with-priority is P1 (replacement engine). **Discovery-first:** cancellations still reopen the slot, notify, and apply a reliability strike (stays ON); only the **monetary fee schedule** (`venueCancellationFee`/`performerCancellationFee`) is deferred — it moves no money until payments turn on (see [`pricing.md`](pricing.md) §4). |
 | F3.4 replacement engine | P1 | spec §14 deferred | — | ⬜ | Seam ✅ (`cancelled_by_performer` events exist). |
 | F3.5 day-of runsheet | P1 | — | — | ⬜ | Also carries the offline-degradation NFR when built. |
 | F3.6 calendar / iCal out | P0 | spec §10 | tech-design §4.7 | ✅ | Signed (JWT) per-user feed ✅. In-app availability calendar ❌ (only bookings list). |
 
 ## F4 — Payments
 
+> **Deferred at launch (the whole section).** Discovery-first launch processes **no gig money** — the venue pays the act directly (see [`pricing.md`](pricing.md), PRD §6 F4). The Stripe-Connect seam (`paymentGateway()` / `NullGateway`), the money half of the booking state machine, and the intent ledger are built/seam-ready but **switched OFF** at launch; every row below is **D = deferred** and turns on together with venue monetization (Phase 2). The only money Gigit ever touches is its own venue fees, billed via Stripe **Billing** (not Connect) — itself deferred until monetization. The assessments below are unchanged; the deferral is a launch-scope default.
+
 | Req | Priority | Architecture home | Design home | Status | Notes |
 |---|---|---|---|---|---|
-| F4.1 Connect charge/hold/release | P0 | K3, spec §6 | tech-design §4.8, §6.1 | 🟡 | Gateway interface + Null/Stripe impls ✅; charge at confirmation, transfer at release, ledger ✅. **Unverified against live Stripe test mode** — saved-payment-method collection for venues (SetupIntent flow) is not visible in the web UI; ACH-vs-card default unresolved (open Q#1). |
-| F4.2 mark-played / auto-confirm | P0 | spec §5 | tech-design §6.1 | ✅ | +24h auto-confirm timer + reconciler ✅. |
-| F4.3 split payouts | P1 | K3 seam | — | ❌ seam | `band_members.payout_split_bps` was committed to ship day one; it didn't. Cheap now, painful later — add the table even if unused. |
-| F4.4 tax (W-9, 1099-K) | P0 | K3 | tech-design §4.8 | ✅* | Delegated to Stripe Express by design; *holds only if gap #10 closes (Express must stay the sole payout path). State-threshold config is a Stripe dashboard task — add to launch runbook. |
-| F4.5 instant payout | P2 | — | — | ⬜ | |
-| F4.6 tip jar | P2 | — | — | ⬜ | |
+| F4.1 Connect charge/hold/release | D (was P0) | K3, spec §6 | tech-design §4.8, §6.1 | 🟡 built; 📋 deferred at launch | Gateway interface + Null/Stripe impls ✅; charge at confirmation, transfer at release, ledger ✅. **Unverified against live Stripe test mode** — saved-payment-method collection for venues (SetupIntent flow) is not visible in the web UI; ACH-vs-card default unresolved (open Q#1). **Discovery-first:** seam-ready but switched off at launch; turns on with venue monetization (see [`pricing.md`](pricing.md)). |
+| F4.2 mark-played / auto-confirm | D (was P0) | spec §5 | tech-design §6.1 | ✅ built; 📋 deferred at launch | +24h auto-confirm timer + reconciler ✅. **Discovery-first:** the simplified launch machine ends at `confirmed`/`played`; the money-path auto-confirm/release is deferred and turns on with payments. |
+| F4.3 split payouts | D (was P1) | K3 seam | — | ❌ seam | `band_members.payout_split_bps` was committed to ship day one; it didn't. Cheap now, painful later — add the table even if unused. **Discovery-first:** payouts are deferred entirely at launch; this seam lands with the payments rail (single payout to the booking owner first; splits later). |
+| F4.4 tax (W-9, 1099-K) | D (was P0) | K3 | tech-design §4.8 | ✅* built; 📋 deferred at launch | Delegated to Stripe Express by design; *holds only if gap #10 closes (Express must stay the sole payout path). State-threshold config is a Stripe dashboard task — add to launch runbook. **Discovery-first:** no payouts at launch means no W-9/1099 obligation; deferred and turns on with payments. |
+| F4.5 instant payout | D / P2 | — | — | ⬜ | Deferred with payments. |
+| F4.6 tip jar | D / P2 | — | — | ⬜ | Deferred with payments. |
 
 ## F5 — Messaging & notifications
 
@@ -93,6 +106,8 @@
 | F5.3 response-time surfacing | P1 | — | — | ⬜ | |
 
 ## F6 — Sound tech integration
+
+> **Asymmetric market (PRD §5).** The tech side is the **conditional/derived third side** — venue + performer are the mandatory core; a tech is engaged only on the subset of bookings the sound plan (F6.1) flags as uncovered. These rows are *derived demand*, not a pool to fill for every gig; success is measured by **attach rate on tech-needed bookings**, not raw tech count.
 
 | Req | Priority | Architecture home | Design home | Status | Notes |
 |---|---|---|---|---|---|
@@ -110,7 +125,7 @@
 | F7.1 double-blind reviews | P0 | spec §4 | tech-design §4.11 | 🟡 | Built (both-submitted-or-7-days read rule). Ratings are `{overall}` only — PRD wants per-dimension (draw/professionalism/quality; hospitality/accuracy/payment). Tech reviews ❌ (no tech bookings to review). |
 | F7.2 bookings-only reviews | P0 | spec §4 | tech-design §4.11 | ✅ | FK to booking + terminal-state + one-per-party checks. |
 | F7.3 reliability score | P1 | spec §4 | — | ⬜ | Strike counter exists; score/badge/ranking don't. |
-| F7.4 disputes | P0 basic | spec §5 | tech-design §6.3 | ✅ | Open → payout held → admin resolves (full/partial/refund, sums validated) ✅. Evidence packs + AI brief = P1. |
+| F7.4 disputes | P0 basic (reputational); D (money-resolution) | spec §5 | tech-design §6.3 | ✅ built; 📋 money-resolution deferred at launch | Open → payout held → admin resolves (full/partial/refund, sums validated) ✅. Evidence packs + AI brief = P1. **Discovery-first:** the **money-resolution** engine (`release_full`/`refund_full`/`partial`) is deferred and turns on with payments; launch disputes are **reputational** — a lightweight report/flag feeds reviews + reliability (see [`pricing.md`](pricing.md) §4). |
 | F7.5 media fraud screening | P0 | K9, spec §8–9 | tech-design §7 | ❌ | Gap #7 — includes the entire upload processing pipeline (virus scan, EXIF, sniffing, renditions). |
 
 ## F8 — Promotion & compliance
@@ -137,7 +152,7 @@
 | NFR | Status | Notes |
 |---|---|---|
 | Mobile-first responsive web | 🟡 | Server-rendered, minimal styling; no PWA manifest/push. |
-| PCI via Stripe Elements | 🟡 | No card data on origin ✅ by construction; venue payment-method capture UI (Elements/SetupIntent) not yet present — required before real charges. |
+| PCI via Stripe Elements | 🟡; 📋 deferred at launch | No card data on origin ✅ by construction; venue payment-method capture UI (Elements/SetupIntent) not yet present — required before real charges. **Discovery-first:** Gigit processes no gig money at launch, so this carries no PCI exposure now. The only money Gigit ever touches is its own **venue fees** (via Stripe **Billing**, not Connect) — also deferred until monetization. |
 | AWS-native minimal infra | ✅ | CDK: App Runner + EC2 worker + RDS + S3/CloudFront + SES + Secrets Manager, staging/prod stacks. CI lacks the deploy stage (spec §3: staging deploy on merge → manual promote). |
 | Trust & safety (rate limits, no off-platform-payment detection) | 🟡 | OTP + inquiry caps ✅; message-content detection ❌ (P1-acceptable). |
 | 99.9% availability, graceful offline gig-day | 🟡 | Single-AZ RDS accepted at launch (K11). Offline runsheet lands with F3.5. No Sentry/uptime checks yet (spec §12) — add before launch. |

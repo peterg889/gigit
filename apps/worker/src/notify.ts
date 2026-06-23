@@ -3,7 +3,7 @@
  * SES — each enabled by env, falling back to structured logs in dev.
  * Critical-path templates only at M1; copy lives here, versioned in git.
  */
-import { db, env, schema } from "@gigit/db";
+import { db, env, paymentsEnabled, schema } from "@gigit/db";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { eq } from "drizzle-orm";
 
@@ -74,6 +74,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "A slot just posted that fits",
     body: "A new slot matches your alert — pay's on the listing, one tap to apply: {url}",
   },
+  new_act: {
+    subject: "A new act that fits",
+    body: "A new act just joined that fits one of your open slots — take a look and send an invite: {url}",
+  },
   subslot_booked: {
     subject: "Sound is covered",
     body: "The tech is booked. Room specs, input list, and set times are on the booking: {url}/bookings",
@@ -93,6 +97,40 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   embed_dead: {
     subject: "A video link went dead",
     body: "One of the videos on your profile no longer plays. Swap it for a live link: {url}/me",
+  },
+};
+
+// Discovery-first launch (PAYMENTS_ENABLED off): Gigit moves no gig money, so
+// the payment-bearing templates above would lie. These overrides replace them
+// with settle-directly copy; the originals return with the payments rail.
+const DISCOVERY_OVERRIDES: Record<string, { subject?: string; body: string }> = {
+  booking_confirmed: {
+    body: "Confirmed and on the books. Set times, contacts, and terms are here — sort the pay with the room directly: {url}/bookings",
+  },
+  mark_played_prompt: {
+    body: "How'd the night go? Mark the gig played to close it out — and square up with the room if you haven't: {url}/bookings",
+  },
+  payment_released: {
+    subject: "All wrapped up",
+    body: "Your gig's marked complete. If you haven't settled up with the room yet, now's the time: {url}/bookings",
+  },
+  venue_cancelled: {
+    body: "The venue cancelled the booking. No platform money is in play — the slot is back on the board: {url}/bookings",
+  },
+  performer_cancelled: {
+    body: "The performer cancelled. The slot is back on the board for other acts: {url}/bookings",
+  },
+  dispute_opened: {
+    body: "Thanks for flagging this. Reviews stay on hold while a person looks — within 5 business days: {url}/bookings",
+  },
+  dispute_resolved: {
+    body: "A person reviewed the dispute and made the call. The outcome is here: {url}/bookings",
+  },
+  subslot_cancelled: {
+    body: "The sound booking was cancelled. No platform money is in play — the slot is back open: {url}/bookings",
+  },
+  subslot_tech_cancelled: {
+    body: "Your tech cancelled. The sound slot is back open for other techs: {url}/bookings",
   },
 };
 
@@ -161,10 +199,14 @@ export async function notifySubslotParties(
 }
 
 export async function notifyUser(userId: string, template: string): Promise<void> {
-  const t = TEMPLATES[template] ?? {
+  const base = TEMPLATES[template] ?? {
     subject: "Gigit update",
     body: `Update (${template}): {url}`,
   };
+  const override = paymentsEnabled() ? undefined : DISCOVERY_OVERRIDES[template];
+  const t = override
+    ? { subject: override.subject ?? base.subject, body: override.body }
+    : base;
   const body = t.body.replaceAll("{url}", env().APP_URL);
   const [user] = await db()
     .select()

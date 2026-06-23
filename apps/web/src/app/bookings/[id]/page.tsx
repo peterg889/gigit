@@ -1,6 +1,6 @@
 import { TERMINAL_STATES, renderAgreement, soundPlan } from "@gigit/domain";
 import type { BookingState } from "@gigit/domain";
-import { db, schema } from "@gigit/db";
+import { db, paymentsEnabled, schema } from "@gigit/db";
 import { and, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -139,15 +139,17 @@ export default async function BookingPage({
           )}{" "}
           {state === "awaiting_confirmation" && asVenue && (
             <span className="muted">
-              The pay releases automatically 24 hours after the set ends, unless
-              you open a dispute.
+              {paymentsEnabled()
+                ? "The pay releases automatically 24 hours after the set ends, unless you open a dispute."
+                : "This auto-confirms 24 hours after the set ends, unless you open a dispute. You and the act settle pay directly."}
             </span>
           )}
         </p>
         {state === "awaiting_confirmation" && (
           <>
             <p className="muted">
-              Something go wrong? Opening a dispute pauses the payout. A person
+              Something go wrong? Opening a dispute{" "}
+              {paymentsEnabled() ? "pauses the payout" : "flags it for review"}. A person
               looks at it within 5 business days.
             </p>
             <ApiForm
@@ -292,6 +294,7 @@ export default async function BookingPage({
             venueName: row.venueName,
             performerName: row.performerName,
             terms: b.terms,
+            paymentsEnabled: paymentsEnabled(),
           })}
         </pre>
         <p className="muted">

@@ -1,6 +1,8 @@
 # M0 Technical Spec — Walking Skeleton (build-ready)
 
-**Date:** June 2026. Implements milestone M0 from [`engineering-spec.md`](engineering-spec.md). This document is component-level and concrete: what exists, where it lives, exact states and routes. Scope: a venue can sign in, build a profile, post a slot; a performer can sign in, build a profile (bio, photos, YouTube/Vimeo embeds), browse the feed, apply; the venue can message/invite, offer; the performer accepts; terms are recorded (no payments in M0 — `NullPaymentGateway` auto-succeeds so the *full* state machine runs from day one); every change lands in `events`.
+> **Note (June 2026):** this is the M0 historical record. For the launch payments posture it is **superseded by [`pricing.md`](pricing.md)** — payments are deferred and the launch is discovery-first (the venue pays the act directly). The seams below are correct; the launch defaults changed.
+
+**Date:** June 2026. Implements milestone M0 from [`engineering-spec.md`](engineering-spec.md). This document is component-level and concrete: what exists, where it lives, exact states and routes. Scope: a venue can sign in, build a profile, post a slot; a performer can sign in, build a profile (bio, photos, YouTube/Vimeo embeds), browse the feed, apply; the venue can message/invite, offer; the performer accepts; terms are recorded (no payments in M0 — `NullPaymentGateway` auto-succeeds so the *full* state machine runs from day one; per [`pricing.md`](pricing.md) §4 the money path is now deferred *indefinitely*, until venue monetization, not just to M1); every change lands in `events`.
 
 ## 1. Repository layout (pnpm workspaces)
 
@@ -42,7 +44,7 @@ Events (commands): `PERFORMER_ACCEPTED`, `PAYMENT_SUCCEEDED`, `PAYMENT_FAILED`, 
 
 The machine is a **pure reducer**: `decide(booking, event, clock) → { next, effects[] } | DomainError`. Effects are data (`{kind: "schedule", job, runAt}`, `{kind: "charge"}`, `{kind: "notify", template, to}`, `{kind: "reopen_slot"}`, `{kind: "fee", schedule}`) — the db layer persists them as event payload; the worker interprets them. M0 interprets `charge` via `NullPaymentGateway` (immediate `PAYMENT_SUCCEEDED`), logs `notify`.
 
-Cancellation fees (pure function, M0 computes + records, M1 moves money): >14d → 0%, 48h–14d → 50%, <48h → 100% of `terms.amount_cents`.
+Cancellation fees (pure function): >14d → 0%, 48h–14d → 50%, <48h → 100% of `terms.amount_cents`. **Per [`pricing.md`](pricing.md) §4 the monetary fee schedule is deferred (not "M1 moves money").** A cancellation reopens the slot, notifies, and applies a reliability strike at launch; the fee math stays built but dormant until venue monetization.
 
 Tests: exhaustive table test (every state × every event → expected next or rejection) + scenario tests for the happy path, both cancellation branches at each fee window, offer expiry, dispute.
 
@@ -52,7 +54,7 @@ Tests: exhaustive table test (every state × every event → expected next or re
 
 ## 3. Database (drizzle, Postgres 16)
 
-Tables (M0): `users`, `auth_otps`, `actor_roles`, `performers`, `venues`, `techs`, `media_assets`, `slots`, `applications`, `bookings`, `threads`, `thread_participants`, `messages`, `events`. Deferred to their milestone: `ledger_entries`, `slot_series`, `tech_subslots`, `reviews`, `disputes`, `ai_tasks` (M1/M2 migrations).
+Tables (M0): `users`, `auth_otps`, `actor_roles`, `performers`, `venues`, `techs`, `media_assets`, `slots`, `applications`, `bookings`, `threads`, `thread_participants`, `messages`, `events`. Deferred to their milestone: `ledger_entries`, `slot_series`, `tech_subslots`, `reviews`, `disputes`, `ai_tasks` (M1/M2 migrations). **Per [`pricing.md`](pricing.md): reviews + reliability are now CORE (stay on at launch); only the money tables (`ledger_entries`, the dispute *money-resolution* path) defer.**
 
 Key decisions:
 - IDs: text ULIDs generated in `domain/ids.ts` (sortable, no DB extension needed).
