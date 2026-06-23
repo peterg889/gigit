@@ -37,9 +37,13 @@ jobs:
   # Requires repo config: AWS_DEPLOY_ROLE_ARN (OIDC role), AWS_REGION,
   # STAGING_DATABASE_URL secrets; a "production" environment with required
   # reviewers gates the promote job.
+  # Opt-in: set repo variable DEPLOY_ENABLED=true once AWS is wired up. Until
+  # then this job is SKIPPED (not failed) so CI reflects code health, not the
+  # absence of cloud credentials. (secrets aren't allowed in job-level `if`,
+  # so a `vars` flag is the gate.)
   deploy-staging:
     needs: build-test
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write # OIDC into AWS — no long-lived keys (K11)
