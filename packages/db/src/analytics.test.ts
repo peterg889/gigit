@@ -1,7 +1,11 @@
 import { newId } from "@gigit/domain";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, db, getPool } from "./client.js";
-import { matchSavedSearches, snapshotNightFacts } from "./analytics.js";
+import {
+  matchOpenSlotsForPerformer,
+  matchSavedSearches,
+  snapshotNightFacts,
+} from "./analytics.js";
 import {
   applications,
   bookings,
@@ -153,5 +157,83 @@ describe("night facts + saved-search matching (integration)", () => {
     });
     const eitherMatched = await matchSavedSearches(eitherSlot);
     expect(eitherMatched).toContain(userNo); // music search matches `either`
+  });
+
+  it("matchOpenSlotsForPerformer: a new act fans out to venues with a fitting open slot", async () => {
+    const d = db();
+    const metro = "newact-testville"; // dedicated metro — collision-proof
+    const vOwner = newId("user");
+    const vId = newId("venue");
+    await d.insert(users).values({ id: vOwner, email: `${vOwner}@t.test` });
+    await d.insert(venues).values({
+      id: vId,
+      ownerUserId: vOwner,
+      kind: "brewery",
+      name: "New-Act Test Room",
+      metro,
+      lat: 43,
+      lng: -88,
+      paInventory: { hasPA: true },
+    });
+    const openComedy = newId("slot");
+    await d.insert(slots).values({
+      id: openComedy,
+      venueId: vId,
+      metro,
+      startsAt: new Date("2031-05-01T20:00:00Z"),
+      durationMinutes: 90,
+      format: "comedy",
+      budgetCents: 30_000,
+      status: "open",
+    });
+
+    // mkPerformer returns the performer id so we can match on it directly.
+    const mkPerformer = async (
+      kind: string,
+      home: string,
+      rateMinCents?: number,
+    ): Promise<string> => {
+      const owner = newId("user");
+      const id = newId("performer");
+      await d.insert(users).values({ id: owner, email: `${owner}@t.test` });
+      await d.insert(performers).values({
+        id,
+        ownerUserId: owner,
+        kind,
+        name: `New ${kind}`,
+        homeMetro: home,
+        techNeeds: { inputs: 1 },
+        ...(rateMinCents !== undefined ? { rateMinCents } : {}),
+      });
+      return id;
+    };
+
+    // comedian in the metro → matches the open comedy slot
+    const comicId = await mkPerformer("comedian", metro);
+    expect(await matchOpenSlotsForPerformer(comicId)).toContain(vOwner);
+
+    // band (→ music) vs comedy-only slot; comic in another metro; comic whose
+    // floor exceeds the budget — none should be alerted about this venue
+    const bandId = await mkPerformer("band", metro);
+    const farId = await mkPerformer("comedian", "elsewhere-metro");
+    const pricyId = await mkPerformer("comedian", metro, 50_000);
+    expect(await matchOpenSlotsForPerformer(bandId)).not.toContain(vOwner);
+    expect(await matchOpenSlotsForPerformer(farId)).not.toContain(vOwner);
+    expect(await matchOpenSlotsForPerformer(pricyId)).not.toContain(vOwner);
+
+    // a filled slot in the metro never alerts: the comic matches the OPEN slot
+    // once, not the filled one (distinct owners)
+    await d.insert(slots).values({
+      id: newId("slot"),
+      venueId: vId,
+      metro,
+      startsAt: new Date("2031-05-02T20:00:00Z"),
+      durationMinutes: 90,
+      format: "comedy",
+      budgetCents: 30_000,
+      status: "filled",
+    });
+    const m2 = await matchOpenSlotsForPerformer(comicId);
+    expect(m2.filter((u) => u === vOwner)).toHaveLength(1);
   });
 });

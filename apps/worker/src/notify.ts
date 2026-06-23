@@ -74,6 +74,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "A slot just posted that fits",
     body: "A new slot matches your alert — pay's on the listing, one tap to apply: {url}",
   },
+  new_act: {
+    subject: "A new act that fits",
+    body: "A new act just joined that fits one of your open slots — take a look and send an invite: {url}",
+  },
   subslot_booked: {
     subject: "Sound is covered",
     body: "The tech is booked. Room specs, input list, and set times are on the booking: {url}/bookings",

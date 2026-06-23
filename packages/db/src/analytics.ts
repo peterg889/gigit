@@ -52,3 +52,32 @@ export async function matchSavedSearches(slotId: string): Promise<string[]> {
   );
   return rows.map((r) => r.owner_user_id);
 }
+
+/**
+ * Reverse of matchSavedSearches (PRD F2.4, anti-leakage): when a new act joins,
+ * which venue owners have an OPEN, future slot it fits? This is the "next new
+ * act" half of the feed moat — the reason a venue comes back even between its
+ * own posts. Scoped to an actual open slot so the alert is always actionable,
+ * never metro-wide spam. Format maps performer kind → slot format (comedian →
+ * comedy, else music); `either` slots match anyone; budget floor respected.
+ */
+export async function matchOpenSlotsForPerformer(
+  performerId: string,
+): Promise<string[]> {
+  const { rows } = await getPool().query(
+    `select distinct v.owner_user_id
+       from performers p
+       join slots s
+         on s.status = 'open'
+        and s.starts_at >= now()
+        and s.metro = p.home_metro
+        and (s.format = 'either'
+             or s.format = (case when p.kind = 'comedian' then 'comedy' else 'music' end))
+        and (p.rate_min_cents is null or s.budget_cents >= p.rate_min_cents)
+       join venues v on v.id = s.venue_id
+      where p.id = $1
+        and v.owner_user_id is not null`,
+    [performerId],
+  );
+  return rows.map((r) => r.owner_user_id);
+}
