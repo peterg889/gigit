@@ -29,7 +29,7 @@ export class SlotUnavailableError extends Error {
 }
 
 /** Dig the Postgres SQLSTATE out of a (possibly drizzle-wrapped) error chain. */
-function pgErrorCode(e: unknown): string | undefined {
+export function pgErrorCode(e: unknown): string | undefined {
   let cur = e as { code?: unknown; cause?: unknown } | undefined;
   for (let i = 0; cur && i < 5; i++) {
     if (typeof cur.code === "string") return cur.code;

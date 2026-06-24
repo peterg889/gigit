@@ -1,5 +1,5 @@
 import { applicationCreateSchema, newId } from "@gigit/domain";
-import { appendEvent, db, schema } from "@gigit/db";
+import { appendEvent, db, pgErrorCode, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
@@ -31,7 +31,8 @@ export async function POST(req: Request, { params }: Params) {
         note: parsed.data.note ?? null,
       });
     } catch (err) {
-      if (String(err).includes("applications_slot_performer_uq"))
+      // constraint name is on the wrapped cause; match SQLSTATE 23505 instead
+      if (pgErrorCode(err) === "23505")
         return fail("conflict", "you already applied to this slot", 409);
       throw err;
     }
