@@ -92,6 +92,13 @@
       "when": 1782263597521,
       "tag": "0012_illegal_gwen_stacy",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1782263999665,
+      "tag": "0013_skinny_scream",
+      "breakpoints": true
     }
   ]
 }

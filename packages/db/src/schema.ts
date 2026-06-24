@@ -517,6 +517,11 @@ export const events = pgTable(
     subjectId: text("subject_id").notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
     dispatchedAt: ts("dispatched_at"),
+    // Outbox durability: a dispatch that keeps throwing increments attempts and,
+    // past the cap, is parked (dead_lettered_at) so it stops wedging the head.
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    deadLetteredAt: ts("dead_lettered_at"),
   },
   (t) => [
     index("events_outbox_idx").on(t.dispatchedAt),
