@@ -154,6 +154,21 @@ export async function runBookingTransition(
           .update(slots)
           .set({ status: "open" })
           .where(eq(slots.id, row.slotId));
+        // The collapsing offer left this performer's application frozen in
+        // 'offered' (createOffer set it). Return it to 'submitted' so the
+        // reopened slot is fully re-biddable and the performer isn't locked
+        // out of their own slot (the unique index forbids re-applying, and
+        // re-offer/withdraw both require 'submitted').
+        await tx
+          .update(applications)
+          .set({ status: "submitted" })
+          .where(
+            and(
+              eq(applications.slotId, row.slotId),
+              eq(applications.performerId, row.performerId),
+              eq(applications.status, "offered"),
+            ),
+          );
       }
       if (fx.kind === "reliability_strike") {
         await tx
@@ -180,6 +195,51 @@ export async function runBookingTransition(
             eq(applications.status, "submitted"),
           ),
         );
+      // A venue may have offered this one open slot to several applicants at
+      // once (the offer route leaves the slot 'open' and the unique index
+      // excludes 'offered', so concurrent offers coexist). Now that the slot
+      // is filled, those sibling offers can never be accepted and would block
+      // the venue from ever closing the slot. Collapse them and free their
+      // applicants, then tell each losing performer their offer is gone.
+      const losers = await tx
+        .update(bookings)
+        .set({ state: "collapsed", version: sql`${bookings.version} + 1` })
+        .where(
+          and(
+            eq(bookings.slotId, row.slotId),
+            ne(bookings.id, bookingId),
+            eq(bookings.state, "offered"),
+          ),
+        )
+        .returning({ id: bookings.id });
+      if (losers.length > 0) {
+        await tx
+          .update(applications)
+          .set({ status: "declined" })
+          .where(
+            and(
+              eq(applications.slotId, row.slotId),
+              ne(applications.performerId, row.performerId),
+              eq(applications.status, "offered"),
+            ),
+          );
+        for (const loser of losers) {
+          await appendEvent(tx, {
+            actor,
+            kind: "booking.transition",
+            subjectType: "booking",
+            subjectId: loser.id,
+            payload: {
+              event: "VENUE_CANCELLED",
+              from: "offered",
+              to: "collapsed",
+              effects: [
+                { kind: "notify", template: "offer_withdrawn", to: "performer" },
+              ],
+            },
+          });
+        }
+      }
     }
 
     await appendEvent(tx, {
@@ -192,6 +252,16 @@ export async function runBookingTransition(
         from: snapshot.state,
         to: decision.next,
         effects: decision.effects,
+        // Carry the originating event's context into the event log — the
+        // dispute brief (ai.ts) and admin adjudication read events.payload, so
+        // dropping these would leave the human resolving a dispute with no
+        // "who opened it" and no reason at all.
+        ...(event.kind === "DISPUTE_OPENED"
+          ? { openedBy: event.openedBy, reason: event.reason }
+          : {}),
+        ...(event.kind === "PAYMENT_FAILED" && event.reason
+          ? { reason: event.reason }
+          : {}),
       },
     });
 

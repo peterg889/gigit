@@ -1,6 +1,6 @@
 import { messageCreateSchema, newId } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
-import { and, asc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { AuthError, requireUser } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
@@ -25,13 +25,16 @@ export async function GET(_req: Request, { params }: Params) {
     const userId = await requireUser();
     if (!(await assertParticipant(threadId, userId)))
       return fail("forbidden", "not a participant", 403);
+    // Window to the most recent 200 (newest-first from the DB), then reverse to
+    // ascending for display. A plain asc+limit returned the OLDEST 200 and hid
+    // every later message once a thread crossed 200 — the opposite of a chat view.
     const rows = await db()
       .select()
       .from(schema.messages)
       .where(eq(schema.messages.threadId, threadId))
-      .orderBy(asc(schema.messages.createdAt))
+      .orderBy(desc(schema.messages.createdAt))
       .limit(200);
-    return ok({ messages: rows });
+    return ok({ messages: rows.reverse() });
   } catch (e) {
     if (e instanceof AuthError) return fail("auth", e.message, e.status);
     throw e;

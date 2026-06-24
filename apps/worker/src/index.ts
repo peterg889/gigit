@@ -384,10 +384,15 @@ async function dispatchEvent(
   }
 
   // Parent booking outcomes cascade into tech sub-slots (PRD F6.2): release
-  // pays the tech; cancellation applies the same fee schedule.
+  // pays the tech; cancellation applies the same fee schedule. `released`,
+  // `refunded` and `partially_released` all mean the gig happened (they're only
+  // reachable post-gig, via auto-confirm or dispute resolution), so the tech
+  // performed and must be paid regardless of how the venue/performer split was
+  // adjudicated — otherwise a booked sub-slot is stranded in 'booked' forever
+  // with its charge neither released nor refunded.
   if (row.kind === "booking.transition") {
     const to = (row.payload as { to?: string }).to;
-    if (to === "released")
+    if (to === "released" || to === "refunded" || to === "partially_released")
       await cascadeParentToSubslots(row.subject_id, "released", "worker");
     else if (to === "cancelled_by_venue" || to === "cancelled_by_performer")
       await cascadeParentToSubslots(row.subject_id, "cancelled", "worker");

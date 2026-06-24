@@ -1,5 +1,5 @@
 import { db, schema } from "@gigit/db";
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sessionUserId } from "@/lib/session";
@@ -32,12 +32,16 @@ export default async function ThreadPage({
     );
   if (!participant) notFound();
 
-  const messages = await d
-    .select()
-    .from(schema.messages)
-    .where(eq(schema.messages.threadId, id))
-    .orderBy(asc(schema.messages.createdAt))
-    .limit(200);
+  // Latest 200 (newest-first from the DB), reversed to ascending for display —
+  // an asc+limit would show the oldest 200 and hide newer replies in long threads.
+  const messages = (
+    await d
+      .select()
+      .from(schema.messages)
+      .where(eq(schema.messages.threadId, id))
+      .orderBy(desc(schema.messages.createdAt))
+      .limit(200)
+  ).reverse();
 
   // A user's display name lives on whichever profile they hold — resolve the
   // other parties' names so messages aren't attributed to a generic "Them".

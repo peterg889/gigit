@@ -8,7 +8,21 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
-  const [t] = await db().select().from(schema.techs).where(eq(schema.techs.id, id));
+  // Public profile: project only public columns (drop the internal ownerUserId),
+  // mirroring techs/list.
+  const [t] = await db()
+    .select({
+      id: schema.techs.id,
+      name: schema.techs.name,
+      bio: schema.techs.bio,
+      gear: schema.techs.gear,
+      rateLaborCents: schema.techs.rateLaborCents,
+      rateWithRigCents: schema.techs.rateWithRigCents,
+      travelRadiusKm: schema.techs.travelRadiusKm,
+      createdAt: schema.techs.createdAt,
+    })
+    .from(schema.techs)
+    .where(eq(schema.techs.id, id));
   if (!t) return fail("not_found", "tech not found", 404);
   return ok({ tech: t });
 }

@@ -24,10 +24,15 @@ export async function POST(req: Request, { params }: Params) {
     const note = (await req.json().catch(() => ({})))?.note;
     const id = newId("application");
     const d = db();
-    await d
+    const inserted = await d
       .insert(schema.techSubslotApplications)
       .values({ id, subslotId, techId: tech.id, note: typeof note === "string" ? note.slice(0, 1000) : null })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: schema.techSubslotApplications.id });
+    // Re-apply by the same tech is a no-op insert; don't fabricate a 201 with an
+    // id that was never persisted — report the conflict like the slot apply route.
+    if (inserted.length === 0)
+      return fail("conflict", "you already applied to this sub-slot", 409);
     await appendEvent(d, {
       actor: userId,
       kind: "subslot.application",

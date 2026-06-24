@@ -162,11 +162,17 @@ export default async function BookingPage({
             />
           )}{" "}
           {state === "awaiting_confirmation" && asVenue && (
-            <span className="muted">
-              {paymentsEnabled()
-                ? "The pay releases automatically 24 hours after the set ends, unless you open a dispute."
-                : "This auto-confirms 24 hours after the set ends, unless you open a dispute. You and the act settle pay directly."}
-            </span>
+            <>
+              <ActionButton
+                endpoint={`/api/bookings/${id}/confirm`}
+                label={paymentsEnabled() ? "Confirm & release pay" : "Confirm it played"}
+              />{" "}
+              <span className="muted">
+                {paymentsEnabled()
+                  ? "Or the pay releases automatically 24 hours after the set ends, unless you open a dispute."
+                  : "Or this auto-confirms 24 hours after the set ends, unless you open a dispute. You and the act settle pay directly."}
+              </span>
+            </>
           )}
         </p>
         {state === "awaiting_confirmation" && (

@@ -83,7 +83,7 @@ export default async function AdminPage() {
         <Row k={paymentsOn ? "Refunded ($)" : "Reversed ($)"} v={money.refunded} />
         {!paymentsOn && (
           <p className="muted">
-            Contract value accrued in the ledger — Gigit moves none of it while
+            Booked value accrued in the ledger — Gigit moves none of it while
             payments are off; the venue pays the act directly.
           </p>
         )}
