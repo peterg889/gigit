@@ -133,7 +133,27 @@ export default async function BookingPage({
             <ActionButton endpoint={`/api/bookings/${id}/accept`} label="Accept offer" />
           )}{" "}
           {state === "confirmed" && (
-            <ActionButton endpoint={`/api/bookings/${id}/cancel`} label="Cancel booking" />
+            <>
+              <ActionButton
+                endpoint={`/api/bookings/${id}/cancel`}
+                label="Cancel booking"
+                confirm={
+                  asVenue
+                    ? "Cancel this booking? The slot reopens. " +
+                      (paymentsEnabled()
+                        ? "Per the agreement, the closer to the date the more of the act's fee is owed."
+                        : "Settle anything already arranged with the act directly — Gigit moves no money.")
+                    : "Cancel this booking? The slot reopens for the venue, and a cancellation counts against your reliability."
+                }
+              />{" "}
+              <span className="muted">
+                {asVenue
+                  ? paymentsEnabled()
+                    ? "Reopens the slot; per the agreement you owe more of the fee the closer to the date."
+                    : "Reopens the slot; settle anything arranged with the act directly."
+                  : "Reopens the slot; counts against your reliability. No fee owed."}
+              </span>
+            </>
           )}{" "}
           {state === "awaiting_confirmation" && asPerformer && (
             <ActionButton

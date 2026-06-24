@@ -10,6 +10,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -298,6 +299,15 @@ export const bookings = pgTable(
   (t) => [
     index("bookings_performer_idx").on(t.performerId),
     index("bookings_venue_idx").on(t.venueId),
+    // One booking may HOLD a slot at a time (double-booking guard). Multiple
+    // 'offered' bookings are fine (a venue can offer two applicants), but only one
+    // may advance to confirming+; the second accept trips this index and surfaces as
+    // SlotUnavailableError -> 409.
+    uniqueIndex("bookings_active_slot_uq")
+      .on(t.slotId)
+      .where(
+        sql`state in ('confirming','confirmed','awaiting_confirmation','disputed','released','partially_released')`,
+      ),
   ],
 );
 
@@ -507,6 +517,11 @@ export const events = pgTable(
     subjectId: text("subject_id").notNull(),
     payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
     dispatchedAt: ts("dispatched_at"),
+    // Outbox durability: a dispatch that keeps throwing increments attempts and,
+    // past the cap, is parked (dead_lettered_at) so it stops wedging the head.
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    deadLetteredAt: ts("dead_lettered_at"),
   },
   (t) => [
     index("events_outbox_idx").on(t.dispatchedAt),

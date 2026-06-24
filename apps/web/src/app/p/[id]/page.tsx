@@ -82,7 +82,7 @@ export default async function PerformerPage({
           {p.homeMetro} · travels {p.travelRadiusKm} km
           {p.genreTags.length > 0 && <> · {p.genreTags.join(", ")}</>}
         </p>
-        <p>{p.bio}</p>
+        <p>{p.bio || <span className="muted">No bio yet.</span>}</p>
         {p.rateMinCents != null && p.rateMaxCents != null && (
           <p className="muted">
             Typical rate:{" "}
@@ -93,6 +93,10 @@ export default async function PerformerPage({
           </p>
         )}
       </div>
+
+      {images.length === 0 && audio.length === 0 && embeds.length === 0 && visible.length === 0 && (
+        <div className="card muted">No photos, audio, or reviews up yet — check back soon.</div>
+      )}
 
       {images.length > 0 && (
         <div className="card">

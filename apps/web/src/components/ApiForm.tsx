@@ -10,6 +10,7 @@ interface Field {
   options?: string[];
   required?: boolean;
   placeholder?: string;
+  defaultValue?: string | number;
 }
 
 /**
@@ -23,6 +24,7 @@ export function ApiForm({
   redirectTo,
   transform,
   extra,
+  method = "POST",
 }: {
   endpoint: string;
   fields: Field[];
@@ -30,6 +32,7 @@ export function ApiForm({
   redirectTo?: string;
   transform?: string; // name of a built-in transform; serializable for server components
   extra?: Record<string, unknown>; // constant fields merged into the payload
+  method?: "POST" | "PATCH"; // PATCH for edit-in-place (partial update) forms
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -79,14 +82,14 @@ export function ApiForm({
         .filter(Boolean);
     }
     const res = await fetch(endpoint, {
-      method: "POST",
+      method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),
     });
     setBusy(false);
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setError(data?.error?.message ?? `request failed (${res.status})`);
+      setError(data?.error?.message ?? "Something went wrong on our end — give it another try in a moment.");
       return;
     }
     if (redirectTo) router.push(redirectTo);
@@ -99,9 +102,15 @@ export function ApiForm({
         <div key={f.name}>
           <label htmlFor={f.name}>{f.label}</label>
           {f.type === "textarea" ? (
-            <textarea id={f.name} name={f.name} rows={3} placeholder={f.placeholder} />
+            <textarea
+              id={f.name}
+              name={f.name}
+              rows={3}
+              placeholder={f.placeholder}
+              defaultValue={f.defaultValue}
+            />
           ) : f.type === "select" ? (
-            <select id={f.name} name={f.name} required={f.required}>
+            <select id={f.name} name={f.name} required={f.required} defaultValue={f.defaultValue}>
               {f.options?.map((o) => (
                 <option key={o} value={o}>
                   {o}
@@ -115,6 +124,7 @@ export function ApiForm({
               type={f.type === "datetime-local" ? "datetime-local" : f.type ?? "text"}
               required={f.required}
               placeholder={f.placeholder}
+              defaultValue={f.defaultValue}
             />
           )}
         </div>
@@ -146,7 +156,7 @@ export function RedirectButton({
           const data = await res.json().catch(() => null);
           setBusy(false);
           if (!res.ok) {
-            setNote(data?.error?.message ?? `failed (${res.status})`);
+            setNote(data?.error?.message ?? "Something went wrong on our end — try again in a moment.");
             return;
           }
           if (data?.url) window.location.href = data.url;
@@ -166,11 +176,13 @@ export function ActionButton({
   label,
   body,
   method = "POST",
+  confirm,
 }: {
   endpoint: string;
   label: string;
   body?: Record<string, unknown>;
   method?: "POST" | "DELETE";
+  confirm?: string; // when set, ask before firing (irreversible actions)
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -180,6 +192,7 @@ export function ActionButton({
       <button
         disabled={busy}
         onClick={async () => {
+          if (confirm && !window.confirm(confirm)) return;
           setBusy(true);
           const res = await fetch(endpoint, {
             method,
@@ -189,7 +202,7 @@ export function ActionButton({
           setBusy(false);
           if (!res.ok) {
             const data = await res.json().catch(() => null);
-            setError(data?.error?.message ?? `failed (${res.status})`);
+            setError(data?.error?.message ?? "Something went wrong on our end — try again in a moment.");
             return;
           }
           router.refresh();

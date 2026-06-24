@@ -26,11 +26,13 @@ export async function PUT(req: Request, { params }: Params) {
     if (buf.byteLength === 0 || buf.byteLength > max)
       return fail("too_large", "invalid upload size", 422);
     await localWrite(asset.storageKey!, buf);
+    // Stay 'uploaded': complete() is the single place that advances to
+    // 'processing' and requests screening — identical for the local and S3 paths.
     await d
       .update(schema.mediaAssets)
-      .set({ status: "processing", bytes: buf.byteLength })
+      .set({ bytes: buf.byteLength })
       .where(eq(schema.mediaAssets.id, id));
-    return ok({ id, status: "processing" });
+    return ok({ id, status: "uploaded" });
   } catch (e) {
     if (e instanceof AuthError) return fail("auth", e.message, e.status);
     throw e;

@@ -19,6 +19,7 @@ import {
   cascadeParentToSubslots,
   IllegalTransitionError,
   BookingNotFoundError,
+  SlotUnavailableError,
 } from "@gigit/db";
 import type { BookingEvent, Effect } from "@gigit/domain";
 import PgBoss from "pg-boss";
@@ -184,39 +185,83 @@ async function fireTimer(data: TimerJob) {
   }
 }
 
-/** Outbox: claim a batch, interpret, mark dispatched — at-least-once. */
-async function outboxLoop(boss: PgBoss) {
+const MAX_OUTBOX_ATTEMPTS = 5;
+
+/**
+ * Drain one outbox batch. Each event is dispatched and marked INDEPENDENTLY:
+ * a throw on one event neither rolls back the others (which already fired their
+ * external side effects) nor wedges the head — it increments that row's
+ * attempts and, past the cap, parks it (dead_lettered_at) so the head advances.
+ * Exported for the integration test. At-least-once; consumers stay idempotent.
+ */
+export async function drainOutboxOnce(
+  boss: PgBoss,
+  maxAttempts = MAX_OUTBOX_ATTEMPTS,
+): Promise<{ processed: number; dispatched: number; deadLettered: number }> {
   const pool = getPool();
-  while (!stopping) {
-    try {
-      const client = await pool.connect();
+  const stats = { processed: 0, dispatched: 0, deadLettered: 0 };
+  const client = await pool.connect();
+  try {
+    await client.query("begin");
+    const { rows } = await client.query(
+      `select id, actor, kind, subject_type, subject_id, payload, attempts
+         from events
+        where dispatched_at is null and dead_lettered_at is null
+        order by id
+        limit 50
+        for update skip locked`,
+    );
+    for (const row of rows) {
+      stats.processed++;
       try {
-        await client.query("begin");
-        const { rows } = await client.query(
-          `select id, actor, kind, subject_type, subject_id, payload
-             from events
-            where dispatched_at is null
-            order by id
-            limit 50
-            for update skip locked`,
+        await dispatchEvent(boss, row);
+        await client.query(`update events set dispatched_at = now() where id = $1`, [
+          row.id,
+        ]);
+        stats.dispatched++;
+      } catch (err) {
+        // dispatchEvent uses other connections, so a throw leaves THIS tx healthy.
+        const attempts = (row.attempts ?? 0) + 1;
+        const dead = attempts >= maxAttempts;
+        await client.query(
+          `update events
+              set attempts = $2,
+                  last_error = $3,
+                  dead_lettered_at = case when $4 then now() else null end
+            where id = $1`,
+          [row.id, attempts, String(err).slice(0, 1000), dead],
         );
-        for (const row of rows) {
-          await dispatchEvent(boss, row);
-        }
-        if (rows.length > 0) {
-          await client.query(
-            `update events set dispatched_at = now() where id = any($1::bigint[])`,
-            [rows.map((r) => r.id)],
+        log(dead ? "outbox.dead_letter" : "outbox.retry", {
+          eventId: row.id,
+          kind: row.kind,
+          attempts,
+          err: String(err),
+        });
+        if (dead) {
+          stats.deadLettered++;
+          Sentry.captureMessage(
+            `outbox dead-letter: event ${row.id} (${row.kind}) failed ${attempts}x`,
+            "error",
           );
         }
-        await client.query("commit");
-        if (rows.length === 0) await sleep(1000);
-      } catch (err) {
-        await client.query("rollback").catch(() => {});
-        throw err;
-      } finally {
-        client.release();
       }
+    }
+    await client.query("commit");
+  } catch (err) {
+    await client.query("rollback").catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+  return stats;
+}
+
+/** Outbox: drain batches forever — at-least-once, poison-isolated. */
+async function outboxLoop(boss: PgBoss) {
+  while (!stopping) {
+    try {
+      const stats = await drainOutboxOnce(boss);
+      if (stats.processed === 0) await sleep(1000);
     } catch (err) {
       log("outbox.error", { err: String(err) });
       await sleep(5000);
@@ -370,7 +415,9 @@ async function fireBookingEvent(bookingId: string, event: BookingEvent) {
   try {
     await runBookingTransition(bookingId, event, "worker");
   } catch (err) {
-    if (err instanceof IllegalTransitionError) return;
+    // Already-moved (stale) or slot-taken: an expected no-op, not a poison event.
+    if (err instanceof IllegalTransitionError || err instanceof SlotUnavailableError)
+      return;
     throw err;
   }
 }
@@ -407,6 +454,14 @@ async function reconcileLoop(boss: PgBoss) {
         log("outbox.LAGGING", { lagMs: lag });
         Sentry.captureMessage(`outbox lag ${Math.round(lag / 1000)}s`, "error");
       }
+      const { rows } = await getPool().query(
+        `select count(*)::int as n from events where dead_lettered_at is not null`,
+      );
+      const dead = (rows[0]?.n as number) ?? 0;
+      if (dead > 0) {
+        log("outbox.DEAD_LETTERS", { count: dead });
+        Sentry.captureMessage(`outbox has ${dead} dead-lettered event(s)`, "error");
+      }
     } catch {
       /* health check must never kill the loop */
     }
@@ -421,7 +476,10 @@ function log(kind: string, data: Record<string, unknown>) {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
+// Don't boot the worker when this module is imported by a test (e.g. the outbox
+// integration test importing drainOutboxOnce).
+if (!process.env.VITEST)
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
 });

@@ -46,10 +46,12 @@ The payments architecture stays in the codebase, dormant, behind the gateway sea
 |---|---|
 | Stripe Connect | Express onboarding, KYC, payouts, `stripeAccountId`, SetupIntent/Elements card capture |
 | Booking state machine | the money path: `request_payment`, `release_funds`, `refund_funds`, `cancellation_fee` effects; the `confirming → confirmed` PaymentIntent step; the `awaiting_confirmation → released` fund-release flow |
-| Ledger | `ledger_entries`, `recordLedgerEntry`, `bookingLedger`, the Σ-ledger invariant, nightly reconciliation |
+| Reconciliation | the nightly ledger-vs-Stripe diff (`reconcileMoney`) — there's nothing external to reconcile against |
 | Tax / compliance | W-9/TIN collection, 1099-K issuance, state-threshold config |
 | Disputes | the *money-resolution* engine (`release_full`/`refund_full`/`partial`); a lightweight report/flag for reviews + reliability stays |
-| Cancellations | the **fee math** (`venueCancellationFee`/`performerCancellationFee`) — cancellations still reopen the slot, notify, and apply a reliability strike, but move no money |
+| Cancellations | external money movement only — `decide()` still *computes* the fee and ledgers the intent, but `NullGateway` moves none of it; cancellations reopen the slot, notify, and apply a reliability strike |
+
+> **The live/dormant boundary.** The pure domain reducer and the intent **ledger stay live**: `decide()` still computes cancellation fees and emits the money *effects*, and `recordLedgerEntry` still records charge/release/fee rows at real contract value (a harmless, useful internal record — and the admin dashboard labels it "Booked value", not "Charged", while payments are off). What's switched off is everything that moves money *out of the platform*: `NullGateway` no-ops every Stripe charge / transfer / refund / payout, so no money actually moves. "Dormant" above means "drives no external money," not "the code never runs."
 
 **Stays ON (this is the product now):**
 profiles + link-in onboarding · slot posting (incl. SMS/NL parse) · the gig feed, filters, saved searches · apply / offer / accept handshake · in-app messaging + inquiries · reviews + reliability scores · the **sound-plan engine** · tech sub-slots · recurring series · admin/ops · the `events` outbox + analytics.

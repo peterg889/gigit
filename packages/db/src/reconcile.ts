@@ -98,7 +98,7 @@ export async function reconcileMoney(): Promise<Mismatch[]> {
 export async function outboxLagMs(): Promise<number> {
   const { rows } = await getPool().query(
     `select coalesce(extract(epoch from now() - min(occurred_at)) * 1000, 0) as lag
-       from events where dispatched_at is null`,
+       from events where dispatched_at is null and dead_lettered_at is null`,
   );
   return Math.round(Number(rows[0]?.lag ?? 0));
 }

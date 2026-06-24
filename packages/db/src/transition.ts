@@ -1,6 +1,7 @@
 import {
   decide,
   IllegalTransitionError,
+  InvalidResolutionError,
   offerCreatedEffects,
   newId,
   type BookingEvent,
@@ -20,7 +21,23 @@ export class BookingNotFoundError extends Error {
 export class ConcurrentUpdateError extends Error {
   readonly code = "concurrent_update";
 }
-export { IllegalTransitionError };
+export class SlotUnavailableError extends Error {
+  readonly code = "slot_unavailable";
+  constructor(readonly slotId: string) {
+    super(`slot ${slotId} is no longer available`);
+  }
+}
+
+/** Dig the Postgres SQLSTATE out of a (possibly drizzle-wrapped) error chain. */
+function pgErrorCode(e: unknown): string | undefined {
+  let cur = e as { code?: unknown; cause?: unknown } | undefined;
+  for (let i = 0; cur && i < 5; i++) {
+    if (typeof cur.code === "string") return cur.code;
+    cur = cur.cause as { code?: unknown; cause?: unknown } | undefined;
+  }
+  return undefined;
+}
+export { IllegalTransitionError, InvalidResolutionError };
 
 export interface TransitionResult {
   bookingId: string;
@@ -62,15 +79,24 @@ export async function runBookingTransition(
 
     const decision = decide(snapshot, event, now); // throws IllegalTransitionError
 
-    const updated = await tx
-      .update(bookings)
-      .set({
-        state: decision.next,
-        version: row.version + 1,
-        ...(event.kind === "PERFORMER_ACCEPTED" ? { performerAcceptedAt: now } : {}),
-      })
-      .where(and(eq(bookings.id, bookingId), eq(bookings.version, row.version)))
-      .returning({ id: bookings.id });
+    let updated;
+    try {
+      updated = await tx
+        .update(bookings)
+        .set({
+          state: decision.next,
+          version: row.version + 1,
+          ...(event.kind === "PERFORMER_ACCEPTED" ? { performerAcceptedAt: now } : {}),
+        })
+        .where(and(eq(bookings.id, bookingId), eq(bookings.version, row.version)))
+        .returning({ id: bookings.id });
+    } catch (e) {
+      // Double-booking guard: the partial unique index on bookings(slot_id) rejects a
+      // second booking advancing past 'offered' on the same slot. (23505 may be nested
+      // under drizzle's query-error wrapper.) Map to a clean conflict.
+      if (pgErrorCode(e) === "23505") throw new SlotUnavailableError(row.slotId);
+      throw e;
+    }
     if (updated.length === 0) throw new ConcurrentUpdateError(bookingId);
 
     // Money intents are ledgered atomically with the transition (K3/K5).

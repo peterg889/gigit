@@ -41,9 +41,9 @@ export function soundPlan(venue: VenuePA, needs: PerformerNeeds): SoundPlan {
     return { version: SOUND_PLAN_VERSION, verdict: "tech_and_rig_needed", gaps };
   }
 
-  if ((venue.mixerChannels ?? 0) < needs.inputs)
+  if (venue.mixerChannels != null && venue.mixerChannels < needs.inputs)
     gaps.push(
-      `mixer has ${venue.mixerChannels ?? 0} channels, act needs ${needs.inputs}`,
+      `mixer has ${venue.mixerChannels} channels, act needs ${needs.inputs}`,
     );
   if ((venue.micsAvailable ?? 0) < (needs.micsNeeded ?? 0))
     gaps.push(
@@ -59,9 +59,14 @@ export function soundPlan(venue: VenuePA, needs: PerformerNeeds): SoundPlan {
     return { version: SOUND_PLAN_VERSION, verdict: "covered", gaps };
 
   // PA exists but is insufficient or unstaffed → a tech can bridge with the house rig
-  // unless the channel deficit is severe (more than double), in which case bring a rig.
+  // unless the KNOWN channel deficit is severe (more than double), in which case bring a
+  // rig. An unspecified channel count is NOT a deficit: a staffed house PA that didn't
+  // fill in its channel count isn't "0 channels", and treating it so would spuriously
+  // inflate the conditional tech side.
   const severeChannelDeficit =
-    venue.hasPA && needs.inputs > 2 * (venue.mixerChannels ?? 0);
+    venue.hasPA &&
+    venue.mixerChannels != null &&
+    needs.inputs > 2 * venue.mixerChannels;
   return {
     version: SOUND_PLAN_VERSION,
     verdict: severeChannelDeficit ? "tech_and_rig_needed" : "tech_needed",

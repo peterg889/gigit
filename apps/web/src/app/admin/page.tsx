@@ -1,4 +1,4 @@
-import { db, getPool } from "@gigit/db";
+import { db, getPool, paymentsEnabled } from "@gigit/db";
 import Link from "next/link";
 import { isAdmin } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
@@ -16,6 +16,7 @@ export default async function AdminPage() {
     );
   void db();
   const pool = getPool();
+  const paymentsOn = paymentsEnabled();
   const q = async (sql: string) => (await pool.query(sql)).rows[0] ?? {};
 
   const slots = await q(`select
@@ -76,13 +77,19 @@ export default async function AdminPage() {
         <Row k="Disputed (a person needs to look)" v={bookings.disputed} />
       </div>
       <div className="card">
-        <h2>Money (ledger)</h2>
-        <Row k="Charged ($)" v={money.charged} />
-        <Row k="Released ($)" v={money.released} />
-        <Row k="Refunded ($)" v={money.refunded} />
+        <h2>{paymentsOn ? "Money (ledger)" : "Booked value (ledger)"}</h2>
+        <Row k={paymentsOn ? "Charged ($)" : "Booked ($)"} v={money.charged} />
+        <Row k={paymentsOn ? "Released ($)" : "Completed ($)"} v={money.released} />
+        <Row k={paymentsOn ? "Refunded ($)" : "Reversed ($)"} v={money.refunded} />
+        {!paymentsOn && (
+          <p className="muted">
+            Contract value accrued in the ledger — Gigit moves none of it while
+            payments are off; the venue pays the act directly.
+          </p>
+        )}
       </div>
       <div className="card">
-        <h2>Supply</h2>
+        <h2>The scene</h2>
         <Row k="Performers" v={supply.performers} />
         <Row k="Venues" v={supply.venues} />
         <Row k="Sound techs" v={supply.techs} />

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   decide,
   IllegalTransitionError,
+  InvalidResolutionError,
   offerCreatedEffects,
 } from "./machine.js";
 import {
@@ -218,5 +219,41 @@ describe("dispute resolutions", () => {
     );
     expect(d.next).toBe("refunded");
     expect(d.effects).toContainEqual({ kind: "refund_funds", amountCents: 50_000 });
+  });
+  it("rejects a partial split that doesn't conserve the booking total (would mint ledger value)", () => {
+    expect(() =>
+      decide(
+        booking("disputed"),
+        {
+          kind: "DISPUTE_RESOLVED",
+          resolution: { kind: "partial", releaseCents: 40_000, refundCents: 40_000 },
+        },
+        now,
+      ),
+    ).toThrow(InvalidResolutionError);
+  });
+  it("rejects a partial split with a negative leg", () => {
+    expect(() =>
+      decide(
+        booking("disputed"),
+        {
+          kind: "DISPUTE_RESOLVED",
+          resolution: { kind: "partial", releaseCents: 60_000, refundCents: -10_000 },
+        },
+        now,
+      ),
+    ).toThrow(InvalidResolutionError);
+  });
+  it("rejects a partial split with a non-integer leg (even when it sums to the total)", () => {
+    expect(() =>
+      decide(
+        booking("disputed"),
+        {
+          kind: "DISPUTE_RESOLVED",
+          resolution: { kind: "partial", releaseCents: 25_000.5, refundCents: 24_999.5 },
+        },
+        now,
+      ),
+    ).toThrow(InvalidResolutionError);
   });
 });

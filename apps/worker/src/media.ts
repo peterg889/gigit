@@ -13,7 +13,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
-import sharp from "sharp";
+// sharp is imported lazily where it's used (image renditions) so that merely
+// importing this module doesn't load its native binary — whose import-attribute
+// syntax also trips some bundlers/loaders. Keeps media.ts/index.ts test-loadable.
 import { newId } from "@gigit/domain";
 import { appendEvent, db, env, mediaFraudScreen, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
@@ -141,6 +143,7 @@ export async function screenMedia(assetId: string): Promise<void> {
   // Images: re-encode via sharp — drops EXIF/GPS and normalizes the container.
   if (asset.kind === "image") {
     const ext = path.extname(asset.storageKey!).toLowerCase();
+    const { default: sharp } = await import("sharp");
     const pipeline = sharp(bytes, { failOn: "error" }).rotate(); // bake orientation, drop metadata
     const out =
       ext === ".png"

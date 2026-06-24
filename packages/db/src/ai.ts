@@ -534,7 +534,28 @@ export const disputeBriefSchema = z.object({
 });
 export type DisputeBrief = z.output<typeof disputeBriefSchema>;
 
-const DISPUTE_BRIEF_V = "dispute_brief.v1";
+const DISPUTE_BRIEF_V = "dispute_brief.v2";
+
+/**
+ * Payments-aware dispute-brief system prompt. With payments deferred the ops
+ * reviewer cannot release/refund/split anything (no charge ever occurred and
+ * the venue paid the act directly), so the draft must propose a NON-monetary
+ * resolution — and must not reintroduce the deferred cancellation fee schedule.
+ */
+export function disputeBriefSystem(paymentsOn: boolean): string {
+  const base =
+    "You assemble dispute evidence for a live-gig marketplace ops reviewer. " +
+    "Summarize WHAT HAPPENED from the fenced event log only — never invent facts. ";
+  const adjudication = paymentsOn
+    ? "draftAdjudication proposes an outcome (release / refund / partial split " +
+      "with amounts) per the cancellation policy (>14d 0%, 48h-14d 50%, <48h " +
+      "100%) and auto-release rules, phrased as a PROPOSAL for a human to sign off. "
+    : "Gigit does NOT process the gig money (the venue pays the act directly), so " +
+      "draftAdjudication must propose a NON-MONETARY resolution only: uphold or " +
+      "dismiss the dispute, who is at fault for reliability, and what to tell each " +
+      "side. Never propose a dollar amount or a cancellation-fee split. ";
+  return base + adjudication + "confidence reflects evidence gaps.";
+}
 
 export async function disputeBrief(
   bookingId: string,
@@ -553,13 +574,7 @@ export async function disputeBrief(
   void d;
 
   const brief = await geminiJson({
-    system:
-      "You assemble dispute evidence for a live-gig marketplace ops reviewer. " +
-      "Summarize WHAT HAPPENED from the fenced event log only — never invent " +
-      "facts. draftAdjudication proposes an outcome (release / refund / " +
-      "partial split with amounts) per the cancellation policy (>14d 0%, " +
-      "48h-14d 50%, <48h 100%) and auto-release rules, phrased as a " +
-      "PROPOSAL for a human to sign off. confidence reflects evidence gaps.",
+    system: disputeBriefSystem(paymentsEnabled()),
     user: `<booking_events booking="${bookingId}">\n${evidence}\n</booking_events>`,
     responseSchema: {
       type: "OBJECT",

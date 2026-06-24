@@ -16,6 +16,14 @@ export class IllegalTransitionError extends Error {
   }
 }
 
+/** A dispute partial-split whose amounts don't conserve the booking total. */
+export class InvalidResolutionError extends Error {
+  readonly code = "invalid_resolution";
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 export interface Decision {
   next: BookingState;
   effects: Effect[];
@@ -179,6 +187,19 @@ export function decide(
               { kind: "notify", template: "dispute_resolved", to: "both" },
             ],
           };
+        // Money conservation lives in the reducer, not just the API edge: a
+        // partial must split EXACTLY the booking total (no value created/lost).
+        if (
+          !Number.isInteger(r.releaseCents) ||
+          !Number.isInteger(r.refundCents) ||
+          r.releaseCents < 0 ||
+          r.refundCents < 0 ||
+          r.releaseCents + r.refundCents !== terms.amountCents
+        )
+          throw new InvalidResolutionError(
+            `partial resolution must split exactly ${terms.amountCents} cents ` +
+              `(got release ${r.releaseCents} + refund ${r.refundCents})`,
+          );
         return {
           next: "partially_released",
           effects: [
