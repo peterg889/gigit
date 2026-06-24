@@ -1,5 +1,5 @@
 import { db, schema } from "@gigit/db";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sessionUserId } from "@/lib/session";
@@ -39,13 +39,36 @@ export default async function ThreadPage({
     .orderBy(asc(schema.messages.createdAt))
     .limit(200);
 
+  // A user's display name lives on whichever profile they hold — resolve the
+  // other parties' names so messages aren't attributed to a generic "Them".
+  const others = [
+    ...new Set(
+      messages
+        .map((m) => m.senderUserId)
+        .filter((s): s is string => !!s && s !== userId),
+    ),
+  ];
+  const nameByUser = new Map<string, string>();
+  if (others.length > 0) {
+    const [perf, ven, tec] = await Promise.all([
+      d.select({ u: schema.performers.ownerUserId, n: schema.performers.name }).from(schema.performers).where(inArray(schema.performers.ownerUserId, others)),
+      d.select({ u: schema.venues.ownerUserId, n: schema.venues.name }).from(schema.venues).where(inArray(schema.venues.ownerUserId, others)),
+      d.select({ u: schema.techs.ownerUserId, n: schema.techs.name }).from(schema.techs).where(inArray(schema.techs.ownerUserId, others)),
+    ]);
+    for (const r of [...perf, ...ven, ...tec]) if (r.u && !nameByUser.has(r.u)) nameByUser.set(r.u, r.n);
+  }
+  const counterparty = others.map((u) => nameByUser.get(u)).find(Boolean);
+
   return (
     <div>
-      <h1>Conversation</h1>
+      <h1>{counterparty ? `Conversation with ${counterparty}` : "Conversation"}</h1>
       {messages.map((m) => (
         <div className="card" key={m.id}>
           <span className="muted">
-            {m.senderUserId === userId ? "You" : "Them"} ·{" "}
+            {m.senderUserId === userId
+              ? "You"
+              : (m.senderUserId && nameByUser.get(m.senderUserId)) || "Them"}{" "}
+            ·{" "}
             {m.createdAt.toLocaleString("en-US", {
               dateStyle: "medium",
               timeStyle: "short",
