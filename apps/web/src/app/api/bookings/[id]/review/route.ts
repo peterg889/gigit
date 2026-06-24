@@ -1,6 +1,6 @@
 import { TERMINAL_STATES, newId, reviewCreateSchema } from "@gigit/domain";
 import type { BookingState } from "@gigit/domain";
-import { appendEvent, db, schema } from "@gigit/db";
+import { appendEvent, db, pgErrorCode, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
@@ -47,7 +47,9 @@ export async function POST(req: Request, { params }: Params) {
         body: parsed.data.body,
       });
     } catch (err) {
-      if (String(err).includes("reviews_booking_author_uq"))
+      // drizzle wraps the pg error, so the constraint name lives on .cause —
+      // match the SQLSTATE (23505 = unique_violation) instead of the message.
+      if (pgErrorCode(err) === "23505")
         return fail("conflict", "you already reviewed this booking", 409);
       throw err;
     }
