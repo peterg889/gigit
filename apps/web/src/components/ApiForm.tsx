@@ -89,7 +89,7 @@ export function ApiForm({
     setBusy(false);
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setError(data?.error?.message ?? `request failed (${res.status})`);
+      setError(data?.error?.message ?? "Something went wrong on our end — give it another try in a moment.");
       return;
     }
     if (redirectTo) router.push(redirectTo);
@@ -156,7 +156,7 @@ export function RedirectButton({
           const data = await res.json().catch(() => null);
           setBusy(false);
           if (!res.ok) {
-            setNote(data?.error?.message ?? `failed (${res.status})`);
+            setNote(data?.error?.message ?? "Something went wrong on our end — try again in a moment.");
             return;
           }
           if (data?.url) window.location.href = data.url;
@@ -176,11 +176,13 @@ export function ActionButton({
   label,
   body,
   method = "POST",
+  confirm,
 }: {
   endpoint: string;
   label: string;
   body?: Record<string, unknown>;
   method?: "POST" | "DELETE";
+  confirm?: string; // when set, ask before firing (irreversible actions)
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -190,6 +192,7 @@ export function ActionButton({
       <button
         disabled={busy}
         onClick={async () => {
+          if (confirm && !window.confirm(confirm)) return;
           setBusy(true);
           const res = await fetch(endpoint, {
             method,
@@ -199,7 +202,7 @@ export function ActionButton({
           setBusy(false);
           if (!res.ok) {
             const data = await res.json().catch(() => null);
-            setError(data?.error?.message ?? `failed (${res.status})`);
+            setError(data?.error?.message ?? "Something went wrong on our end — try again in a moment.");
             return;
           }
           router.refresh();

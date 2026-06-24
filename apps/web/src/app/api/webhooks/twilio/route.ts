@@ -57,7 +57,7 @@ async function route(phone: string, body: string): Promise<string | null> {
       .update(schema.users)
       .set({ smsOptedOutAt: null })
       .where(eq(schema.users.phone, phone));
-    return "You're back on. We only text what matters: offers, confirmations, pay.";
+    return "You're back on. We only text what matters: offers, confirmations, day-of details.";
   }
   if (upper === "HELP" || upper === "INFO") {
     return "Gigit — live music, comedy & sound for small rooms. Venues: text what you need ('acoustic Friday, $300'). Help: reply here. Opt out: STOP.";

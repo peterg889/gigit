@@ -81,7 +81,7 @@ export default async function VenuePage({
           {v.metro} · capacity {v.capacity ?? "?"}
           {v.noiseCurfew && <> · curfew {v.noiseCurfew}</>}
         </p>
-        <p>{v.bio}</p>
+        <p>{v.bio || <span className="muted">No description yet.</span>}</p>
         <p className="muted">
           Sound:{" "}
           {pa.hasPA

@@ -14,7 +14,7 @@ async function post(url: string, body: unknown, method: "POST" | "PATCH" = "POST
     body: JSON.stringify(body),
   });
   const data = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(data?.error?.message ?? `failed (${res.status})`);
+  if (!res.ok) throw new Error(data?.error?.message ?? "Something went wrong — try again in a moment.");
   return data;
 }
 

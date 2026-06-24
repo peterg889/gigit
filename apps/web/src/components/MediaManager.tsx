@@ -28,15 +28,15 @@ export function MediaManager({
         }),
       });
       const target = await presign.json();
-      if (!presign.ok) throw new Error(target?.error?.message ?? "presign failed");
+      if (!presign.ok) throw new Error(target?.error?.message ?? "Couldn't start the upload — try again.");
       const put = await fetch(target.uploadUrl, {
         method: "PUT",
         headers: target.headers ?? {},
         body: file,
       });
-      if (!put.ok) throw new Error(`upload failed (${put.status})`);
+      if (!put.ok) throw new Error("The upload didn't go through — try again.");
       const done = await fetch(`/api/media/${target.id}/complete`, { method: "POST" });
-      if (!done.ok) throw new Error("finalize failed");
+      if (!done.ok) throw new Error("Couldn't finish the upload — try again.");
       setMsg(`Uploaded ${file.name}`);
       router.refresh();
     } catch (e) {
@@ -76,7 +76,7 @@ export function MediaManager({
                 body: JSON.stringify({ url: embedUrl }),
               });
               const data = await res.json().catch(() => null);
-              setMsg(res.ok ? "Video added" : (data?.error?.message ?? "failed"));
+              setMsg(res.ok ? "Video added" : (data?.error?.message ?? "Couldn't add that — check the link and try again."));
               if (res.ok) {
                 setEmbedUrl("");
                 router.refresh();
