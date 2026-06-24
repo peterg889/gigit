@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   IllegalSubslotTransitionError,
+  SUBSLOT_EVENTS,
+  SUBSLOT_STATES,
   decideSubslot,
+  type SubslotEvent,
   type SubslotSnapshot,
+  type SubslotState,
 } from "./subslot.js";
 
 const gig = new Date("2026-07-10T20:00:00Z");
@@ -70,4 +74,43 @@ describe("tech sub-slot machine", () => {
       decideSubslot(snap("open"), { kind: "PARENT_RELEASED" }, new Date()),
     ).toThrow(IllegalSubslotTransitionError);
   });
+});
+
+// Every state×event pair either transitions to a known state or throws — no
+// crash, no undefined, no dead 'cancelled_by_tech' state (which is gone).
+const LEGAL: Record<SubslotState, Partial<Record<(typeof SUBSLOT_EVENTS)[number], SubslotState>>> = {
+  open: {
+    TECH_BOOKED: "booked",
+    PARENT_CANCELLED: "cancelled_with_parent",
+    PAYER_CANCELLED: "cancelled_by_payer",
+  },
+  booked: {
+    PARENT_RELEASED: "released",
+    PARENT_CANCELLED: "cancelled_with_parent",
+    PAYER_CANCELLED: "cancelled_by_payer",
+    TECH_CANCELLED: "open",
+  },
+  released: {},
+  cancelled_by_payer: {},
+  cancelled_with_parent: {},
+};
+
+describe("tech sub-slot machine — exhaustive state×event table", () => {
+  for (const state of SUBSLOT_STATES) {
+    for (const ev of SUBSLOT_EVENTS) {
+      const expected = LEGAL[state][ev];
+      const event = (ev === "TECH_BOOKED"
+        ? { kind: ev, techId: "tec_x" }
+        : { kind: ev }) as SubslotEvent;
+      it(`${state} + ${ev} → ${expected ?? "illegal"}`, () => {
+        if (expected) {
+          expect(decideSubslot(snap(state, "tec_1"), event, gig).next).toBe(expected);
+        } else {
+          expect(() => decideSubslot(snap(state, "tec_1"), event, gig)).toThrow(
+            IllegalSubslotTransitionError,
+          );
+        }
+      });
+    }
+  }
 });

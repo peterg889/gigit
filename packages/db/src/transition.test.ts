@@ -253,4 +253,62 @@ describe("booking transition runner (integration)", () => {
     const [r2] = await d.select().from(bookings).where(eq(bookings.id, b2));
     expect(r2!.state).toBe("offered");
   });
+
+  it("createOffer rejects terms whose endsAt is not after startsAt", async () => {
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    await expect(
+      createOffer({
+        applicationId: appId,
+        slotId,
+        performerId,
+        venueId,
+        actor: userVenue,
+        terms: {
+          amountCents: 50_000,
+          startsAt: startsAt.toISOString(),
+          endsAt: startsAt.toISOString(), // equal → invalid
+        },
+      }),
+    ).rejects.toThrow(/endsAt must be after startsAt/);
+  });
+
+  it("performer cancellation strikes reliability and reopens the slot (payments off)", async () => {
+    const d = db();
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker");
+    const [before] = await d
+      .select({ s: performers.reliabilityStrikes })
+      .from(performers)
+      .where(eq(performers.id, performerId));
+
+    const cancelled = await runBookingTransition(
+      bookingId,
+      { kind: "PERFORMER_CANCELLED" },
+      userBand,
+    );
+    expect(cancelled.to).toBe("cancelled_by_performer");
+    expect(cancelled.effects).toContainEqual({ kind: "reopen_slot" });
+    expect(cancelled.effects).toContainEqual({ kind: "reliability_strike", against: "performer" });
+
+    const [slot] = await d.select().from(slots).where(eq(slots.id, slotId));
+    expect(slot!.status).toBe("open"); // reopened, in-tx
+    const [after] = await d
+      .select({ s: performers.reliabilityStrikes })
+      .from(performers)
+      .where(eq(performers.id, performerId));
+    expect(after!.s).toBe((before!.s ?? 0) + 1); // exactly one strike
+  });
+
+  it("drives the full happy lifecycle to 'released' under the null gateway", async () => {
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker");
+    await runBookingTransition(bookingId, { kind: "GIG_ENDED" }, "worker");
+    const r = await runBookingTransition(bookingId, { kind: "VENUE_CONFIRMED" }, userVenue);
+    expect(r.to).toBe("released");
+    expect(r.effects).toContainEqual({ kind: "release_funds", amountCents: 50_000 });
+  });
 });

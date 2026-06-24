@@ -1,5 +1,6 @@
 import { db, schema } from "@gigit/db";
 import { asc, eq } from "drizzle-orm";
+import Link from "next/link";
 import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
@@ -84,16 +85,19 @@ export default async function TechsPage() {
         ))}
       </div>
       <p className="muted">
-        Live engineers, with or without a rig — booked like the band, reviewed
-        like the band. Venues and performers can message them directly to cover a
-        night.
+        Live engineers, with or without a rig — booked on the same feed, with the
+        same standing as the act. Venues and performers can message them directly
+        to cover a night.
       </p>
       {techs.length === 0 && (
         <div className="card">No techs on the board yet.</div>
       )}
       {techs.map((t) => (
         <div className="card" key={t.id}>
-          <strong>{t.name}</strong> <span className="badge">{GEAR_LABEL[t.gear]}</span>
+          <strong>
+            <Link href={`/t/${t.id}`}>{t.name}</Link>
+          </strong>{" "}
+          <span className="badge">{GEAR_LABEL[t.gear]}</span>
           <p className="muted">{t.bio}</p>
           <p className="muted">
             {t.rateLaborCents != null && (

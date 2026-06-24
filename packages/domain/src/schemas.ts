@@ -10,7 +10,7 @@ export const venueKinds = [
 ] as const;
 export const slotFormats = ["music", "comedy", "either"] as const;
 
-export const performerCreateSchema = z.object({
+const performerObject = z.object({
   kind: z.enum(performerKinds),
   name: z.string().min(1).max(120),
   bio: z.string().max(4000).default(""),
@@ -29,7 +29,12 @@ export const performerCreateSchema = z.object({
     })
     .default({ inputs: 0 }),
 });
-export const performerUpdateSchema = performerCreateSchema.partial();
+
+const rateOk = (v: { rateMinCents?: number | null; rateMaxCents?: number | null }) =>
+  v.rateMinCents == null || v.rateMaxCents == null || v.rateMinCents <= v.rateMaxCents;
+const rateMsg = { message: "rate floor must be at or below the ceiling", path: ["rateMaxCents"] };
+export const performerCreateSchema = performerObject.refine(rateOk, rateMsg);
+export const performerUpdateSchema = performerObject.partial().refine(rateOk, rateMsg);
 
 export const venueCreateSchema = z.object({
   kind: z.enum(venueKinds),

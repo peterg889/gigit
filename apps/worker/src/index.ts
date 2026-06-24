@@ -20,6 +20,7 @@ import {
   IllegalTransitionError,
   BookingNotFoundError,
   SlotUnavailableError,
+  ConcurrentUpdateError,
 } from "@gigit/db";
 import type { BookingEvent, Effect } from "@gigit/domain";
 import PgBoss from "pg-boss";
@@ -142,13 +143,15 @@ async function main() {
   await boss.work(REENGAGE_QUEUE, async () => {
     const stale = await staleOpenSlots();
     for (const s of stale) {
-      await notifyUser(s.ownerUserId, "slot_quiet");
+      // Mark BEFORE notifying so the dedup marker is the commit point: a crash
+      // after this favors a missed nudge over a duplicate (spam is the worse failure).
       await appendEvent(db(), {
         actor: "system",
         kind: "slot.reengaged",
         subjectType: "slot",
         subjectId: s.slotId,
       });
+      await notifyUser(s.ownerUserId, "slot_quiet");
     }
     if (stale.length > 0) log("reengage.nudged", { count: stale.length });
   });
@@ -177,9 +180,15 @@ async function fireTimer(data: TimerJob) {
     );
     log("timer.fired", { bookingId: data.bookingId, fire: data.fire, to: r.to });
   } catch (err) {
-    if (err instanceof IllegalTransitionError || err instanceof BookingNotFoundError) {
+    // Stale (already moved), gone, or lost a concurrent race — all benign no-ops
+    // for an idempotent timer.
+    if (
+      err instanceof IllegalTransitionError ||
+      err instanceof BookingNotFoundError ||
+      err instanceof ConcurrentUpdateError
+    ) {
       log("timer.stale", { bookingId: data.bookingId, fire: data.fire });
-      return; // idempotent no-op
+      return;
     }
     throw err;
   }
