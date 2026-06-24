@@ -1,6 +1,6 @@
 import { patternFromFirst, seriesCreateSchema } from "@gigit/domain";
 import { createSeries, db, seriesForVenue } from "@gigit/db";
-import { AuthError, requireUser, venueOwnedBy } from "@/lib/auth";
+import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 /**
@@ -32,8 +32,7 @@ export async function POST(req: Request) {
     });
     return ok({ seriesId }, 201);
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }
 
@@ -46,7 +45,6 @@ export async function GET() {
     const series = await seriesForVenue(db(), venue.id);
     return ok({ series });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

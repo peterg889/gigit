@@ -1,6 +1,6 @@
 import { db, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { AuthError, requireUser } from "@/lib/auth";
+import { requireUser, respondError } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 import { AUDIO_MAX_BYTES, IMAGE_MAX_BYTES, localWrite } from "@/lib/storage";
 
@@ -34,7 +34,6 @@ export async function PUT(req: Request, { params }: Params) {
       .where(eq(schema.mediaAssets.id, id));
     return ok({ id, status: "uploaded" });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

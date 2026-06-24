@@ -2,7 +2,7 @@ import { embedCreateSchema, newId } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { AuthError, performerOwnedBy, requireUser } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 import { fetchEmbedMeta } from "@/lib/oembed";
 import { PER_PROFILE_EMBED_QUOTA } from "@/lib/storage";
@@ -66,7 +66,6 @@ export async function POST(req: Request) {
     });
     return ok({ id }, 201);
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

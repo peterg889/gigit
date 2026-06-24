@@ -8,7 +8,7 @@ import {
   schema,
 } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -48,13 +48,12 @@ export async function POST(_req: Request, { params }: Params) {
     );
     return ok({ state: result.to });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
     if (e instanceof IllegalTransitionError)
       return fail("illegal_transition", e.message, 409);
     if (e instanceof ConcurrentUpdateError)
       return fail("conflict", "booking changed concurrently — retry", 409);
     if (e instanceof SlotUnavailableError)
       return fail("slot_unavailable", "Someone else just took this slot.", 409);
-    throw e;
+    return respondError(e);
   }
 }

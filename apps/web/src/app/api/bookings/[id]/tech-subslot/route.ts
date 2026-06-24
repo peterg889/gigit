@@ -1,7 +1,7 @@
 import { techSubslotCreateSchema } from "@gigit/domain";
 import { createTechSubslot, db, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -39,7 +39,6 @@ export async function POST(req: Request, { params }: Params) {
     });
     return ok({ subslotId }, 201);
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

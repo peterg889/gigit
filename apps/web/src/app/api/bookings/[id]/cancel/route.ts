@@ -6,7 +6,7 @@ import {
   schema,
 } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -35,11 +35,10 @@ export async function POST(_req: Request, { params }: Params) {
     const result = await runBookingTransition(bookingId, { kind: event }, userId);
     return ok({ state: result.to, effects: result.effects });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
     if (e instanceof IllegalTransitionError)
       return fail("illegal_transition", e.message, 409);
     if (e instanceof ConcurrentUpdateError)
       return fail("conflict", "booking changed concurrently — retry", 409);
-    throw e;
+    return respondError(e);
   }
 }

@@ -2,7 +2,7 @@ import { appendEvent, db, schema } from "@gigit/db";
 import { and, eq, notInArray } from "drizzle-orm";
 import type { NextResponse } from "next/server";
 import { z } from "zod";
-import { AuthError, requireUser, venueOwnedBy } from "@/lib/auth";
+import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -53,8 +53,7 @@ export async function PATCH(req: Request, { params }: Params): Promise<NextRespo
     });
     return ok({ id });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }
 
@@ -100,7 +99,6 @@ export async function DELETE(_req: Request, { params }: Params): Promise<NextRes
     });
     return ok({ id, status: "cancelled" });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

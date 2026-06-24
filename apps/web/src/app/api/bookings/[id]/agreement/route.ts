@@ -1,7 +1,7 @@
 import { renderAgreement } from "@gigit/domain";
 import { db, paymentsEnabled, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -46,7 +46,6 @@ export async function GET(_req: Request, { params }: Params) {
       performerAcceptedAt: row.booking.performerAcceptedAt,
     });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

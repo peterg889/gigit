@@ -1,7 +1,7 @@
 import { appendEvent, db, recordLedgerEntry, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { AuthError, isAdmin, requireUser } from "@/lib/auth";
+import { isAdmin, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -53,7 +53,6 @@ export async function POST(req: Request, { params }: Params) {
     });
     return ok({ bookingId, direction, amountCents });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

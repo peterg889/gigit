@@ -1,7 +1,7 @@
 import { techUpdateSchema } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { AuthError, requireUser } from "@/lib/auth";
+import { requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -47,7 +47,6 @@ export async function PATCH(req: Request, { params }: Params) {
     });
     return ok({ id });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

@@ -1,7 +1,7 @@
 import { offerCreateSchema } from "@gigit/domain";
 import { createOffer, db, paymentGateway, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { AuthError, requireUser, venueOwnedBy } from "@/lib/auth";
+import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -59,7 +59,6 @@ export async function POST(req: Request, { params }: Params) {
     });
     return ok({ bookingId }, 201);
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

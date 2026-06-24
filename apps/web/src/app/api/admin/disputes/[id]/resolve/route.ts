@@ -8,7 +8,7 @@ import {
 } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { AuthError, isAdmin, requireUser } from "@/lib/auth";
+import { isAdmin, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -58,11 +58,10 @@ export async function POST(req: Request, { params }: Params) {
     );
     return ok({ state: result.to });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
     if (e instanceof IllegalTransitionError)
       return fail("illegal_transition", "booking is not disputed", 409);
     if (e instanceof ConcurrentUpdateError) return fail("conflict", "retry", 409);
     if (e instanceof InvalidResolutionError) return fail("validation", e.message, 422);
-    throw e;
+    return respondError(e);
   }
 }

@@ -2,7 +2,7 @@ import { TERMINAL_STATES, newId, reviewCreateSchema } from "@gigit/domain";
 import type { BookingState } from "@gigit/domain";
 import { appendEvent, db, pgErrorCode, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -62,7 +62,6 @@ export async function POST(req: Request, { params }: Params) {
     });
     return ok({ id }, 201);
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

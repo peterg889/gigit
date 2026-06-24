@@ -1,7 +1,7 @@
 import { messageCreateSchema, newId } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
 import { and, desc, eq } from "drizzle-orm";
-import { AuthError, requireUser } from "@/lib/auth";
+import { requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -36,8 +36,7 @@ export async function GET(_req: Request, { params }: Params) {
       .limit(200);
     return ok({ messages: rows.reverse() });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }
 
@@ -68,7 +67,6 @@ export async function POST(req: Request, { params }: Params) {
     });
     return ok({ id }, 201);
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }
