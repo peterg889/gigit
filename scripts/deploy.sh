@@ -53,8 +53,10 @@ IDS="$(aws ec2 describe-instances \
             "Name=instance-state-name,Values=running" \
   --query "Reservations[].Instances[].InstanceId" --output text)"
 if [[ -n "$IDS" ]]; then
+  # The instance's run-worker.sh (written by userData) re-materializes env from
+  # AppSecrets + the CDK-computed vars and restarts the container with --env-file.
   aws ssm send-command --instance-ids $IDS --document-name AWS-RunShellScript \
-    --parameters "commands=[\"aws ecr get-login-password --region ${REGION} | docker login --username AWS --password-stdin ${REGISTRY}\",\"docker pull ${REGISTRY}/gigit-worker-${STAGE}:latest\",\"docker rm -f worker || true\",\"docker run -d --restart=always --name worker ${REGISTRY}/gigit-worker-${STAGE}:latest\"]" \
+    --parameters "commands=[\"bash /usr/local/bin/run-worker.sh\"]" \
     --output text --query "Command.CommandId" >/dev/null
   echo "  worker redeploy command sent to: $IDS"
 else
@@ -64,7 +66,8 @@ fi
 echo ""
 echo "✅ Deploy complete. Outputs in /tmp/gigit-${STAGE}-outputs.json"
 echo "   Next:"
-echo "   • Fill AppSecrets in Secrets Manager (DATABASE_URL, SESSION_SECRET, STRIPE_*, TWILIO_*, GEMINI_API_KEY, SENTRY_DSN)"
+echo "   • Fill AppSecrets in Secrets Manager (DATABASE_URL, SESSION_SECRET, APP_URL, EMAIL_FROM, TWILIO_*, GEMINI_API_KEY, SENTRY_DSN; STRIPE_* deferred)"
+echo "     (STORAGE_DRIVER/S3_BUCKET/AWS_REGION/MEDIA_CDN_URL/NODE_ENV are wired automatically by the stack)"
 echo "   • Run migrations:  DATABASE_URL=… pnpm db:migrate"
 echo "   • Put the deploy-role ARN (from the foundation outputs) in the GitHub secret AWS_DEPLOY_ROLE_ARN${STAGE/staging/}"
 echo "   • Subscribe to the OpsAlertsTopic SNS topic"

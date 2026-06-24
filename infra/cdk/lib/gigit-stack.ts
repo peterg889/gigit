@@ -94,6 +94,32 @@ export class GigitStack extends cdk.Stack {
       description: "Gigit application env (filled manually per stage)",
     });
 
+    // Env wiring (both containers boot with an empty env otherwise → env() throws
+    // on DATABASE_URL/SESSION_SECRET → crash-loop). Secret-backed keys are filled
+    // by the operator in AppSecrets; the rest are computed from this stack so they
+    // can't drift or be forgotten on the checklist.
+    const SECRET_ENV_KEYS = [
+      "DATABASE_URL",
+      "SESSION_SECRET",
+      "APP_URL", // the public web origin — used in every emailed/SMS link + Stripe redirect
+      "EMAIL_FROM",
+      "PAYMENTS_ENABLED",
+      "STRIPE_SECRET_KEY",
+      "STRIPE_WEBHOOK_SECRET",
+      "GEMINI_API_KEY",
+      "TWILIO_ACCOUNT_SID",
+      "TWILIO_AUTH_TOKEN",
+      "TWILIO_FROM",
+      "SENTRY_DSN",
+    ];
+    const computedEnv: Record<string, string> = {
+      NODE_ENV: "production",
+      STORAGE_DRIVER: "s3",
+      S3_BUCKET: media.bucketName,
+      AWS_REGION: this.region,
+      MEDIA_CDN_URL: `https://${cdn.distributionDomainName}`,
+    };
+
     // ── web: App Runner from ECR ────────────────────────────────────────────
     const accessRole = new iam.Role(this, "AppRunnerAccessRole", {
       assumedBy: new iam.ServicePrincipal("build.apprunner.amazonaws.com"),
@@ -113,7 +139,18 @@ export class GigitStack extends cdk.Stack {
         imageRepository: {
           imageIdentifier: `${webRepo.repositoryUri}:latest`,
           imageRepositoryType: "ECR",
-          imageConfiguration: { port: "3000" },
+          imageConfiguration: {
+            port: "3000",
+            // App Runner resolves each secret-manager JSON key by ref; without
+            // this the container has no DATABASE_URL/SESSION_SECRET and crash-loops.
+            runtimeEnvironmentSecrets: SECRET_ENV_KEYS.map((name) => ({
+              name,
+              value: `${appSecrets.secretArn}:${name}::`,
+            })),
+            runtimeEnvironmentVariables: Object.entries(computedEnv).map(
+              ([name, value]) => ({ name, value }),
+            ),
+          },
         },
       },
       instanceConfiguration: {
@@ -140,12 +177,32 @@ export class GigitStack extends cdk.Stack {
 
     // ECR registry host (token-safe — do NOT .split() a repositoryUri token).
     const registry = `${this.account}.dkr.ecr.${this.region}.amazonaws.com`;
+    const workerImage = `${workerRepo.repositoryUri}:latest`;
+    const computedEnvLines = Object.entries(computedEnv)
+      .map(([k, v]) => `${k}=${v}`)
+      .join("\n");
+    // One materialize-and-run script lives on the instance, so the first boot and
+    // every later redeploy (deploy.sh / CI via SSM) share the same env wiring:
+    // pull AppSecrets → /etc/gigit.env, append the computed vars, run the image
+    // with --env-file. Without this the worker boots with no DATABASE_URL.
+    const runWorkerScript = [
+      "#!/bin/bash",
+      "set -euo pipefail",
+      `aws secretsmanager get-secret-value --region ${this.region} --secret-id ${appSecrets.secretArn} --query SecretString --output text | jq -r 'to_entries[]|"\\(.key)=\\(.value)"' > /etc/gigit.env`,
+      "cat >> /etc/gigit.env <<'ENVEOF'",
+      computedEnvLines,
+      "ENVEOF",
+      `aws ecr get-login-password --region ${this.region} | docker login --username AWS --password-stdin ${registry}`,
+      `docker pull ${workerImage}`,
+      "docker rm -f worker || true",
+      `docker run -d --restart=always --name worker --env-file /etc/gigit.env ${workerImage}`,
+    ].join("\n");
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
-      "dnf install -y docker && systemctl enable --now docker",
-      `aws ecr get-login-password --region ${this.region} | docker login --username AWS --password-stdin ${registry}`,
-      // env is materialized from Secrets Manager by the redeploy script (SSM doc, M1 follow-up)
-      `docker run -d --restart=always --name worker ${workerRepo.repositoryUri}:latest`,
+      "dnf install -y docker jq && systemctl enable --now docker",
+      `cat > /usr/local/bin/run-worker.sh <<'EOS'\n${runWorkerScript}\nEOS`,
+      "chmod +x /usr/local/bin/run-worker.sh",
+      "/usr/local/bin/run-worker.sh",
     );
     const worker = new ec2.Instance(this, "Worker", {
       vpc,
