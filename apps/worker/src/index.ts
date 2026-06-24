@@ -25,7 +25,14 @@ import {
 import type { BookingEvent, Effect } from "@gigit/domain";
 import PgBoss from "pg-boss";
 import * as Sentry from "@sentry/node";
-import { notifyBookingParties, notifySubslotParties, notifyUser } from "./notify.js";
+import {
+  notifyBookingParties,
+  notifyOtp,
+  notifySlotVenue,
+  notifySubslotParties,
+  notifyThreadCounterparties,
+  notifyUser,
+} from "./notify.js";
 import { recheckEmbeds, screenMedia } from "./media.js";
 import {
   matchSavedSearches,
@@ -330,10 +337,16 @@ async function dispatchEvent(
             fx.template,
             fx.to as "payer" | "tech" | "both",
           );
-        else if (row.actor.startsWith("usr_"))
-          // non-booking notifications (messages, applications) reach the
-          // counterparty via thread participants in M2; log for now
-          log("notify", { to: fx.to, template: fx.template, subject: row.subject_id });
+        else if (row.subject_type === "auth")
+          // login code: subjectId is the destination, code lives on the otp row
+          await notifyOtp((row.payload as { otpId?: string }).otpId ?? "");
+        else if (row.subject_type === "slot")
+          // a performer applied → the slot's venue owner hears about it
+          await notifySlotVenue(row.subject_id, fx.template);
+        else if (row.subject_type === "thread")
+          // a message/inquiry → every participant except the sender
+          await notifyThreadCounterparties(row.subject_id, row.actor, fx.template);
+        else log("notify.unrouted", { to: fx.to, template: fx.template, subject: row.subject_id });
         break;
       case "release_funds":
         await paymentGateway().transfer(row.subject_id, fx.amountCents);
