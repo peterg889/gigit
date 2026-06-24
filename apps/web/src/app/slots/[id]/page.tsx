@@ -1,6 +1,6 @@
 import { performerReliability, soundPlan } from "@gigit/domain";
 import { db, paymentsEnabled, performerReliabilityStats, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { performerOwnedBy, venueOwnedBy } from "@/lib/auth";
@@ -42,6 +42,22 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
     ? await performerReliabilityStats(applicants.map((a) => a.performer.id))
     : new Map();
 
+  // A visiting performer's own application on this slot (for apply/withdraw).
+  const myApplication =
+    performer && !isOwner
+      ? (
+          await d
+            .select()
+            .from(schema.applications)
+            .where(
+              and(
+                eq(schema.applications.slotId, slot.id),
+                eq(schema.applications.performerId, performer.id),
+              ),
+            )
+        )[0] ?? null
+      : null;
+
   return (
     <div>
       <div className="card">
@@ -63,13 +79,49 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
           {venue.bio} · PA: {venue.paInventory.hasPA ? "house system" : "none"} ·
           capacity {venue.capacity ?? "?"}
         </p>
-        {performer && slot.status === "open" && (
-          <ActionButton
-            endpoint={`/api/slots/${slot.id}/applications`}
-            label="Apply for this slot"
-          />
+        {performer && !isOwner && slot.status === "open" && (
+          myApplication?.status === "submitted" ? (
+            <p>
+              <span className="badge">applied</span>{" "}
+              <ActionButton
+                endpoint={`/api/applications/${myApplication.id}/status`}
+                label="Withdraw application"
+                body={{ action: "withdraw" }}
+              />
+            </p>
+          ) : myApplication ? (
+            <p className="muted">Your application was {myApplication.status}.</p>
+          ) : (
+            <ActionButton
+              endpoint={`/api/slots/${slot.id}/applications`}
+              label="Apply for this slot"
+            />
+          )
         )}
       </div>
+
+      {isOwner && slot.status === "open" && (
+        <div className="card">
+          <h2>Manage this slot</h2>
+          <details>
+            <summary className="muted" style={{ cursor: "pointer" }}>Edit slot</summary>
+            <ApiForm
+              endpoint={`/api/slots/${slot.id}`}
+              method="PATCH"
+              submitLabel="Save changes"
+              fields={[
+                { name: "budgetCents", label: "Budget ($)", type: "number", defaultValue: slot.budgetCents / 100 },
+                { name: "durationMinutes", label: "Duration (min)", type: "number", defaultValue: slot.durationMinutes },
+                { name: "notes", label: "About the night", type: "textarea", defaultValue: slot.notes ?? "" },
+              ]}
+            />
+          </details>
+          <p style={{ marginTop: 8 }}>
+            <ActionButton endpoint={`/api/slots/${slot.id}`} label="Close this slot" method="DELETE" />{" "}
+            <span className="muted">— takes it off the board; you can always post a new one.</span>
+          </p>
+        </div>
+      )}
 
       {isOwner && (
         <div className="card">
@@ -119,6 +171,11 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
                       ? "The contract and payment run through Gigit."
                       : "You and the act settle pay directly — Gigit keeps the booking, not the money."}
                   </p>
+                  <ActionButton
+                    endpoint={`/api/applications/${application.id}/status`}
+                    label="Decline"
+                    body={{ action: "decline" }}
+                  />
                 </>
               )}
               {plan.verdict !== "covered" && (

@@ -1,5 +1,6 @@
+import { visibleReviews } from "@gigit/domain";
 import { db, schema } from "@gigit/db";
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
@@ -46,12 +47,35 @@ export default async function VenuePage({
     .orderBy(asc(schema.slots.startsAt))
     .limit(20);
 
+  // Reviews of this venue (authored by performers), same double-blind rule as
+  // the performer page with the role flipped (PRD F7.1 — reviews cut both ways).
+  const bookingsOfVenue = d
+    .select({ id: schema.bookings.id })
+    .from(schema.bookings)
+    .where(eq(schema.bookings.venueId, id));
+  const allReviews = await d
+    .select()
+    .from(schema.reviews)
+    .where(inArray(schema.reviews.bookingId, bookingsOfVenue))
+    .orderBy(desc(schema.reviews.createdAt))
+    .limit(50);
+  const visible = visibleReviews(allReviews, "performer");
+  const avg =
+    visible.length > 0
+      ? visible.reduce((s, r) => s + (r.ratings.overall ?? 0), 0) / visible.length
+      : null;
+
   const pa = v.paInventory;
   return (
     <div>
       <div className="card">
         <h1>
           {v.name} <span className="badge">{v.kind.replace("_", " ")}</span>
+          {avg !== null && (
+            <span className="badge">
+              ★ {avg.toFixed(1)} ({visible.length})
+            </span>
+          )}
         </h1>
         <p className="muted">
           {v.metro} · capacity {v.capacity ?? "?"}
@@ -97,6 +121,18 @@ export default async function VenuePage({
           </p>
         ))}
       </div>
+
+      {visible.length > 0 && (
+        <div className="card">
+          <h2>Reviews from performers</h2>
+          {visible.map((r) => (
+            <p key={r.id}>
+              ★ {r.ratings.overall} —{" "}
+              {r.body || <span className="muted">no comment</span>}
+            </p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

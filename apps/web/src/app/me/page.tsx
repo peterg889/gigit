@@ -56,6 +56,22 @@ export default async function MePage() {
               You arrange pay directly with the venue — Gigit never touches your money.
             </p>
           )}
+          <details>
+            <summary className="muted" style={{ cursor: "pointer" }}>Edit profile</summary>
+            <ApiForm
+              endpoint={`/api/performers/${performer.id}`}
+              method="PATCH"
+              submitLabel="Save changes"
+              transform="genreTagsCsv"
+              fields={[
+                { name: "name", label: "Act name", defaultValue: performer.name },
+                { name: "bio", label: "Bio", type: "textarea", defaultValue: performer.bio ?? "" },
+                { name: "genreTags", label: "Genres (comma-separated)", defaultValue: (performer.genreTags ?? []).join(", ") },
+                { name: "rateMinCents", label: "Rate floor ($)", type: "number", defaultValue: performer.rateMinCents != null ? performer.rateMinCents / 100 : undefined },
+                { name: "rateMaxCents", label: "Rate ceiling ($)", type: "number", defaultValue: performer.rateMaxCents != null ? performer.rateMaxCents / 100 : undefined },
+              ]}
+            />
+          </details>
           <MediaManager subjectType="performer" />
           </>
         ) : (
@@ -150,6 +166,20 @@ export default async function MePage() {
               </p>
             </div>
           )}
+          <details>
+            <summary className="muted" style={{ cursor: "pointer" }}>Edit details</summary>
+            <ApiForm
+              endpoint={`/api/venues/${venue.id}`}
+              method="PATCH"
+              submitLabel="Save changes"
+              fields={[
+                { name: "name", label: "Venue name", defaultValue: venue.name },
+                { name: "bio", label: "About the room", type: "textarea", defaultValue: venue.bio ?? "" },
+                { name: "capacity", label: "Capacity", type: "number", defaultValue: venue.capacity ?? undefined },
+                { name: "noiseCurfew", label: "Noise curfew (e.g. 11pm)", defaultValue: venue.noiseCurfew ?? "" },
+              ]}
+            />
+          </details>
           <GearExtractWidget venueId={venue.id} />
           <MediaManager subjectType="venue" />
           </>
@@ -172,11 +202,28 @@ export default async function MePage() {
       <div className="card">
         <h2>Sound tech</h2>
         {tech ? (
+          <>
           <p>
             <strong>{tech.name}</strong> <span className="badge">{tech.gear}</span>
             <br />
             <span className="muted">{tech.bio}</span>
           </p>
+          <details>
+            <summary className="muted" style={{ cursor: "pointer" }}>Edit profile</summary>
+            <ApiForm
+              endpoint={`/api/techs/${tech.id}`}
+              method="PATCH"
+              submitLabel="Save changes"
+              fields={[
+                { name: "name", label: "Name", defaultValue: tech.name },
+                { name: "gear", label: "Gear", type: "select", options: ["none", "partial", "full_rig"], defaultValue: tech.gear },
+                { name: "bio", label: "Experience", type: "textarea", defaultValue: tech.bio ?? "" },
+                { name: "rateLaborCents", label: "Labor rate ($)", type: "number", defaultValue: tech.rateLaborCents != null ? tech.rateLaborCents / 100 : undefined },
+                { name: "rateWithRigCents", label: "Rate with rig ($)", type: "number", defaultValue: tech.rateWithRigCents != null ? tech.rateWithRigCents / 100 : undefined },
+              ]}
+            />
+          </details>
+          </>
         ) : (
           <ApiForm
             endpoint="/api/techs"

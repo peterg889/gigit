@@ -7,9 +7,9 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-async function post(url: string, body: unknown) {
+async function post(url: string, body: unknown, method: "POST" | "PATCH" = "POST") {
   const res = await fetch(url, {
-    method: "POST",
+    method,
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -324,15 +324,19 @@ export function GearExtractWidget({ venueId }: { venueId: string }) {
               setBusy(true);
               setError(null);
               try {
-                await post(`/api/venues/${venueId}`, {
-                  paInventory: {
-                    hasPA: draft.hasPA,
-                    mixerChannels: draft.mixerChannels,
-                    micsAvailable: draft.micsAvailable,
-                    monitors: draft.monitors,
-                    hasOperator: draft.hasOperator,
+                await post(
+                  `/api/venues/${venueId}`,
+                  {
+                    paInventory: {
+                      hasPA: draft.hasPA,
+                      mixerChannels: draft.mixerChannels,
+                      micsAvailable: draft.micsAvailable,
+                      monitors: draft.monitors,
+                      hasOperator: draft.hasOperator,
+                    },
                   },
-                });
+                  "PATCH",
+                );
                 setDraft(null);
                 router.refresh();
               } catch (e) {
