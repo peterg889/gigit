@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "bookings_active_slot_uq" ON "bookings" USING btree ("slot_id") WHERE state in ('confirming','confirmed','awaiting_confirmation','disputed','released','partially_released');

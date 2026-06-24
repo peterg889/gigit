@@ -5,6 +5,7 @@ import { closeDb, db } from "./client.js";
 import {
   ConcurrentUpdateError,
   IllegalTransitionError,
+  SlotUnavailableError,
   createOffer,
   runBookingTransition,
 } from "./transition.js";
@@ -218,5 +219,38 @@ describe("booking transition runner (integration)", () => {
       .where(eq(bookings.id, bookingId));
     expect(row!.state).toBe("confirming");
     expect(row!.version).toBe(2);
+  });
+
+  it("prevents double-booking: two offers on one slot, only one can advance past 'offered'", async () => {
+    const d = db();
+    const { slotId, appId, rivalAppId, startsAt } = await makeSlotWithApplications();
+    const terms = {
+      amountCents: 50_000,
+      startsAt: startsAt.toISOString(),
+      endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+    };
+    // a venue may offer BOTH applicants — both bookings sit in 'offered'
+    const b1 = await createOffer({ applicationId: appId, slotId, performerId, venueId, actor: userVenue, terms });
+    const b2 = await createOffer({
+      applicationId: rivalAppId,
+      slotId,
+      performerId: rivalPerformerId,
+      venueId,
+      actor: userVenue,
+      terms,
+    });
+
+    // first acceptance takes the slot
+    const a1 = await runBookingTransition(b1, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    expect(a1.to).toBe("confirming");
+
+    // the second is rejected — the slot is no longer available
+    await expect(
+      runBookingTransition(b2, { kind: "PERFORMER_ACCEPTED" }, userBand),
+    ).rejects.toBeInstanceOf(SlotUnavailableError);
+
+    // and b2 is unchanged (its transaction rolled back)
+    const [r2] = await d.select().from(bookings).where(eq(bookings.id, b2));
+    expect(r2!.state).toBe("offered");
   });
 });

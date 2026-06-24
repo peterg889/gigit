@@ -10,6 +10,7 @@ import {
   timestamp,
   uniqueIndex,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -298,6 +299,15 @@ export const bookings = pgTable(
   (t) => [
     index("bookings_performer_idx").on(t.performerId),
     index("bookings_venue_idx").on(t.venueId),
+    // One booking may HOLD a slot at a time (double-booking guard). Multiple
+    // 'offered' bookings are fine (a venue can offer two applicants), but only one
+    // may advance to confirming+; the second accept trips this index and surfaces as
+    // SlotUnavailableError -> 409.
+    uniqueIndex("bookings_active_slot_uq")
+      .on(t.slotId)
+      .where(
+        sql`state in ('confirming','confirmed','awaiting_confirmation','disputed','released','partially_released')`,
+      ),
   ],
 );
 

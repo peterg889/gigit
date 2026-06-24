@@ -46,4 +46,17 @@ describe("sound plan v0", () => {
       ).verdict,
     ).toBe("tech_and_rig_needed");
   });
+
+  it("staffed house PA with an UNSPECIFIED channel count is covered for a small act (unknown ≠ 0 channels)", () => {
+    const plan = soundPlan({ hasPA: true, hasOperator: true }, { inputs: 1 });
+    expect(plan.verdict).toBe("covered");
+    expect(plan.gaps).toHaveLength(0);
+  });
+
+  it("unstaffed house PA with unknown channels → tech needed, never a whole rig, and no fabricated channel gap", () => {
+    const plan = soundPlan({ hasPA: true }, { inputs: 4 });
+    expect(plan.verdict).toBe("tech_needed");
+    expect(plan.gaps).toContain("no one to run sound");
+    expect(plan.gaps.some((g) => g.includes("channels"))).toBe(false);
+  });
 });

@@ -1,6 +1,7 @@
 import {
   ConcurrentUpdateError,
   IllegalTransitionError,
+  SlotUnavailableError,
   db,
   paymentGateway,
   runBookingTransition,
@@ -52,6 +53,8 @@ export async function POST(_req: Request, { params }: Params) {
       return fail("illegal_transition", e.message, 409);
     if (e instanceof ConcurrentUpdateError)
       return fail("conflict", "booking changed concurrently — retry", 409);
+    if (e instanceof SlotUnavailableError)
+      return fail("slot_unavailable", "Someone else just took this slot.", 409);
     throw e;
   }
 }
