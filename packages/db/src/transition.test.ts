@@ -311,4 +311,81 @@ describe("booking transition runner (integration)", () => {
     expect(r.to).toBe("released");
     expect(r.effects).toContainEqual({ kind: "release_funds", amountCents: 50_000 });
   });
+
+  it("offer expiry returns the stranded application to 'submitted' so the slot is re-biddable (audit #6)", async () => {
+    const d = db();
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    const [offered] = await d.select().from(applications).where(eq(applications.id, appId));
+    expect(offered!.status).toBe("offered"); // parked while the offer is live
+
+    const collapsed = await runBookingTransition(bookingId, { kind: "OFFER_EXPIRED" }, "worker");
+    expect(collapsed.to).toBe("collapsed");
+
+    const [slot] = await d.select().from(slots).where(eq(slots.id, slotId));
+    expect(slot!.status).toBe("open"); // slot reopened
+    const [reset] = await d.select().from(applications).where(eq(applications.id, appId));
+    expect(reset!.status).toBe("submitted"); // and the performer is no longer locked out
+  });
+
+  it("confirming one offer collapses the venue's competing offers on the same slot (audit critic #2)", async () => {
+    const d = db();
+    const { slotId, appId, rivalAppId, startsAt } = await makeSlotWithApplications();
+    // the venue offers the SAME open slot to two applicants at once
+    const winner = await offerFor(slotId, appId, startsAt);
+    const loser = await createOffer({
+      applicationId: rivalAppId,
+      slotId,
+      performerId: rivalPerformerId,
+      venueId,
+      actor: userVenue,
+      terms: {
+        amountCents: 50_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+      },
+    });
+    const [loserBefore] = await d.select().from(bookings).where(eq(bookings.id, loser));
+    expect(loserBefore!.state).toBe("offered"); // both live offers coexist
+
+    await runBookingTransition(winner, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await runBookingTransition(winner, { kind: "PAYMENT_SUCCEEDED" }, "worker");
+
+    const [loserAfter] = await d.select().from(bookings).where(eq(bookings.id, loser));
+    expect(loserAfter!.state).toBe("collapsed"); // the competing offer is retired
+    const [rivalApp] = await d.select().from(applications).where(eq(applications.id, rivalAppId));
+    expect(rivalApp!.status).toBe("declined");
+    // the losing performer gets a notify event so they learn the offer is gone
+    const loserEvents = await d
+      .select({ payload: events.payload })
+      .from(events)
+      .where(eq(events.subjectId, loser));
+    expect(loserEvents.some((e) => (e.payload as { to?: string }).to === "collapsed")).toBe(true);
+  });
+
+  it("DISPUTE_OPENED persists openedBy + reason into the event log (audit critic #1)", async () => {
+    const d = db();
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker");
+    await runBookingTransition(bookingId, { kind: "GIG_ENDED" }, "worker");
+    await runBookingTransition(
+      bookingId,
+      { kind: "DISPUTE_OPENED", openedBy: "venue", reason: "act never showed up" },
+      userVenue,
+    );
+    const rows = await d
+      .select({ payload: events.payload })
+      .from(events)
+      .where(eq(events.subjectId, bookingId))
+      .orderBy(asc(events.id));
+    const disputed = rows.find((e) => (e.payload as { to?: string }).to === "disputed");
+    expect(disputed).toBeTruthy();
+    // the disputant's account survives — the admin/AI brief reads events.payload
+    expect(disputed!.payload).toMatchObject({
+      openedBy: "venue",
+      reason: "act never showed up",
+    });
+  });
 });

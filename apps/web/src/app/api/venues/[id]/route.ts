@@ -8,7 +8,25 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
-  const [v] = await db().select().from(schema.venues).where(eq(schema.venues.id, id));
+  // Public profile: project only public columns. Never serialize ownerUserId or
+  // the Stripe identifiers (stripeCustomerId / defaultPaymentMethodId) to an
+  // unauthenticated caller — mirrors the column projection in performers/search.
+  const [v] = await db()
+    .select({
+      id: schema.venues.id,
+      kind: schema.venues.kind,
+      name: schema.venues.name,
+      bio: schema.venues.bio,
+      metro: schema.venues.metro,
+      lat: schema.venues.lat,
+      lng: schema.venues.lng,
+      capacity: schema.venues.capacity,
+      paInventory: schema.venues.paInventory,
+      noiseCurfew: schema.venues.noiseCurfew,
+      createdAt: schema.venues.createdAt,
+    })
+    .from(schema.venues)
+    .where(eq(schema.venues.id, id));
   if (!v) return fail("not_found", "venue not found", 404);
   return ok({ venue: v });
 }

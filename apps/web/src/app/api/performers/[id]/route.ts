@@ -8,7 +8,27 @@ type Params = { params: Promise<{ id: string }> };
 
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params;
-  const [p] = await db().select().from(schema.performers).where(eq(schema.performers.id, id));
+  // Public profile: project only public columns. Never serialize ownerUserId or
+  // stripeAccountId (the Connect payout destination) to an anonymous caller.
+  const [p] = await db()
+    .select({
+      id: schema.performers.id,
+      kind: schema.performers.kind,
+      name: schema.performers.name,
+      bio: schema.performers.bio,
+      genreTags: schema.performers.genreTags,
+      homeMetro: schema.performers.homeMetro,
+      travelRadiusKm: schema.performers.travelRadiusKm,
+      rateMinCents: schema.performers.rateMinCents,
+      rateMaxCents: schema.performers.rateMaxCents,
+      setLengthsMinutes: schema.performers.setLengthsMinutes,
+      techNeeds: schema.performers.techNeeds,
+      reliabilityStrikes: schema.performers.reliabilityStrikes,
+      status: schema.performers.status,
+      createdAt: schema.performers.createdAt,
+    })
+    .from(schema.performers)
+    .where(eq(schema.performers.id, id));
   if (!p) return fail("not_found", "performer not found", 404);
   return ok({ performer: p });
 }
