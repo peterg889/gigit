@@ -1,6 +1,7 @@
 import {
   ConcurrentUpdateError,
   IllegalTransitionError,
+  InvalidResolutionError,
   db,
   runBookingTransition,
   schema,
@@ -61,6 +62,7 @@ export async function POST(req: Request, { params }: Params) {
     if (e instanceof IllegalTransitionError)
       return fail("illegal_transition", "booking is not disputed", 409);
     if (e instanceof ConcurrentUpdateError) return fail("conflict", "retry", 409);
+    if (e instanceof InvalidResolutionError) return fail("validation", e.message, 422);
     throw e;
   }
 }

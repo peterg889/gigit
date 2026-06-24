@@ -1,6 +1,7 @@
 import {
   decide,
   IllegalTransitionError,
+  InvalidResolutionError,
   offerCreatedEffects,
   newId,
   type BookingEvent,
@@ -36,7 +37,7 @@ function pgErrorCode(e: unknown): string | undefined {
   }
   return undefined;
 }
-export { IllegalTransitionError };
+export { IllegalTransitionError, InvalidResolutionError };
 
 export interface TransitionResult {
   bookingId: string;

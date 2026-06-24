@@ -110,10 +110,13 @@ describe("web API authz matrix (audit #5)", () => {
     const { bookingId } = await offeredBooking();
     as(uAdmin);
     expect((await post(adminStatusPost, uBand, { status: "suspended" })).status).toBe(200);
-    as(uBand);
-    expect((await post(acceptPost, bookingId)).status).toBe(403);
-    as(uAdmin); // reinstate for the next test
-    await post(adminStatusPost, uBand, { status: "active" });
+    try {
+      as(uBand);
+      expect((await post(acceptPost, bookingId)).status).toBe(403);
+    } finally {
+      as(uAdmin); // always reinstate so a failed assert can't poison later tests
+      await post(adminStatusPost, uBand, { status: "active" });
+    }
   });
 
   it("cancel: 403 a non-party, 200 a party (the venue)", async () => {

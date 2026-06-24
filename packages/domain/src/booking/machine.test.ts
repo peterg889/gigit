@@ -232,13 +232,25 @@ describe("dispute resolutions", () => {
       ),
     ).toThrow(InvalidResolutionError);
   });
-  it("rejects a partial split with a negative or non-integer leg", () => {
+  it("rejects a partial split with a negative leg", () => {
     expect(() =>
       decide(
         booking("disputed"),
         {
           kind: "DISPUTE_RESOLVED",
           resolution: { kind: "partial", releaseCents: 60_000, refundCents: -10_000 },
+        },
+        now,
+      ),
+    ).toThrow(InvalidResolutionError);
+  });
+  it("rejects a partial split with a non-integer leg (even when it sums to the total)", () => {
+    expect(() =>
+      decide(
+        booking("disputed"),
+        {
+          kind: "DISPUTE_RESOLVED",
+          resolution: { kind: "partial", releaseCents: 25_000.5, refundCents: 24_999.5 },
         },
         now,
       ),

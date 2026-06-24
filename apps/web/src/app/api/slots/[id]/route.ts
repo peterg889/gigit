@@ -1,5 +1,5 @@
 import { appendEvent, db, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { and, eq, notInArray } from "drizzle-orm";
 import type { NextResponse } from "next/server";
 import { z } from "zod";
 import { AuthError, requireUser, venueOwnedBy } from "@/lib/auth";
@@ -10,7 +10,7 @@ type Params = { params: Promise<{ id: string }> };
 const slotUpdateSchema = z
   .object({
     budgetCents: z.number().int().min(1).optional(),
-    durationMinutes: z.number().int().min(15).max(600).optional(),
+    durationMinutes: z.number().int().min(30).max(720).optional(),
     notes: z.string().max(2000).optional(),
   })
   .strict();
@@ -65,6 +65,31 @@ export async function DELETE(_req: Request, { params }: Params): Promise<NextRes
     const userId = await requireUser();
     const r = await ownedOpenSlot(id, userId);
     if (!r.ok) return r.response;
+    // An 'open' slot can still hold an outstanding offer — a booking in 'offered'/
+    // 'confirming' doesn't fill the slot. Closing it would orphan that booking and
+    // let a later accept resurrect the slot to 'filled'. Make the venue handle it first.
+    const [active] = await db()
+      .select({ id: schema.bookings.id })
+      .from(schema.bookings)
+      .where(
+        and(
+          eq(schema.bookings.slotId, id),
+          notInArray(schema.bookings.state, [
+            "collapsed",
+            "cancelled_by_venue",
+            "cancelled_by_performer",
+            "refunded",
+            "released",
+            "partially_released",
+          ]),
+        ),
+      );
+    if (active)
+      return fail(
+        "conflict",
+        "This slot has an outstanding offer — cancel that first, then close the slot.",
+        409,
+      );
     const d = db();
     await d.update(schema.slots).set({ status: "cancelled" }).where(eq(schema.slots.id, id));
     await appendEvent(d, {

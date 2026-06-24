@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { newId } from "@gigit/domain";
-import { closeDb, db, schema } from "@gigit/db";
+import { closeDb, createOffer, db, schema } from "@gigit/db";
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
@@ -26,6 +26,7 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
   const owner = newId("user");
   const stranger = newId("user");
   const venueId = newId("venue");
+  const pId = newId("performer");
 
   beforeAll(async () => {
     const d = db();
@@ -33,14 +34,34 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
       { id: owner, email: `${owner}@t.test` },
       { id: stranger, email: `${stranger}@t.test` },
     ]);
-    await d.insert(schema.venues).values({
-      id: venueId,
-      ownerUserId: owner,
-      kind: "bar",
-      name: "Lifecycle Bar",
-      metro: "lc-testville",
-      lat: 43,
-      lng: -88,
+    await d.insert(schema.venues).values([
+      {
+        id: venueId,
+        ownerUserId: owner,
+        kind: "bar",
+        name: "Lifecycle Bar",
+        metro: "lc-testville",
+        lat: 43,
+        lng: -88,
+      },
+      // stranger owns a DIFFERENT venue, so the non-owner test exercises the real
+      // cross-venue guard (slot.venueId !== venue.id), not "no venue profile".
+      {
+        id: newId("venue"),
+        ownerUserId: stranger,
+        kind: "bar",
+        name: "Stranger's Bar",
+        metro: "lc-testville",
+        lat: 43,
+        lng: -88,
+      },
+    ]);
+    await d.insert(schema.performers).values({
+      id: pId,
+      ownerUserId: stranger,
+      kind: "band",
+      name: "Lifecycle Band",
+      homeMetro: "lc-testville",
     });
   });
   afterAll(async () => {
@@ -97,5 +118,28 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
 
     sessionUserId.mockResolvedValue(null);
     expect((await deleteReq(await openSlot())).status).toBe(401);
+  });
+
+  it("won't close a slot that has an outstanding offer (409 — no orphaned booking)", async () => {
+    const id = await openSlot();
+    const appId = newId("application");
+    const startsAt = new Date(Date.now() + 7 * 86_400_000);
+    await db().insert(schema.applications).values({ id: appId, slotId: id, performerId: pId });
+    await createOffer({
+      applicationId: appId,
+      slotId: id,
+      performerId: pId,
+      venueId,
+      actor: owner,
+      terms: {
+        amountCents: 30_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+      },
+    });
+    sessionUserId.mockResolvedValue(owner);
+    expect((await deleteReq(id)).status).toBe(409);
+    const [s] = await db().select().from(schema.slots).where(eq(schema.slots.id, id));
+    expect(s!.status).toBe("open"); // still open — the offer wasn't orphaned
   });
 });

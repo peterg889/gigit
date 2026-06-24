@@ -14,6 +14,7 @@ const noBoss = {} as unknown as PgBoss;
 describe("outbox poison isolation (integration)", () => {
   let goodId: number;
   let poisonId: number;
+  let goodAfterId: number;
 
   beforeAll(async () => {
     const pool = getPool();
@@ -32,6 +33,13 @@ describe("outbox poison isolation (integration)", () => {
        values ('system','test.poison','test','t','{"effects":5}'::jsonb) returning id`,
     );
     poisonId = Number(poison.rows[0].id);
+    // a good event ordered AFTER the poison: it must still dispatch in the same
+    // drain, proving the loop continues past a throwing row (not just before it).
+    const goodAfter = await pool.query(
+      `insert into events (actor, kind, subject_type, subject_id, payload)
+       values ('system','test.noop','test','t','{"effects":[]}'::jsonb) returning id`,
+    );
+    goodAfterId = Number(goodAfter.rows[0].id);
   });
 
   afterAll(async () => {
@@ -48,6 +56,10 @@ describe("outbox poison isolation (integration)", () => {
     expect(p!.dispatchedAt).toBeNull();
     expect(p!.attempts).toBe(1);
     expect(p!.deadLetteredAt).toBeNull();
+
+    // the good event AFTER the poison also dispatched — the loop didn't abort
+    const [g2] = await db().select().from(schema.events).where(eq(schema.events.id, goodAfterId));
+    expect(g2!.dispatchedAt).not.toBeNull();
   });
 
   it("parks the poison after the attempt cap, then excludes it so the head advances", async () => {
