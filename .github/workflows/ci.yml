@@ -80,8 +80,10 @@ jobs:
             --filters "Name=tag:aws:cloudformation:stack-name,Values=GigitStaging" "Name=instance-state-name,Values=running" \
             --query "Reservations[].Instances[].InstanceId" --output text)
           [ -z "$IDS" ] && { echo "no worker instance found"; exit 1; }
+          # run-worker.sh (written by the instance userData) re-pulls and restarts
+          # the container with env materialized from AppSecrets + the computed vars.
           aws ssm send-command --instance-ids $IDS --document-name AWS-RunShellScript \
-            --parameters 'commands=["docker pull $(docker inspect --format={{.Config.Image}} worker)","docker rm -f worker","docker run -d --restart=always --name worker $(aws ecr describe-repositories --repository-names gigit-worker-staging --query repositories[0].repositoryUri --output text):latest"]'
+            --parameters 'commands=["bash /usr/local/bin/run-worker.sh"]'
 
   promote-production:
     needs: deploy-staging
