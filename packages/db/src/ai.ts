@@ -7,6 +7,8 @@
  *  - no API key → deterministic heuristic fallback (or explicit not_configured)
  *  - outputs are DRAFTS for human confirmation; nothing publishes directly
  */
+import { lookup } from "node:dns/promises";
+import net from "node:net";
 import { z } from "zod";
 import { newId } from "@gigit/domain";
 import { db } from "./client.js";
@@ -191,15 +193,70 @@ function heuristicProfileDraft(page: string): ProfileDraft {
   };
 }
 
-async function fetchPageSummary(url: string): Promise<string> {
-  const host = new URL(url).hostname;
-  if (/^(localhost|127\.|10\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)/.test(host))
+/** Loopback/private/link-local/CGNAT — the addresses an SSRF wants to reach. */
+function isBlockedIp(ip: string): boolean {
+  const v = ip.replace(/^::ffff:/i, ""); // unwrap IPv4-mapped IPv6
+  if (net.isIPv4(v)) {
+    const [a = 0, b = 0] = v.split(".").map(Number); // isIPv4 guarantees 4 octets
+    return (
+      a === 0 ||
+      a === 127 ||
+      a === 10 ||
+      (a === 169 && b === 254) || // link-local — incl. cloud metadata 169.254.169.254
+      (a === 172 && b >= 16 && b <= 31) ||
+      (a === 192 && b === 168) ||
+      (a === 100 && b >= 64 && b <= 127) // CGNAT
+    );
+  }
+  const lc = ip.toLowerCase();
+  return (
+    lc === "::1" ||
+    lc === "::" ||
+    lc.startsWith("fc") ||
+    lc.startsWith("fd") || // unique-local fc00::/7
+    /^fe[89ab]/.test(lc) // link-local fe80::/10
+  );
+}
+
+/**
+ * SSRF guard for user-supplied ingestion URLs: http(s) only, and the host must
+ * not be (or resolve to) a private/loopback/link-local address. Resolving the
+ * hostname catches a public name pointed at an internal IP; callers must also
+ * re-check every redirect hop, since the target can 30x into the same range.
+ */
+export async function assertPublicUrl(raw: string): Promise<void> {
+  const u = new URL(raw);
+  if (u.protocol !== "http:" && u.protocol !== "https:")
+    throw new Error("refusing to fetch: only http(s) URLs are allowed");
+  const host = u.hostname.replace(/^\[|\]$/g, ""); // strip IPv6 brackets
+  if (net.isIP(host)) {
+    if (isBlockedIp(host)) throw new Error("refusing to fetch private addresses");
+    return;
+  }
+  if (/^localhost$/i.test(host) || host.endsWith(".localhost"))
     throw new Error("refusing to fetch private addresses");
-  const res = await fetch(url, {
-    signal: AbortSignal.timeout(8000),
-    headers: { "user-agent": "GigitBot/0.1 (profile ingestion)" },
-    redirect: "follow",
-  });
+  const addrs = await lookup(host, { all: true }).catch(() => []);
+  if (addrs.some((a) => isBlockedIp(a.address)))
+    throw new Error("refusing to fetch private addresses");
+}
+
+async function fetchPageSummary(url: string): Promise<string> {
+  // Follow redirects manually so each hop is re-validated — `redirect: "follow"`
+  // would let a public URL bounce to 169.254.169.254 / 127.0.0.1 unchecked.
+  let current = url;
+  let res: Response | undefined;
+  for (let hop = 0; hop < 4; hop++) {
+    await assertPublicUrl(current);
+    res = await fetch(current, {
+      signal: AbortSignal.timeout(8000),
+      headers: { "user-agent": "GigitBot/0.1 (profile ingestion)" },
+      redirect: "manual",
+    });
+    const loc = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
+    if (!loc) break;
+    current = new URL(loc, current).toString();
+  }
+  if (!res) throw new Error("refusing to fetch: too many redirects");
   const raw = (await res.text()).slice(0, 200_000);
   // strip scripts/styles, collapse tags — head metadata + visible text only
   return raw
