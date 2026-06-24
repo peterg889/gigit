@@ -102,6 +102,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "A video link went dead",
     body: "One of the videos on your profile no longer plays. Swap it for a live link: {url}/me",
   },
+  otp: {
+    subject: "Your Gigit sign-in code",
+    body: "Your sign-in code is {code}. It expires in 10 minutes. If you didn't ask for it, ignore this.",
+  },
 };
 
 // Discovery-first launch (PAYMENTS_ENABLED off): Gigit moves no gig money, so
@@ -202,11 +206,11 @@ export async function notifySubslotParties(
   for (const userId of userIds) await notifyUser(userId, template);
 }
 
-export async function notifyUser(
-  userId: string,
+/** Resolve a template to copy, applying the payments-off overrides and vars. */
+function renderTemplate(
   template: string,
   vars: Record<string, string> = {},
-): Promise<void> {
+): { subject: string; body: string } {
   const base = TEMPLATES[template] ?? {
     subject: "Gigit update",
     body: `Update (${template}): {url}`,
@@ -215,11 +219,23 @@ export async function notifyUser(
   const t = override
     ? { subject: override.subject ?? base.subject, body: override.body }
     : base;
-  // {url} plus any per-subject vars (e.g. {slotId}) → deep links straight to
-  // the thing the message is about, not the app root.
+  // {url} plus any per-subject vars (e.g. {slotId}, {code}) → deep links / values.
   const subs: Record<string, string> = { url: env().APP_URL, ...vars };
+  let subject = t.subject;
   let body = t.body;
-  for (const [k, v] of Object.entries(subs)) body = body.replaceAll(`{${k}}`, v);
+  for (const [k, v] of Object.entries(subs)) {
+    subject = subject.replaceAll(`{${k}}`, v);
+    body = body.replaceAll(`{${k}}`, v);
+  }
+  return { subject, body };
+}
+
+export async function notifyUser(
+  userId: string,
+  template: string,
+  vars: Record<string, string> = {},
+): Promise<void> {
+  const t = renderTemplate(template, vars);
   const [user] = await db()
     .select()
     .from(schema.users)
@@ -227,12 +243,68 @@ export async function notifyUser(
   if (!user) return;
 
   if (user.phone && env().TWILIO_ACCOUNT_SID && !user.smsOptedOutAt) {
-    await sendSms(user.phone, `${t.subject}. ${body}`);
+    await sendSms(user.phone, `${t.subject}. ${t.body}`);
   } else if (user.email && env().EMAIL_FROM) {
-    await sendEmail(user.email, t.subject, body);
+    await sendEmail(user.email, t.subject, t.body);
   } else {
     log("notify.log_sink", { userId, template, subject: t.subject });
   }
+}
+
+/**
+ * Deliver to a raw destination (a phone or email that may not be a user row
+ * yet — e.g. a login code during signup). Picks the channel by destination
+ * shape; falls back to the log sink when that channel isn't configured.
+ */
+export async function notifyDestination(
+  destination: string,
+  template: string,
+  vars: Record<string, string> = {},
+): Promise<void> {
+  const t = renderTemplate(template, vars);
+  const isEmail = destination.includes("@");
+  if (!isEmail && env().TWILIO_ACCOUNT_SID) {
+    await sendSms(destination, `${t.subject}. ${t.body}`);
+  } else if (isEmail && env().EMAIL_FROM) {
+    await sendEmail(destination, t.subject, t.body);
+  } else {
+    log("notify.log_sink", { destination, template, subject: t.subject });
+  }
+}
+
+/** Send the sign-in code for a stored OTP row to its destination (auth flow). */
+export async function notifyOtp(otpId: string): Promise<void> {
+  if (!otpId) return;
+  const [otp] = await db()
+    .select({ destination: schema.authOtps.destination, code: schema.authOtps.code })
+    .from(schema.authOtps)
+    .where(eq(schema.authOtps.id, otpId));
+  if (!otp) return;
+  await notifyDestination(otp.destination, "otp", { code: otp.code });
+}
+
+/** A performer applied to a slot → notify the slot's venue owner. */
+export async function notifySlotVenue(slotId: string, template: string): Promise<void> {
+  const [row] = await db()
+    .select({ owner: schema.venues.ownerUserId })
+    .from(schema.slots)
+    .innerJoin(schema.venues, eq(schema.slots.venueId, schema.venues.id))
+    .where(eq(schema.slots.id, slotId));
+  if (row) await notifyUser(row.owner, template, { slotId });
+}
+
+/** A message/inquiry on a thread → notify every participant except the sender. */
+export async function notifyThreadCounterparties(
+  threadId: string,
+  senderUserId: string,
+  template: string,
+): Promise<void> {
+  const parts = await db()
+    .select({ userId: schema.threadParticipants.userId })
+    .from(schema.threadParticipants)
+    .where(eq(schema.threadParticipants.threadId, threadId));
+  for (const p of parts)
+    if (p.userId !== senderUserId) await notifyUser(p.userId, template);
 }
 
 async function sendSms(to: string, body: string): Promise<void> {

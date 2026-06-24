@@ -28,18 +28,21 @@ export async function POST(req: Request) {
       ? String(Math.floor(100000 + Math.random() * 900000))
       : "000000"; // dev/test: fixed code, logged
 
+  const otpId = newId("user"); // otp rows reuse the ULID generator; prefix is irrelevant
   await db().insert(schema.authOtps).values({
-    id: newId("user"), // otp rows reuse the ULID generator; prefix is irrelevant
+    id: otpId,
     destination,
     code,
     expiresAt: new Date(Date.now() + 10 * 60_000),
   });
+  // The worker delivers the code (Twilio/SES) off this event; it reads the code
+  // from the otp row by id, so the code itself never lands in the event log.
   await appendEvent(db(), {
     actor: "system",
     kind: "auth.otp_requested",
     subjectType: "auth",
     subjectId: destination,
-    payload: { effects: [{ kind: "notify", template: "otp", to: "both" }] },
+    payload: { otpId, effects: [{ kind: "notify", template: "otp", to: "both" }] },
   });
 
   if (env().NODE_ENV !== "production") {
