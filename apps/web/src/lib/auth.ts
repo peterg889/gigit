@@ -1,11 +1,23 @@
 import { db, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
+import type { NextResponse } from "next/server";
 import { sessionUserId } from "./session";
+import { fail } from "./respond";
 
 export class AuthError extends Error {
   constructor(readonly status: number, message: string) {
     super(message);
   }
+}
+
+/**
+ * The standard route catch tail: render an AuthError as its HTTP status, and
+ * rethrow anything else (a real 500). Routes with richer error mapping check
+ * their domain errors first, then fall through to this.
+ */
+export function respondError(e: unknown): NextResponse {
+  if (e instanceof AuthError) return fail("auth", e.message, e.status);
+  throw e;
 }
 
 export async function requireUser(): Promise<string> {

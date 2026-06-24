@@ -1,7 +1,7 @@
 import { newId, savedSearchCreateSchema } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 /** Saved-search alerts (PRD F2.3): the worker matches new slots against these. */
@@ -32,8 +32,7 @@ export async function POST(req: Request) {
     });
     return ok({ id }, 201);
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }
 
@@ -48,7 +47,6 @@ export async function GET() {
       .where(eq(schema.savedSearches.performerId, performer.id));
     return ok({ searches });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

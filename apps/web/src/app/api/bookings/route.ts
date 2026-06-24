@@ -1,6 +1,6 @@
 import { db, schema } from "@gigit/db";
 import { desc, eq, or } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 export async function GET() {
@@ -33,7 +33,6 @@ export async function GET() {
       .limit(100);
     return ok({ bookings: rows });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

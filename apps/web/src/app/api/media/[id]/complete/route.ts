@@ -1,6 +1,6 @@
 import { appendEvent, db, schema } from "@gigit/db";
 import { and, eq } from "drizzle-orm";
-import { AuthError, requireUser } from "@/lib/auth";
+import { requireUser, respondError } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -52,7 +52,6 @@ export async function POST(_req: Request, { params }: Params) {
       return fail("not_found", "media not found", 404);
     return ok({ id, status: asset.status }); // idempotent: already screening/done
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

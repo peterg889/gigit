@@ -1,7 +1,7 @@
 import { inquiryCreateSchema, newId } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 const DAILY_INQUIRY_CAP = 10; // engineering-spec §10: anti-spam cap per venue
@@ -99,8 +99,7 @@ export async function POST(req: Request) {
     });
     return ok({ threadId }, 201);
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }
 
@@ -118,7 +117,6 @@ export async function GET() {
       .where(inArray(schema.threads.id, mine));
     return ok({ threads: rows });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }

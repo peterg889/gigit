@@ -1,7 +1,7 @@
 import { IllegalSubslotTransitionError, techSubslotBookSchema } from "@gigit/domain";
 import { ConcurrentUpdateError, db, runSubslotTransition, schema } from "@gigit/db";
 import { and, eq, ne } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -65,11 +65,10 @@ export async function POST(req: Request, { params }: Params) {
       );
     return ok({ state: result.to });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
     if (e instanceof IllegalSubslotTransitionError)
       return fail("illegal_transition", e.message, 409);
     if (e instanceof ConcurrentUpdateError)
       return fail("conflict", "sub-slot changed concurrently — retry", 409);
-    throw e;
+    return respondError(e);
   }
 }

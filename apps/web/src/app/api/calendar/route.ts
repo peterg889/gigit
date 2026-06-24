@@ -1,7 +1,7 @@
 import { db, env, schema } from "@gigit/db";
 import { jwtVerify, SignJWT } from "jose";
 import { eq, or } from "drizzle-orm";
-import { AuthError, performerOwnedBy, requireUser, venueOwnedBy } from "@/lib/auth";
+import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 const key = () => new TextEncoder().encode(env().SESSION_SECRET);
@@ -17,8 +17,7 @@ export async function POST() {
       .sign(key());
     return ok({ url: `${env().APP_URL}/api/calendar?token=${token}` });
   } catch (e) {
-    if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    throw e;
+    return respondError(e);
   }
 }
 
