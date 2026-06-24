@@ -45,15 +45,23 @@ export const actorRoles = pgTable(
   (t) => [uniqueIndex("actor_roles_user_kind_uq").on(t.userId, t.kind)],
 );
 
-export const authOtps = pgTable("auth_otps", {
-  id: text("id").primaryKey(),
-  destination: text("destination").notNull(), // phone or email
-  code: text("code").notNull(),
-  attempts: integer("attempts").notNull().default(0),
-  expiresAt: ts("expires_at").notNull(),
-  consumedAt: ts("consumed_at"),
-  createdAt: ts("created_at").notNull().defaultNow(),
-});
+export const authOtps = pgTable(
+  "auth_otps",
+  {
+    id: text("id").primaryKey(),
+    destination: text("destination").notNull(), // phone or email
+    code: text("code").notNull(),
+    attempts: integer("attempts").notNull().default(0),
+    requestIp: text("request_ip"), // for per-IP OTP rate limiting (SMS toll-fraud)
+    expiresAt: ts("expires_at").notNull(),
+    consumedAt: ts("consumed_at"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("auth_otps_ip_idx").on(t.requestIp, t.createdAt),
+    index("auth_otps_created_idx").on(t.createdAt),
+  ],
+);
 
 // ── profiles ────────────────────────────────────────────────────────────────
 export const performers = pgTable("performers", {

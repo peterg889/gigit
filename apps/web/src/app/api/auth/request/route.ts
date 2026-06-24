@@ -1,14 +1,24 @@
 import { authRequestSchema, newId } from "@gigit/domain";
 import { appendEvent, db, emailConfigured, env, schema, smsConfigured } from "@gigit/db";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, sql, type SQL } from "drizzle-orm";
 import { fail, ok, parseBody } from "@/lib/respond";
 
-const OTP_HOURLY_CAP = 5;
+const OTP_HOURLY_CAP = 5; // per destination
+const OTP_IP_HOURLY_CAP = 20; // per requesting IP (shared NATs get headroom)
+const OTP_GLOBAL_HOURLY_CAP = 500; // platform circuit breaker on SMS/email spend
 
 export async function POST(req: Request) {
   const parsed = await parseBody(req, authRequestSchema);
   if ("response" in parsed) return parsed.response;
   const destination = parsed.data.phone ?? parsed.data.email!;
+  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim() || "";
+  const hourAgo = new Date(Date.now() - 3_600_000);
+  const countOtps = (where: SQL | undefined) =>
+    db()
+      .select({ n: sql<number>`count(*)::int` })
+      .from(schema.authOtps)
+      .where(where)
+      .then((r) => r[0]?.n ?? 0);
 
   // Don't accept a sign-in we can't deliver. In production a destination whose
   // channel isn't configured would silently drop the code (the worker can't
@@ -22,18 +32,26 @@ export async function POST(req: Request) {
       return fail("unavailable", "Text-message sign-in isn't available — use email instead.", 503);
   }
 
-  // Rate limit per destination (abuse + SMS cost control)
-  const [{ recent }] = (await db()
-    .select({ recent: sql<number>`count(*)::int` })
-    .from(schema.authOtps)
-    .where(
-      and(
-        eq(schema.authOtps.destination, destination),
-        gte(schema.authOtps.createdAt, new Date(Date.now() - 3_600_000)),
-      ),
-    )) as [{ recent: number }];
-  if (recent >= OTP_HOURLY_CAP)
-    return fail("rate_limited", "too many codes requested — try again later", 429);
+  // Layered rate limits on this unauthenticated, SMS/email-spending endpoint:
+  // per-destination (per-victim bombing), per-IP (one attacker fanning out
+  // across many numbers — the toll-fraud vector), and a global hourly ceiling
+  // (circuit breaker on total spend regardless of how the load is distributed).
+  const tooBusy = "too many sign-in codes requested — try again later";
+  if (
+    (await countOtps(
+      and(eq(schema.authOtps.destination, destination), gte(schema.authOtps.createdAt, hourAgo)),
+    )) >= OTP_HOURLY_CAP
+  )
+    return fail("rate_limited", tooBusy, 429);
+  if (
+    ip &&
+    (await countOtps(
+      and(eq(schema.authOtps.requestIp, ip), gte(schema.authOtps.createdAt, hourAgo)),
+    )) >= OTP_IP_HOURLY_CAP
+  )
+    return fail("rate_limited", tooBusy, 429);
+  if ((await countOtps(gte(schema.authOtps.createdAt, hourAgo))) >= OTP_GLOBAL_HOURLY_CAP)
+    return fail("rate_limited", tooBusy, 429);
 
   const code =
     env().NODE_ENV === "production"
@@ -45,6 +63,7 @@ export async function POST(req: Request) {
     id: otpId,
     destination,
     code,
+    requestIp: ip || null,
     expiresAt: new Date(Date.now() + 10 * 60_000),
   });
   // The worker delivers the code (Twilio/SES) off this event; it reads the code
