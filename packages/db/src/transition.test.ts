@@ -253,4 +253,22 @@ describe("booking transition runner (integration)", () => {
     const [r2] = await d.select().from(bookings).where(eq(bookings.id, b2));
     expect(r2!.state).toBe("offered");
   });
+
+  it("createOffer rejects terms whose endsAt is not after startsAt", async () => {
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    await expect(
+      createOffer({
+        applicationId: appId,
+        slotId,
+        performerId,
+        venueId,
+        actor: userVenue,
+        terms: {
+          amountCents: 50_000,
+          startsAt: startsAt.toISOString(),
+          endsAt: startsAt.toISOString(), // equal → invalid
+        },
+      }),
+    ).rejects.toThrow(/endsAt must be after startsAt/);
+  });
 });

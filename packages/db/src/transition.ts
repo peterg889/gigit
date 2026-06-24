@@ -216,6 +216,10 @@ export interface CreateOfferInput {
 
 /** Creates the booking row in `offered` + marks the application, atomically. */
 export async function createOffer(input: CreateOfferInput): Promise<string> {
+  // A money-releasing timer (gig_ended -> auto_confirm) is scheduled off endsAt,
+  // so it must be after startsAt. Guard the invariant at the single entry point.
+  if (new Date(input.terms.endsAt).getTime() <= new Date(input.terms.startsAt).getTime())
+    throw new Error("invalid booking terms: endsAt must be after startsAt");
   const bookingId = newId("booking");
   const offerExpiresAt = new Date(
     Date.now() + (input.offerTtlHours ?? 72) * 3_600_000,

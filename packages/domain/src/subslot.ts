@@ -10,13 +10,22 @@
  */
 import { venueCancellationFee } from "./cancellation.js";
 
-export type SubslotState =
-  | "open"
-  | "booked"
-  | "released"
-  | "cancelled_by_payer"
-  | "cancelled_by_tech"
-  | "cancelled_with_parent";
+export const SUBSLOT_STATES = [
+  "open",
+  "booked",
+  "released",
+  "cancelled_by_payer",
+  "cancelled_with_parent",
+] as const;
+export type SubslotState = (typeof SUBSLOT_STATES)[number];
+
+export const SUBSLOT_EVENTS = [
+  "TECH_BOOKED",
+  "PARENT_RELEASED",
+  "PARENT_CANCELLED",
+  "PAYER_CANCELLED",
+  "TECH_CANCELLED",
+] as const;
 
 export const SUBSLOT_TERMINAL = new Set<SubslotState>([
   "released",
