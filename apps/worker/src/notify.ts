@@ -3,7 +3,7 @@
  * SES — each enabled by env, falling back to structured logs in dev.
  * Critical-path templates only at M1; copy lives here, versioned in git.
  */
-import { db, env, paymentsEnabled, schema } from "@gigit/db";
+import { db, emailConfigured, env, paymentsEnabled, schema, smsConfigured } from "@gigit/db";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { eq } from "drizzle-orm";
 
@@ -242,9 +242,9 @@ export async function notifyUser(
     .where(eq(schema.users.id, userId));
   if (!user) return;
 
-  if (user.phone && env().TWILIO_ACCOUNT_SID && !user.smsOptedOutAt) {
+  if (user.phone && smsConfigured() && !user.smsOptedOutAt) {
     await sendSms(user.phone, `${t.subject}. ${t.body}`);
-  } else if (user.email && env().EMAIL_FROM) {
+  } else if (user.email && emailConfigured()) {
     await sendEmail(user.email, t.subject, t.body);
   } else {
     log("notify.log_sink", { userId, template, subject: t.subject });
@@ -263,12 +263,17 @@ export async function notifyDestination(
 ): Promise<void> {
   const t = renderTemplate(template, vars);
   const isEmail = destination.includes("@");
-  if (!isEmail && env().TWILIO_ACCOUNT_SID) {
+  if (!isEmail && smsConfigured()) {
     await sendSms(destination, `${t.subject}. ${t.body}`);
-  } else if (isEmail && env().EMAIL_FROM) {
+  } else if (isEmail && emailConfigured()) {
     await sendEmail(destination, t.subject, t.body);
   } else {
-    log("notify.log_sink", { destination, template, subject: t.subject });
+    // No channel for this destination: in prod this is a dropped login code, so
+    // make it loud (the auth route also pre-gates signups to configured channels).
+    log(
+      env().NODE_ENV === "production" ? "notify.undeliverable" : "notify.log_sink",
+      { destination, template, subject: t.subject },
+    );
   }
 }
 

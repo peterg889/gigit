@@ -1,5 +1,5 @@
 import { authRequestSchema, newId } from "@gigit/domain";
-import { appendEvent, db, env, schema } from "@gigit/db";
+import { appendEvent, db, emailConfigured, env, schema, smsConfigured } from "@gigit/db";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { fail, ok, parseBody } from "@/lib/respond";
 
@@ -9,6 +9,18 @@ export async function POST(req: Request) {
   const parsed = await parseBody(req, authRequestSchema);
   if ("response" in parsed) return parsed.response;
   const destination = parsed.data.phone ?? parsed.data.email!;
+
+  // Don't accept a sign-in we can't deliver. In production a destination whose
+  // channel isn't configured would silently drop the code (the worker can't
+  // send it, and prod doesn't echo the dev code), locking the user out with a
+  // misleading "sent". Fail fast with a clear, actionable error instead.
+  if (env().NODE_ENV === "production") {
+    const isEmail = destination.includes("@");
+    if (isEmail && !emailConfigured())
+      return fail("unavailable", "Email sign-in isn't available right now.", 503);
+    if (!isEmail && !smsConfigured())
+      return fail("unavailable", "Text-message sign-in isn't available — use email instead.", 503);
+  }
 
   // Rate limit per destination (abuse + SMS cost control)
   const [{ recent }] = (await db()
