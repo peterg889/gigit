@@ -49,7 +49,29 @@ export function env(): Env {
     if (parsed.data.STORAGE_DRIVER === "s3" && !parsed.data.S3_BUCKET) {
       throw new Error("S3_BUCKET is required when STORAGE_DRIVER=s3");
     }
+    // Twilio is all-or-nothing: a half-config (SID set, token/from missing)
+    // would pass the SMS channel gate yet fail every send, silently black-holing
+    // login codes. Fail fast at boot instead.
+    if (
+      parsed.data.TWILIO_ACCOUNT_SID &&
+      (!parsed.data.TWILIO_AUTH_TOKEN || !parsed.data.TWILIO_FROM)
+    ) {
+      throw new Error(
+        "TWILIO_AUTH_TOKEN and TWILIO_FROM are required when TWILIO_ACCOUNT_SID is set",
+      );
+    }
     cached = parsed.data;
   }
   return cached;
+}
+
+/** SMS deliverable only when all three Twilio vars are present (see env() guard). */
+export function smsConfigured(): boolean {
+  const e = env();
+  return !!(e.TWILIO_ACCOUNT_SID && e.TWILIO_AUTH_TOKEN && e.TWILIO_FROM);
+}
+
+/** Email deliverable when an SES verified sender is configured. */
+export function emailConfigured(): boolean {
+  return !!env().EMAIL_FROM;
 }
