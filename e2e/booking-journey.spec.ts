@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 /**
- * The critical journey (engineering-spec §13 E2E #2): post slot → apply →
+ * The critical journey (engineering-spec §13 E2E #2): post open date → apply →
  * offer → accept → CONFIRMED. Exercises web UI, API, state machine, and the
  * worker's payment round-trip (Null gateway) in one pass.
  *
@@ -14,11 +14,11 @@ async function signIn(page: Page, email: string) {
   await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Send code" }).click();
   await page.getByLabel(/Enter the code/).fill("000000");
-  await page.getByRole("button", { name: "Verify" }).click();
+  await page.getByRole("button", { name: "Verify code" }).click();
   await page.waitForURL("**/onboarding");
 }
 
-test("venue posts a slot; performer applies; offer; accept; booking confirms", async ({
+test("venue posts an open date; performer applies; offer; accept; booking confirms", async ({
   browser,
 }) => {
   const marker = `e2e night ${Date.now()}`;
@@ -27,7 +27,7 @@ test("venue posts a slot; performer applies; offer; accept; booking confirms", a
   const vp = await venue.newPage();
   const pp = await performer.newPage();
 
-  // ── venue posts a slot ──
+  // ── venue posts an open date ──
   await signIn(vp, "venue@example.com");
   await vp.goto("/slots/new");
   const startsAt = new Date(Date.now() + 14 * 86_400_000);
@@ -39,7 +39,7 @@ test("venue posts a slot; performer applies; offer; accept; booking confirms", a
   await vp.getByLabel("Format", { exact: true }).selectOption("music");
   await vp.getByLabel("Budget (USD)").fill("350");
   await vp.getByLabel(/About the night/).fill(marker);
-  await vp.getByRole("button", { name: "Post slot" }).click();
+  await vp.getByRole("button", { name: "Post open date" }).click();
   await vp.waitForURL("**/slots");
 
   // ── performer finds it on the feed and applies ──
@@ -89,7 +89,7 @@ test("venue posts a slot; performer applies; offer; accept; booking confirms", a
         return pp
           .locator(".card", { hasText: "$350" })
           .first()
-          .locator(".badge", { hasText: "confirmed" })
+          .locator(".badge", { hasText: "Confirmed" })
           .count();
       },
       { timeout: 20_000, message: "booking should reach confirmed via the worker" },
