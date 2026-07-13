@@ -3,12 +3,19 @@ import { appendEvent, db, schema } from "@gigit/db";
 import { and, asc, eq, gte, sql } from "drizzle-orm";
 import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
+import { venueLocationIsComplete } from "@/lib/date-time";
 
 export async function POST(req: Request) {
   try {
     const userId = await requireUser();
     const venue = await venueOwnedBy(userId);
     if (!venue) return fail("forbidden", "create a venue profile first", 403);
+    if (!venueLocationIsComplete(venue))
+      return fail(
+        "venue_location_required",
+        "add your venue address and timezone before posting a slot",
+        409,
+      );
     const parsed = await parseBody(req, slotCreateSchema);
     if ("response" in parsed) return parsed.response;
     const id = newId("slot");
@@ -71,6 +78,12 @@ export async function GET(req: Request) {
       slot: schema.slots,
       venueName: schema.venues.name,
       venueKind: schema.venues.kind,
+      venueAddressLine1: schema.venues.addressLine1,
+      venueAddressLine2: schema.venues.addressLine2,
+      venueCity: schema.venues.city,
+      venueRegion: schema.venues.region,
+      venuePostalCode: schema.venues.postalCode,
+      venueTimeZone: schema.venues.timeZone,
     })
     .from(schema.slots)
     .innerJoin(schema.venues, eq(schema.slots.venueId, schema.venues.id))

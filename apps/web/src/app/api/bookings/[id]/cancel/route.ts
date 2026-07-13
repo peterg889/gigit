@@ -26,10 +26,16 @@ export async function POST(_req: Request, { params }: Params) {
       performerOwnedBy(userId),
       venueOwnedBy(userId),
     ]);
-    let event: "VENUE_CANCELLED" | "PERFORMER_CANCELLED";
+    let event:
+      | "VENUE_CANCELLED"
+      | "PERFORMER_DECLINED"
+      | "PERFORMER_CANCELLED";
     if (venue && venue.id === booking.venueId) event = "VENUE_CANCELLED";
     else if (performer && performer.id === booking.performerId)
-      event = "PERFORMER_CANCELLED";
+      event =
+        booking.state === "offered"
+          ? "PERFORMER_DECLINED"
+          : "PERFORMER_CANCELLED";
     else return fail("forbidden", "you are not a party to this booking", 403);
 
     const result = await runBookingTransition(bookingId, { kind: event }, userId);

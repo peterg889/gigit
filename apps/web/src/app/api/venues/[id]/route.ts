@@ -18,11 +18,16 @@ export async function GET(_req: Request, { params }: Params) {
       name: schema.venues.name,
       bio: schema.venues.bio,
       metro: schema.venues.metro,
-      lat: schema.venues.lat,
-      lng: schema.venues.lng,
+      addressLine1: schema.venues.addressLine1,
+      addressLine2: schema.venues.addressLine2,
+      city: schema.venues.city,
+      region: schema.venues.region,
+      postalCode: schema.venues.postalCode,
+      timeZone: schema.venues.timeZone,
       capacity: schema.venues.capacity,
       paInventory: schema.venues.paInventory,
       noiseCurfew: schema.venues.noiseCurfew,
+      reliabilityStrikes: schema.venues.reliabilityStrikes,
       createdAt: schema.venues.createdAt,
     })
     .from(schema.venues)

@@ -2,6 +2,7 @@ import { AiNotConfiguredError, slotParse } from "@gigit/db";
 import { z } from "zod";
 import { AuthError, requireUser, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
+import { venueLocationIsComplete } from "@/lib/date-time";
 
 const bodySchema = z.object({ text: z.string().min(5).max(1000) });
 
@@ -13,11 +14,18 @@ const bodySchema = z.object({ text: z.string().min(5).max(1000) });
 export async function POST(req: Request) {
   try {
     const userId = await requireUser();
-    if (!(await venueOwnedBy(userId)))
+    const venue = await venueOwnedBy(userId);
+    if (!venue)
       return fail("forbidden", "venue profile required", 403);
+    if (!venueLocationIsComplete(venue))
+      return fail(
+        "venue_location_required",
+        "add your venue address and timezone before drafting a slot",
+        409,
+      );
     const parsed = await parseBody(req, bodySchema);
     if ("response" in parsed) return parsed.response;
-    const draft = await slotParse(parsed.data.text, userId);
+    const draft = await slotParse(parsed.data.text, userId, new Date(), venue.timeZone);
     return ok({ draft });
   } catch (e) {
     if (e instanceof AuthError) return fail("auth", e.message, e.status);

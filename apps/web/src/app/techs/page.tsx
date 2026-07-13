@@ -4,6 +4,11 @@ import Link from "next/link";
 import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
+import {
+  formatAddress,
+  formatVenueDateTime,
+  shortTimeZoneName,
+} from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
 
@@ -27,12 +32,28 @@ export default async function TechsPage() {
     : false;
   const myTech = userId ? await techOwnedBy(userId) : null;
 
+  const myApplications = myTech
+    ? await db()
+        .select()
+        .from(schema.techSubslotApplications)
+        .where(eq(schema.techSubslotApplications.techId, myTech.id))
+    : [];
+  const myApplicationBySubslot = new Map(
+    myApplications.map((application) => [application.subslotId, application]),
+  );
+
   // Open sound slots (PRD F6.2): the gig context comes with the listing.
   const openSubslots = await db()
     .select({
       subslot: schema.techSubslots,
       terms: schema.bookings.terms,
       venueName: schema.venues.name,
+      venueAddressLine1: schema.venues.addressLine1,
+      venueAddressLine2: schema.venues.addressLine2,
+      venueCity: schema.venues.city,
+      venueRegion: schema.venues.region,
+      venuePostalCode: schema.venues.postalCode,
+      venueTimeZone: schema.venues.timeZone,
       paInventory: schema.venues.paInventory,
       performerName: schema.performers.name,
     })
@@ -55,16 +76,25 @@ export default async function TechsPage() {
             needs a tech — room specs and input list included.
           </p>
         )}
-        {openSubslots.map(({ subslot, terms, venueName, paInventory, performerName }) => (
+        {openSubslots.map(({
+          subslot,
+          terms,
+          venueName,
+          venueAddressLine1,
+          venueAddressLine2,
+          venueCity,
+          venueRegion,
+          venuePostalCode,
+          venueTimeZone,
+          paInventory,
+          performerName,
+        }) => (
           <div className="card" key={subslot.id}>
             <strong>{performerName}</strong> at <strong>{venueName}</strong>{" "}
             <span className="money">${(subslot.budgetCents / 100).toFixed(0)}</span>
             <p className="muted">
-              {new Date(terms.startsAt).toLocaleString("en-US", {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZone: "UTC",
-              })}{" "}
+              {formatVenueDateTime(terms.startsAt, venueTimeZone)}{" "}
+              {shortTimeZoneName(terms.startsAt, venueTimeZone)}{" "}
               · {subslot.needs.inputs} inputs · house PA:{" "}
               {paInventory.hasPA
                 ? `${paInventory.mixerChannels ?? "?"} ch`
@@ -72,12 +102,30 @@ export default async function TechsPage() {
               {subslot.needs.gaps.length > 0 && <> · gaps: {subslot.needs.gaps.join("; ")}</>}
               {subslot.needs.notes && <> · {subslot.needs.notes}</>}
             </p>
-            <p className="muted">Paid by the {subslot.payer}, after the show.</p>
+            <p className="muted">
+              {formatAddress({
+                addressLine1: venueAddressLine1,
+                addressLine2: venueAddressLine2,
+                city: venueCity,
+                region: venueRegion,
+                postalCode: venuePostalCode,
+              })}
+            </p>
+            <p className="muted">
+              The {subslot.payer} pays you directly; Gigit never touches the gig money.
+            </p>
             {myTech ? (
-              <ActionButton
-                endpoint={`/api/tech-subslots/${subslot.id}/applications`}
-                label="Apply — pay as listed"
-              />
+              myApplicationBySubslot.has(subslot.id) ? (
+                <p>
+                  <span className="badge">{myApplicationBySubslot.get(subslot.id)!.status}</span>{" "}
+                  <Link href={"/sound/" + subslot.id}>View your application</Link>
+                </p>
+              ) : (
+                <ActionButton
+                  endpoint={`/api/tech-subslots/${subslot.id}/applications`}
+                  label="Apply — pay as listed"
+                />
+              )
             ) : (
               <span className="muted">Create a tech profile to apply.</span>
             )}
@@ -97,7 +145,10 @@ export default async function TechsPage() {
           <strong>
             <Link href={`/t/${t.id}`}>{t.name}</Link>
           </strong>{" "}
-          <span className="badge">{GEAR_LABEL[t.gear]}</span>
+          <span className="badge">{GEAR_LABEL[t.gear]}</span>{" "}
+          {t.reliabilityStrikes > 0 && (
+            <span className="badge">{t.reliabilityStrikes} cancellation{t.reliabilityStrikes === 1 ? "" : "s"}</span>
+          )}
           <p className="muted">{t.bio}</p>
           <p className="muted">
             {t.rateLaborCents != null && (

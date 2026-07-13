@@ -35,6 +35,19 @@ describe("renderAgreement — discovery-first (payments off, the default)", () =
     expect(text).not.toMatch(/full refund/i);
   });
 
+
+  it("renders show times in the venue timezone when supplied", () => {
+    const localText = renderAgreement({
+      ...base,
+      timeZone: "America/Chicago",
+      venueAddress: "123 Main St, Milwaukee, WI 53202",
+    });
+    expect(localText).toContain("June 30, 2026");
+    expect(localText).toContain("9:00 PM CDT");
+    expect(localText).toContain("11:00 PM CDT");
+    expect(localText).toContain("Location: 123 Main St, Milwaukee, WI 53202");
+    expect(localText).not.toContain("(UTC)");
+  });
   it("still carries the deal: parties, pay, times, provided, notes", () => {
     expect(text).toContain("Lakefront Taproom");
     expect(text).toContain("The Bishops");

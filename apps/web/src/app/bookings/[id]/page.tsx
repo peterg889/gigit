@@ -7,6 +7,12 @@ import { notFound } from "next/navigation";
 import { performerOwnedBy, venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
+import {
+  formatAddress,
+  formatVenueDate,
+  formatVenueDateTime,
+  shortTimeZoneName,
+} from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +34,12 @@ export default async function BookingPage({
     .select({
       booking: schema.bookings,
       venueName: schema.venues.name,
+      venueAddressLine1: schema.venues.addressLine1,
+      venueAddressLine2: schema.venues.addressLine2,
+      venueCity: schema.venues.city,
+      venueRegion: schema.venues.region,
+      venuePostalCode: schema.venues.postalCode,
+      venueTimeZone: schema.venues.timeZone,
       performerName: schema.performers.name,
       paInventory: schema.venues.paInventory,
       techNeeds: schema.performers.techNeeds,
@@ -50,6 +62,23 @@ export default async function BookingPage({
   const state = b.state as BookingState;
   const terminal = TERMINAL_STATES.has(state);
   const myRole = asVenue ? "venue" : "performer";
+  const dealTimeZone = b.terms.timeZone ?? row.venueTimeZone;
+  const venueAddress =
+    b.terms.venueAddress ??
+    formatAddress({
+      addressLine1: row.venueAddressLine1,
+      addressLine2: row.venueAddressLine2,
+      city: row.venueCity,
+      region: row.venueRegion,
+      postalCode: row.venuePostalCode,
+    });
+  const offerDateTime = formatVenueDateTime(
+    b.terms.startsAt,
+    dealTimeZone,
+    "full",
+  );
+  const acceptConfirmation =
+    `Accept this firm offer? ${row.performerName} at ${row.venueName} / ${offerDateTime} / ${venueAddress} / $${(b.terms.amountCents / 100).toFixed(0)}. This creates a binding booking.`;
 
   // Recurring-series re-book (PRD F2.2): one-tap re-offer of this act into the
   // next open series night, at the same pay — the residency anti-leakage hook.
@@ -118,19 +147,37 @@ export default async function BookingPage({
     <div>
       <div className="card">
         <h1>
-          {row.performerName} at {row.venueName} <span className="badge">{state}</span>
+          {row.performerName} at {row.venueName} <span className="badge">
+            {state === "offered" ? "firm offer" : state.replaceAll("_", " ")}
+          </span>
         </h1>
         <p>
-          {new Date(b.terms.startsAt).toLocaleString("en-US", {
-            dateStyle: "full",
-            timeStyle: "short",
-            timeZone: "UTC",
-          })}{" "}
-          · <span className="money">${(b.terms.amountCents / 100).toFixed(0)}</span>
+          {formatVenueDateTime(b.terms.startsAt, dealTimeZone, "full")}{" "}
+          {shortTimeZoneName(b.terms.startsAt, dealTimeZone)}{" "}
+          / <span className="money">${(b.terms.amountCents / 100).toFixed(0)}</span>
         </p>
+        <p className="muted">
+          {venueAddress}
+        </p>
+        {state === "offered" && (
+          <p>
+            <strong>Firm offer.</strong>{" "}
+            <span className="muted">
+              Respond by{" "}
+              {formatVenueDateTime(b.offerExpiresAt, dealTimeZone)}{" "}
+              {shortTimeZoneName(b.offerExpiresAt, dealTimeZone)}. The
+              venue cannot offer this night to another act while this offer is
+              live.
+            </span>
+          </p>
+        )}
         <p>
-          {state === "offered" && asPerformer && (
-            <ActionButton endpoint={`/api/bookings/${id}/accept`} label="Accept offer" />
+          {state === "offered" && asVenue && (
+            <ActionButton
+              endpoint={`/api/bookings/${id}/cancel`}
+              label="Withdraw firm offer"
+              confirm="Withdraw this firm offer? The performer will be notified and you can then offer the slot to someone else."
+            />
           )}{" "}
           {state === "confirmed" && (
             <>
@@ -186,6 +233,7 @@ export default async function BookingPage({
               endpoint={`/api/bookings/${id}/dispute`}
               submitLabel="Open a dispute"
               fields={[
+                { name: "category", label: "Issue", type: "select", options: ["no_show", "venue_unavailable", "misrepresentation", "other"], required: true },
                 { name: "reason", label: "What happened?", type: "textarea", required: true },
               ]}
             />
@@ -193,7 +241,7 @@ export default async function BookingPage({
         )}
       </div>
 
-      {state === "confirmed" && !activeSubslot && (
+      {(state === "offered" || state === "confirmed") && !activeSubslot && (
         <div className="card">
           <h2>Sound</h2>
           <p>
@@ -205,10 +253,16 @@ export default async function BookingPage({
                   : "tech + rig needed"}
             </span>
             {plan.gaps.length > 0 && (
-              <span className="muted"> · {plan.gaps.join("; ")}</span>
+              <span className="muted"> / {plan.gaps.join("; ")}</span>
             )}
           </p>
-          {plan.verdict !== "covered" && (
+          {state === "offered" && plan.verdict !== "covered" && (
+            <p className="muted">
+              This is the current sound plan for the deal. Confirm who brings
+              the missing equipment or tech before accepting.
+            </p>
+          )}
+          {state === "confirmed" && plan.verdict !== "covered" && (
             <>
               <p className="muted">
                 Post a sound slot for this night — techs see the room, the
@@ -236,7 +290,7 @@ export default async function BookingPage({
             <span className="money">
               ${(activeSubslot.budgetCents / 100).toFixed(0)}
             </span>{" "}
-            <span className="muted">· paid by the {activeSubslot.payer}</span>
+            <span className="muted">/ paid by the {activeSubslot.payer}</span>
           </p>
           {activeSubslot.needs.gaps.length > 0 && (
             <p className="muted">Gaps: {activeSubslot.needs.gaps.join("; ")}</p>
@@ -246,7 +300,7 @@ export default async function BookingPage({
               <strong>{tech.name}</strong>{" "}
               <span className="badge">{tech.gear}</span>{" "}
               <span className="badge">{application.status}</span>
-              {application.note && <span className="muted"> · “{application.note}”</span>}{" "}
+              {application.note && <span className="muted"> / “{application.note}”</span>}{" "}
               {amPayer && activeSubslot.state === "open" && application.status === "submitted" && (
                 <ActionButton
                   endpoint={`/api/tech-subslots/${activeSubslot.id}/book`}
@@ -263,6 +317,7 @@ export default async function BookingPage({
             <ActionButton
               endpoint={`/api/tech-subslots/${activeSubslot.id}/cancel`}
               label="Cancel sound slot"
+              confirm="Cancel this sound slot? Any booked tech will be notified and the sound job will close."
             />
           )}
         </div>
@@ -277,8 +332,8 @@ export default async function BookingPage({
           {contacts.map((c) => (
             <p key={c.role}>
               <span className="badge">{c.role}</span> <strong>{c.name}</strong>
-              {c.phone && <> · {c.phone}</>}
-              {c.email && <> · {c.email}</>}
+              {c.phone && <> / {c.phone}</>}
+              {c.email && <> / {c.email}</>}
             </p>
           ))}
         </div>
@@ -323,10 +378,11 @@ export default async function BookingPage({
             Liked working with {row.performerName}?{" "}
             <ActionButton
               endpoint={`/api/bookings/${id}/rebook`}
-              label={`Book them again — ${new Date(rebookTarget.startsAt).toLocaleDateString(
-                "en-US",
-                { weekday: "short", month: "short", day: "numeric", timeZone: "UTC" },
+              label={`Book them again — ${formatVenueDate(
+                rebookTarget.startsAt,
+                dealTimeZone,
               )}`}
+              confirm={`Send a firm offer to ${row.performerName} for ${formatVenueDate(rebookTarget.startsAt, dealTimeZone)} at $${(rebookTarget.amountCents / 100).toFixed(0)}?`}
             />
           </p>
           <p className="muted">
@@ -342,14 +398,43 @@ export default async function BookingPage({
         <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.85rem" }}>
           {renderAgreement({
             venueName: row.venueName,
+            venueAddress,
             performerName: row.performerName,
             terms: b.terms,
+            timeZone: dealTimeZone,
             paymentsEnabled: paymentsEnabled(),
           })}
         </pre>
+        {state === "offered" && asPerformer && (
+          <div>
+            <p>
+              Review the complete deal above. Accepting confirms the venue,
+              date, address, duration, pay, sound expectations, and any notes
+              as a binding booking.
+            </p>
+            <ActionButton
+              endpoint={`/api/bookings/${id}/accept`}
+              label="Accept this firm offer"
+              body={{ acceptedTerms: true }}
+              confirm={acceptConfirmation}
+            />{" "}
+            <ActionButton
+              endpoint={`/api/bookings/${id}/cancel`}
+              label="Decline this offer"
+              confirm="Decline this firm offer? The venue will be notified and can offer the slot to another act."
+            />
+          </div>
+        )}
         <p className="muted">
-          Venue accepted {b.venueAcceptedAt?.toISOString() ?? "—"} · performer accepted{" "}
-          {b.performerAcceptedAt?.toISOString() ?? "—"} · template {b.agreementTemplateVer}
+          Venue accepted{" "}
+          {b.venueAcceptedAt
+            ? formatVenueDateTime(b.venueAcceptedAt, dealTimeZone)
+            : "—"}{" "}
+          / performer accepted{" "}
+          {b.performerAcceptedAt
+            ? formatVenueDateTime(b.performerAcceptedAt, dealTimeZone)
+            : "—"}{" "}
+          / template {b.agreementTemplateVer}
         </p>
       </div>
     </div>

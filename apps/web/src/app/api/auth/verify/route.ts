@@ -7,7 +7,7 @@ import { fail, ok, parseBody } from "@/lib/respond";
 export async function POST(req: Request) {
   const parsed = await parseBody(req, authVerifySchema);
   if ("response" in parsed) return parsed.response;
-  const { phone, email, code } = parsed.data;
+  const { phone, email, code, source, campaign } = parsed.data;
   const destination = phone ?? email;
   if (!destination) return fail("validation", "phone or email required", 422);
 
@@ -52,9 +52,20 @@ export async function POST(req: Request) {
       kind: "user.created",
       subjectType: "user",
       subjectId: id,
+      payload: {
+        ...(source ? { source } : {}),
+        ...(campaign ? { campaign } : {}),
+      },
     });
   }
 
+  await appendEvent(d, {
+    actor: user!.id,
+    kind: "user.terms_accepted",
+    subjectType: "user",
+    subjectId: user!.id,
+    payload: { version: "2026-07-13" },
+  });
   await createSession(user!.id);
   return ok({ userId: user!.id });
 }

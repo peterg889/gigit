@@ -3,6 +3,7 @@ import { db, paymentsEnabled, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
+import { formatAddress } from "@/lib/date-time";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -15,6 +16,12 @@ export async function GET(_req: Request, { params }: Params) {
       .select({
         booking: schema.bookings,
         venueName: schema.venues.name,
+        venueTimeZone: schema.venues.timeZone,
+        venueAddressLine1: schema.venues.addressLine1,
+        venueAddressLine2: schema.venues.addressLine2,
+        venueCity: schema.venues.city,
+        venueRegion: schema.venues.region,
+        venuePostalCode: schema.venues.postalCode,
         performerName: schema.performers.name,
       })
       .from(schema.bookings)
@@ -38,8 +45,16 @@ export async function GET(_req: Request, { params }: Params) {
       templateVersion: row.booking.agreementTemplateVer,
       text: renderAgreement({
         venueName: row.venueName,
+        venueAddress: formatAddress({
+          addressLine1: row.venueAddressLine1,
+          addressLine2: row.venueAddressLine2,
+          city: row.venueCity,
+          region: row.venueRegion,
+          postalCode: row.venuePostalCode,
+        }),
         performerName: row.performerName,
         terms: row.booking.terms,
+        timeZone: row.venueTimeZone,
         paymentsEnabled: paymentsEnabled(),
       }),
       venueAcceptedAt: row.booking.venueAcceptedAt,

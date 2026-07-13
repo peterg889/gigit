@@ -11,10 +11,11 @@ import { expect, test, type Page } from "@playwright/test";
 async function signIn(page: Page, email: string) {
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
+  await page.getByRole("checkbox").check();
   await page.getByRole("button", { name: "Send code" }).click();
   await page.getByLabel(/Enter the code/).fill("000000");
   await page.getByRole("button", { name: "Verify" }).click();
-  await page.waitForURL("**/me");
+  await page.waitForURL("**/onboarding");
 }
 
 test("venue posts a slot; performer applies; offer; accept; booking confirms", async ({
@@ -39,11 +40,11 @@ test("venue posts a slot; performer applies; offer; accept; booking confirms", a
   await vp.getByLabel("Budget (USD)").fill("350");
   await vp.getByLabel(/About the night/).fill(marker);
   await vp.getByRole("button", { name: "Post slot" }).click();
-  await vp.waitForURL("**/");
+  await vp.waitForURL("**/slots");
 
   // ── performer finds it on the feed and applies ──
   await signIn(pp, "band@example.com");
-  await pp.goto("/");
+  await pp.goto("/slots");
   const card = pp.locator(".card", { hasText: marker });
   await expect(card).toBeVisible();
   await expect(card.locator(".money")).toHaveText("$350"); // the pay is on the poster
@@ -54,13 +55,32 @@ test("venue posts a slot; performer applies; offer; accept; booking confirms", a
   await vp.reload();
   await vp.locator(".card", { hasText: marker }).getByRole("link").first().click();
   await expect(vp.getByText(/Applicants \(/)).toBeVisible();
-  await vp.getByLabel("Offer ($)").fill("350");
-  await vp.getByRole("button", { name: "Send offer" }).click();
-  await expect(vp.getByText(/offered/).first()).toBeVisible();
+  await vp.getByRole("button", { name: "Send firm offer" }).click();
+  await expect(vp.getByText("Firm offer sent.")).toBeVisible();
 
-  // ── performer accepts; worker (Null gateway) confirms it ──
+  // Performer reviews the complete deal, explicitly accepts, and the worker
+  // (Null gateway) confirms it.
   await pp.goto("/bookings");
-  await pp.getByRole("button", { name: "Accept offer" }).first().click();
+  const newestOffer = pp
+    .locator(".card", { hasText: "$350" })
+    .first();
+  await newestOffer
+    .getByRole("link", { name: "Review the deal and respond" })
+    .click();
+  await expect(
+    pp.getByRole("heading", { name: "The deal, in writing" }),
+  ).toBeVisible();
+  await expect(pp.getByText(/\$350/).first()).toBeVisible();
+  const accepted = pp.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    response.url().endsWith("/accept"),
+  );
+
+  pp.once("dialog", (dialog) => dialog.accept());
+  await pp
+    .getByRole("button", { name: "Accept this firm offer" })
+    .click();
+  expect((await accepted).status()).toBe(200);
 
   await expect
     .poll(

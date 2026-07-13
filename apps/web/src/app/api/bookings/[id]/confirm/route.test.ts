@@ -23,12 +23,13 @@ describe("venue confirm route", () => {
   const uBand = newId("user");
   const venueId = newId("venue");
   const performerId = newId("performer");
+  let bookingSequence = 0;
 
   async function makeBooking(): Promise<string> {
     const d = db();
     const slotId = newId("slot");
     const appId = newId("application");
-    const startsAt = new Date(Date.now() + 3 * 86_400_000);
+    const startsAt = new Date(Date.now() + (3 + bookingSequence++) * 86_400_000);
     await d.insert(schema.slots).values({
       id: slotId,
       venueId,

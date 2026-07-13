@@ -3,24 +3,36 @@ import { nextOccurrences, patternFromFirst } from "./recurrence.js";
 
 describe("patternFromFirst", () => {
   it("derives weekly pattern", () => {
-    // Fri 2026-06-19 20:00 UTC
-    const p = patternFromFirst(new Date("2026-06-19T20:00:00Z"), 120, "weekly");
+    // Fri 2026-06-19 20:00 in Chicago
+    const p = patternFromFirst(
+      new Date("2026-06-20T01:00:00Z"),
+      120,
+      "weekly",
+      "America/Chicago",
+    );
     expect(p).toEqual({
       freq: "weekly",
       dayOfWeek: 5,
-      startTimeUtc: "20:00",
+      startTimeLocal: "20:00",
+      timeZone: "America/Chicago",
       durationMinutes: 120,
     });
   });
 
   it("derives monthly Nth-weekday pattern", () => {
     // 2026-06-02 is the first Tuesday
-    const p = patternFromFirst(new Date("2026-06-02T19:00:00Z"), 90, "monthly_dow");
+    const p = patternFromFirst(
+      new Date("2026-06-03T00:00:00Z"),
+      90,
+      "monthly_dow",
+      "America/Chicago",
+    );
     expect(p).toEqual({
       freq: "monthly_dow",
       dayOfWeek: 2,
       week: 1,
-      startTimeUtc: "19:00",
+      startTimeLocal: "19:00",
+      timeZone: "America/Chicago",
       durationMinutes: 90,
     });
   });
@@ -62,5 +74,31 @@ describe("nextOccurrences monthly_dow", () => {
       "2026-06-26T21:00:00.000Z",
       "2026-07-31T21:00:00.000Z",
     ]);
+  });
+});
+
+describe("venue-local recurrence through DST", () => {
+  it("keeps a weekly night at the same wall-clock hour", () => {
+    const pattern = patternFromFirst(
+      new Date("2026-03-07T02:00:00Z"), // Friday 8 PM CST
+      120,
+      "weekly",
+      "America/Chicago",
+    );
+    const occ = nextOccurrences(pattern, new Date("2026-03-01T00:00:00Z"), 3);
+    expect(occ.map((d) => d.toISOString())).toEqual([
+      "2026-03-07T02:00:00.000Z",
+      "2026-03-14T01:00:00.000Z",
+      "2026-03-21T01:00:00.000Z",
+    ]);
+  });
+
+  it("continues to materialize legacy UTC patterns", () => {
+    const occ = nextOccurrences(
+      { freq: "weekly", dayOfWeek: 5, startTimeUtc: "20:00", durationMinutes: 60 },
+      new Date("2026-06-12T20:00:00Z"),
+      1,
+    );
+    expect(occ[0].toISOString()).toBe("2026-06-19T20:00:00.000Z");
   });
 });

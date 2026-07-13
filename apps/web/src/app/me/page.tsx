@@ -5,6 +5,11 @@ import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm, RedirectButton } from "@/components/ApiForm";
 import { GearExtractWidget, ProfileIngestWidget } from "@/components/AiAssist";
 import { MediaManager } from "@/components/MediaManager";
+import {
+  formatAddress,
+  formatWallTime,
+  venueLocationIsComplete,
+} from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
 
@@ -24,6 +29,15 @@ export default async function MePage() {
   const series = venue ? await seriesForVenue(db(), venue.id) : [];
   const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const WEEK = ["", "first", "second", "third", "fourth", "last"];
+  const US_TIME_ZONES = [
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Phoenix",
+    "America/Los_Angeles",
+    "America/Anchorage",
+    "Pacific/Honolulu",
+  ];
 
   return (
     <div>
@@ -62,13 +76,19 @@ export default async function MePage() {
               endpoint={`/api/performers/${performer.id}`}
               method="PATCH"
               submitLabel="Save changes"
-              transform="genreTagsCsv"
+              transform="performerProfile"
               fields={[
                 { name: "name", label: "Act name", defaultValue: performer.name },
                 { name: "bio", label: "Bio", type: "textarea", defaultValue: performer.bio ?? "" },
                 { name: "genreTags", label: "Genres (comma-separated)", defaultValue: (performer.genreTags ?? []).join(", ") },
                 { name: "rateMinCents", label: "Rate floor ($)", type: "number", defaultValue: performer.rateMinCents != null ? performer.rateMinCents / 100 : undefined },
                 { name: "rateMaxCents", label: "Rate ceiling ($)", type: "number", defaultValue: performer.rateMaxCents != null ? performer.rateMaxCents / 100 : undefined },
+                { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: performer.travelRadiusKm },
+                { name: "setLengthsMinutes", label: "Set lengths in minutes (comma-separated)", defaultValue: (performer.setLengthsMinutes ?? []).join(", ") },
+                { name: "inputs", label: "Audio inputs needed", type: "number", defaultValue: performer.techNeeds.inputs },
+                { name: "micsNeeded", label: "Microphones needed", type: "number", defaultValue: performer.techNeeds.micsNeeded ?? 0 },
+                { name: "monitorsNeeded", label: "Stage monitors needed", type: "number", defaultValue: performer.techNeeds.monitorsNeeded ?? 0 },
+                { name: "canPlayUnamplified", label: "Can you play unamplified?", type: "select", options: ["false", "true"], defaultValue: String(performer.techNeeds.canPlayUnamplified ?? false) },
               ]}
             />
           </details>
@@ -80,13 +100,21 @@ export default async function MePage() {
           <ApiForm
             endpoint="/api/performers"
             submitLabel="Create performer profile"
-            transform="genreTagsCsv"
+            transform="performerProfile"
             fields={[
               { name: "name", label: "Act name", required: true },
               { name: "kind", label: "Type", type: "select", options: ["band", "solo", "comedian", "other"], required: true },
               { name: "homeMetro", label: "Home metro (e.g. milwaukee)", required: true },
               { name: "bio", label: "Bio", type: "textarea" },
               { name: "genreTags", label: "Genres (comma-separated)" },
+              { name: "rateMinCents", label: "Typical rate from ($)", type: "number" },
+              { name: "rateMaxCents", label: "Typical rate to ($)", type: "number" },
+              { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: 50 },
+              { name: "setLengthsMinutes", label: "Set lengths in minutes (comma-separated)", placeholder: "45, 60, 120" },
+              { name: "inputs", label: "Audio inputs needed", type: "number", defaultValue: 0 },
+              { name: "micsNeeded", label: "Microphones needed", type: "number", defaultValue: 0 },
+              { name: "monitorsNeeded", label: "Stage monitors needed", type: "number", defaultValue: 0 },
+              { name: "canPlayUnamplified", label: "Can you play unamplified?", type: "select", options: ["false", "true"], defaultValue: "false" },
             ]}
           />
           </>
@@ -130,6 +158,15 @@ export default async function MePage() {
             <br />
             <span className="muted">{venue.bio}</span>
           </p>
+          <p className="muted">
+            {formatAddress(venue)} · {venue.timeZone.replaceAll("_", " ")}
+          </p>
+          {!venueLocationIsComplete(venue) && (
+            <p className="error">
+              Add the complete address and choose the venue timezone before posting a
+              night. Existing UTC-only profiles cannot safely schedule a real gig.
+            </p>
+          )}
           {paymentsEnabled() ? (
             <p>
               <RedirectButton
@@ -152,11 +189,16 @@ export default async function MePage() {
                   {s.pattern.freq === "weekly"
                     ? `every ${DOW[s.pattern.dayOfWeek]}`
                     : `${WEEK[s.pattern.week ?? 1]} ${DOW[s.pattern.dayOfWeek]} monthly`}{" "}
-                  · {s.pattern.startTimeUtc} UTC ·{" "}
+                  · {formatWallTime(s.pattern.startTimeLocal ?? s.pattern.startTimeUtc ?? "00:00")}{" "}
+                  {s.pattern.timeZone
+                    ? s.pattern.timeZone.replaceAll("_", " ")
+                    : "UTC (legacy series)"}{" "}
+                  ·{" "}
                   <span className="money">${(s.defaults.budgetCents / 100).toFixed(0)}</span>{" "}
                   <ActionButton
                     endpoint={`/api/series/${s.id}/cancel`}
                     label="End series"
+                    confirm="End this recurring series? Future open nights will close. Existing bookings stay confirmed."
                   />
                 </p>
               ))}
@@ -175,6 +217,20 @@ export default async function MePage() {
               fields={[
                 { name: "name", label: "Venue name", defaultValue: venue.name },
                 { name: "bio", label: "About the room", type: "textarea", defaultValue: venue.bio ?? "" },
+                { name: "addressLine1", label: "Street address", defaultValue: venue.addressLine1 },
+                { name: "addressLine2", label: "Suite / unit (optional)", defaultValue: venue.addressLine2 ?? "" },
+                { name: "city", label: "City", defaultValue: venue.city },
+                { name: "region", label: "State", defaultValue: venue.region },
+                { name: "postalCode", label: "ZIP code", defaultValue: venue.postalCode },
+                {
+                  name: "timeZone",
+                  label: "Timezone",
+                  type: "select",
+                  options: US_TIME_ZONES.includes(venue.timeZone)
+                    ? US_TIME_ZONES
+                    : [venue.timeZone, ...US_TIME_ZONES],
+                  defaultValue: venue.timeZone,
+                },
                 { name: "capacity", label: "Capacity", type: "number", defaultValue: venue.capacity ?? undefined },
                 { name: "noiseCurfew", label: "Noise curfew (e.g. 11pm)", defaultValue: venue.noiseCurfew ?? "" },
               ]}
@@ -190,9 +246,20 @@ export default async function MePage() {
             fields={[
               { name: "name", label: "Venue name", required: true },
               { name: "kind", label: "Type", type: "select", options: ["bar", "restaurant", "coffee_shop", "brewery", "other"], required: true },
-              { name: "metro", label: "Metro (e.g. milwaukee)", required: true },
-              { name: "lat", label: "Latitude", type: "number", required: true },
-              { name: "lng", label: "Longitude", type: "number", required: true },
+              { name: "addressLine1", label: "Street address", required: true, placeholder: "1872 N Commerce St" },
+              { name: "addressLine2", label: "Suite / unit (optional)" },
+              { name: "city", label: "City", required: true, placeholder: "Milwaukee" },
+              { name: "region", label: "State", required: true, placeholder: "WI" },
+              { name: "postalCode", label: "ZIP code", required: true, placeholder: "53212" },
+              { name: "metro", label: "Metro area", required: true, placeholder: "milwaukee" },
+              {
+                name: "timeZone",
+                label: "Timezone",
+                type: "select",
+                options: US_TIME_ZONES,
+                required: true,
+                defaultValue: "America/Chicago",
+              },
               { name: "bio", label: "About the room", type: "textarea" },
             ]}
           />
@@ -220,9 +287,11 @@ export default async function MePage() {
                 { name: "bio", label: "Experience", type: "textarea", defaultValue: tech.bio ?? "" },
                 { name: "rateLaborCents", label: "Labor rate ($)", type: "number", defaultValue: tech.rateLaborCents != null ? tech.rateLaborCents / 100 : undefined },
                 { name: "rateWithRigCents", label: "Rate with rig ($)", type: "number", defaultValue: tech.rateWithRigCents != null ? tech.rateWithRigCents / 100 : undefined },
+                { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: tech.travelRadiusKm },
               ]}
             />
           </details>
+          <MediaManager subjectType="tech" />
           </>
         ) : (
           <ApiForm
@@ -232,6 +301,9 @@ export default async function MePage() {
               { name: "name", label: "Name", required: true },
               { name: "gear", label: "Gear", type: "select", options: ["none", "partial", "full_rig"], required: true },
               { name: "bio", label: "Experience", type: "textarea" },
+              { name: "rateLaborCents", label: "Labor rate ($)", type: "number" },
+              { name: "rateWithRigCents", label: "Rate with rig ($)", type: "number" },
+              { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: 50 },
             ]}
           />
         )}

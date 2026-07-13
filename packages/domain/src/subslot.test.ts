@@ -58,6 +58,10 @@ describe("tech sub-slot machine", () => {
     expect(r.next).toBe("open");
     expect(r.techId).toBeNull();
     expect(r.effects).toContainEqual({ kind: "subslot_refund", amountCents: 25000 });
+    expect(r.effects).toContainEqual({
+      kind: "subslot_reliability_strike",
+      against: "tech",
+    });
   });
 
   it("open + PARENT_CANCELLED closes quietly (nothing charged)", () => {

@@ -2,7 +2,7 @@
  * Dev/demo seed: a Milwaukee venue, two performers, a sound tech, open slots.
  * Run: pnpm db:seed (idempotent — skips if the demo venue exists).
  */
-import { newId } from "@gigit/domain";
+import { localDateTimeParts, newId, zonedDateTimeToDate } from "@gigit/domain";
 import { eq } from "drizzle-orm";
 import { closeDb, db } from "./client.js";
 import { performers, slots, techs, users, venues } from "./schema.js";
@@ -14,7 +14,20 @@ async function main() {
     .from(venues)
     .where(eq(venues.name, "Lakefront Taproom"));
   if (existing.length > 0) {
-    console.log("seed: already present, skipping");
+    // Keep older local databases useful after the address/timezone migration.
+    await d
+      .update(venues)
+      .set({
+        addressLine1: "1872 N Commerce St",
+        city: "Milwaukee",
+        region: "WI",
+        postalCode: "53212",
+        timeZone: "America/Chicago",
+        lat: 43.0389,
+        lng: -87.9065,
+      })
+      .where(eq(venues.id, existing[0]!.id));
+    console.log("seed: already present; refreshed venue location");
     return;
   }
 
@@ -37,6 +50,11 @@ async function main() {
     name: "Lakefront Taproom",
     bio: "Riverside taproom with a corner stage. We host live music Fridays and want to start a comedy night.",
     metro: "milwaukee",
+    addressLine1: "1872 N Commerce St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53212",
+    timeZone: "America/Chicago",
     lat: 43.0389,
     lng: -87.9065,
     capacity: 120,
@@ -86,8 +104,8 @@ async function main() {
     travelRadiusKm: 60,
   });
 
-  const friday = nextWeekday(5, 20); // next Friday 20:00 UTC-ish demo time
-  const tuesday = nextWeekday(2, 19);
+  const friday = nextWeekday(5, 20, "America/Chicago");
+  const tuesday = nextWeekday(2, 19, "America/Chicago");
   await d.insert(slots).values([
     {
       id: newId("slot"),
@@ -117,11 +135,20 @@ async function main() {
   console.log("seed: done (venue, 2 performers, tech, 2 open slots)");
 }
 
-function nextWeekday(dow: number, hourUtc: number): Date {
-  const d = new Date();
-  d.setUTCDate(d.getUTCDate() + ((dow - d.getUTCDay() + 7) % 7 || 7));
-  d.setUTCHours(hourUtc, 0, 0, 0);
-  return d;
+function nextWeekday(dow: number, hour: number, timeZone: string): Date {
+  const local = localDateTimeParts(new Date(), timeZone);
+  const civil = new Date(Date.UTC(local.year, local.month - 1, local.day));
+  civil.setUTCDate(civil.getUTCDate() + ((dow - civil.getUTCDay() + 7) % 7 || 7));
+  return zonedDateTimeToDate(
+    {
+      year: civil.getUTCFullYear(),
+      month: civil.getUTCMonth() + 1,
+      day: civil.getUTCDate(),
+      hour,
+      minute: 0,
+    },
+    timeZone,
+  );
 }
 
 main()

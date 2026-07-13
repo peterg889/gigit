@@ -53,6 +53,15 @@ export function decide(
             { kind: "request_payment" },
           ],
         };
+      if (k === "PERFORMER_DECLINED")
+        return {
+          next: "collapsed",
+          effects: [
+            { kind: "cancel_schedule", job: "offer_expiry" },
+            { kind: "reopen_slot" },
+            { kind: "notify", template: "offer_declined", to: "venue" },
+          ],
+        };
       if (k === "OFFER_EXPIRED")
         return {
           next: "collapsed",
@@ -118,6 +127,7 @@ export function decide(
           effects: [
             { kind: "cancel_schedule", job: "gig_ended" },
             { kind: "cancellation_fee", feeCents, refundCents },
+            { kind: "reliability_strike", against: "venue" },
             { kind: "reopen_slot" },
             { kind: "notify", template: "venue_cancelled", to: "performer" },
           ],
@@ -171,11 +181,16 @@ export function decide(
     case "disputed":
       if (k === "DISPUTE_RESOLVED") {
         const r = event.resolution;
+        const faultEffects: Effect[] =
+          r.fault && r.fault !== "neither"
+            ? [{ kind: "reliability_strike", against: r.fault }]
+            : [];
         if (r.kind === "release_full")
           return {
             next: "released",
             effects: [
               { kind: "release_funds", amountCents: terms.amountCents },
+              ...faultEffects,
               { kind: "notify", template: "dispute_resolved", to: "both" },
             ],
           };
@@ -184,6 +199,7 @@ export function decide(
             next: "refunded",
             effects: [
               { kind: "refund_funds", amountCents: terms.amountCents },
+              ...faultEffects,
               { kind: "notify", template: "dispute_resolved", to: "both" },
             ],
           };
@@ -205,6 +221,7 @@ export function decide(
           effects: [
             { kind: "release_funds", amountCents: r.releaseCents },
             { kind: "refund_funds", amountCents: r.refundCents },
+            ...faultEffects,
             { kind: "notify", template: "dispute_resolved", to: "both" },
           ],
         };

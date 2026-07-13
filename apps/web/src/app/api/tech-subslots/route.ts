@@ -13,6 +13,12 @@ export async function GET() {
       terms: schema.bookings.terms,
       venueName: schema.venues.name,
       venueKind: schema.venues.kind,
+      venueAddressLine1: schema.venues.addressLine1,
+      venueAddressLine2: schema.venues.addressLine2,
+      venueCity: schema.venues.city,
+      venueRegion: schema.venues.region,
+      venuePostalCode: schema.venues.postalCode,
+      venueTimeZone: schema.venues.timeZone,
       paInventory: schema.venues.paInventory,
       performerName: schema.performers.name,
     })

@@ -33,6 +33,11 @@ describe("public profile column projection", () => {
       kind: "bar",
       name: "Proj Bar",
       metro: "proj-tv",
+      addressLine1: "10 Test Ave",
+      city: "Milwaukee",
+      region: "WI",
+      postalCode: "53202",
+      timeZone: "America/Chicago",
       lat: 43,
       lng: -88,
       stripeCustomerId: "cus_secret",
@@ -62,6 +67,10 @@ describe("public profile column projection", () => {
     expect(res.status).toBe(200);
     const { venue } = await res.json();
     expect(venue.name).toBe("Proj Bar"); // public data still present
+    expect(venue.addressLine1).toBe("10 Test Ave");
+    expect(venue.timeZone).toBe("America/Chicago");
+    expect(venue.lat).toBeUndefined();
+    expect(venue.lng).toBeUndefined();
     expect(venue.ownerUserId).toBeUndefined();
     expect(venue.stripeCustomerId).toBeUndefined();
     expect(venue.defaultPaymentMethodId).toBeUndefined();

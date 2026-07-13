@@ -123,7 +123,11 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
   it("won't close a slot that has an outstanding offer (409 — no orphaned booking)", async () => {
     const id = await openSlot();
     const appId = newId("application");
-    const startsAt = new Date(Date.now() + 7 * 86_400_000);
+    const [advertisedSlot] = await db()
+      .select()
+      .from(schema.slots)
+      .where(eq(schema.slots.id, id));
+    const startsAt = advertisedSlot!.startsAt;
     await db().insert(schema.applications).values({ id: appId, slotId: id, performerId: pId });
     await createOffer({
       applicationId: appId,
@@ -138,6 +142,7 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
       },
     });
     sessionUserId.mockResolvedValue(owner);
+    expect((await patchReq(id, { budgetCents: 50_000 })).status).toBe(409);
     expect((await deleteReq(id)).status).toBe(409);
     const [s] = await db().select().from(schema.slots).where(eq(schema.slots.id, id));
     expect(s!.status).toBe("open"); // still open — the offer wasn't orphaned

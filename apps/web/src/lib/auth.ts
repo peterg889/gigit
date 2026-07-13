@@ -30,6 +30,9 @@ export async function requireUser(): Promise<string> {
     .where(eq(schema.users.id, userId));
   if (user?.status === "suspended")
     throw new AuthError(403, "This account is suspended. Contact support.");
+  if (user?.status === "deleted")
+    throw new AuthError(403, "This account has been deactivated.");
+  if (!user) throw new AuthError(401, "sign in required");
   return userId;
 }
 

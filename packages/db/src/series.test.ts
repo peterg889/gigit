@@ -136,6 +136,7 @@ describe("slot series (integration)", () => {
     const t1 = await findRebookTarget(bookingId);
     expect(t1?.slotId).toBe(occ[1].id);
     expect(t1?.amountCents).toBe(35000);
+    expect(t1?.provides).toEqual({ pa: true });
     expect(t1?.performerId).toBe(performerId);
 
     // if the act already applied to occ[1], it's skipped → occ[2]

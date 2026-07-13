@@ -58,7 +58,9 @@ Tables (M0): `users`, `auth_otps`, `actor_roles`, `performers`, `venues`, `techs
 
 Key decisions:
 - IDs: text ULIDs generated in `domain/ids.ts` (sortable, no DB extension needed).
-- Geo at M0: `lat/lng double precision` + haversine SQL for the feed radius filter. PostGIS arrives with real matching (M1+); schema change is additive.
+- Geo at M0: owners enter a normal postal address and IANA timezone. Internal
+  `lat/lng double precision` + haversine SQL remain the radius-filter seam;
+  known metros receive an approximate centroid until a geocoder/PostGIS lands.
 - `bookings.version int` — optimistic lock; transition runner does `UPDATE … WHERE id=$1 AND version=$2`.
 - `events` (append-only): `id bigserial, occurred_at, actor, kind, subject_type, subject_id, payload jsonb, dispatched_at`. **Outbox = `dispatched_at IS NULL`.** All transactional side-effects are event rows; the worker polls and dispatches (`FOR UPDATE SKIP LOCKED`, batch 50, 1s interval). pg-boss is used only for *scheduled* work (offer expiry, gig-end, auto-confirm timers), where post-commit enqueue is acceptable because the schedule is re-derivable from booking state (reconciler job re-arms missing timers every 10 min).
 - `media_assets`: `kind image|audio|video_embed`; uploads carry `storage_key`; embeds carry `embed_url + embed_meta`. M0 ships **image upload + video_embed** (audio lands M2 per build plan). Storage driver interface: `local` (dev, `.data/uploads`) and `s3` (presigned POST) — selected by env.
@@ -76,7 +78,7 @@ Key decisions:
 | POST `/api/auth/request`, `/api/auth/verify` | — | OTP flow |
 | GET/PATCH `/api/me` | user | who am I + roles; update basics |
 | POST `/api/performers` · PATCH `/api/performers/:id` · GET (public) | user/owner | create/edit performer profile (bio, genres, rates, travel radius, tech needs) |
-| POST `/api/venues` · PATCH · GET | user/owner | venue profile incl. `pa_inventory`, lat/lng |
+| POST `/api/venues` · PATCH · GET | user/owner | venue profile incl. public postal address, IANA timezone, and `pa_inventory`; coordinates are internal/optional |
 | POST `/api/techs` · PATCH · GET | user/owner | tech profile |
 | POST `/api/media/presign` → POST `/api/media/:id/complete` | owner | image upload (quota-checked); complete flips `processing→ready` (screening hook stub) |
 | POST `/api/media/embed` | owner | add YouTube/Vimeo URL (host allow-list, oEmbed fetch, cache meta) |

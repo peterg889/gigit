@@ -12,10 +12,16 @@ export async function POST(req: Request) {
     if ("response" in parsed) return parsed.response;
     const id = newId("venue");
     const d = db();
+    const { lat, lng, ...profile } = parsed.data;
+    const fallback = metroCentroid(parsed.data.metro);
     await d.insert(schema.venues).values({
       id,
       ownerUserId: userId,
-      ...parsed.data,
+      ...profile,
+      // Approximate metro coordinates preserve radius-search behavior until
+      // address geocoding is added. Owners never have to enter coordinates.
+      lat: lat ?? fallback.lat,
+      lng: lng ?? fallback.lng,
       capacity: parsed.data.capacity ?? null,
       noiseCurfew: parsed.data.noiseCurfew ?? null,
     });
@@ -29,4 +35,13 @@ export async function POST(req: Request) {
   } catch (e) {
     return respondError(e);
   }
+}
+
+function metroCentroid(metro: string): { lat: number; lng: number } {
+  const known: Record<string, { lat: number; lng: number }> = {
+    milwaukee: { lat: 43.0389, lng: -87.9065 },
+    chicago: { lat: 41.8781, lng: -87.6298 },
+    madison: { lat: 43.0731, lng: -89.4012 },
+  };
+  return known[metro.trim().toLowerCase()] ?? { lat: 0, lng: 0 };
 }

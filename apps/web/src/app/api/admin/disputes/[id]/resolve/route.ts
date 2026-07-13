@@ -13,13 +13,15 @@ import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
 
+const faultSchema = z.enum(["venue", "performer", "neither"]).default("neither");
 const bodySchema = z.discriminatedUnion("kind", [
-  z.object({ kind: z.literal("release_full") }),
-  z.object({ kind: z.literal("refund_full") }),
+  z.object({ kind: z.literal("release_full"), fault: faultSchema }),
+  z.object({ kind: z.literal("refund_full"), fault: faultSchema }),
   z.object({
     kind: z.literal("partial"),
     releaseCents: z.number().int().min(0),
     refundCents: z.number().int().min(0),
+    fault: faultSchema,
   }),
 ]);
 

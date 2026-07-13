@@ -1,6 +1,6 @@
 import { newId } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { requireUser, respondError, techOwnedBy } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
@@ -41,6 +41,42 @@ export async function POST(req: Request, { params }: Params) {
       payload: { techId: tech.id, effects: [{ kind: "notify", template: "new_application", to: "payer" }] },
     });
     return ok({ id }, 201);
+  } catch (e) {
+    return respondError(e);
+  }
+}
+
+/** A tech may withdraw while their application is still pending. */
+export async function DELETE(_req: Request, { params }: Params) {
+  try {
+    const { id: subslotId } = await params;
+    const userId = await requireUser();
+    const tech = await techOwnedBy(userId);
+    if (!tech) return fail("forbidden", "tech profile required", 403);
+
+    const d = db();
+    const [application] = await d
+      .select()
+      .from(schema.techSubslotApplications)
+      .where(and(
+        eq(schema.techSubslotApplications.subslotId, subslotId),
+        eq(schema.techSubslotApplications.techId, tech.id),
+      ));
+    if (!application) return fail("not_found", "application not found", 404);
+    if (application.status !== "submitted")
+      return fail("conflict", "only a pending application can be withdrawn", 409);
+
+    await d
+      .delete(schema.techSubslotApplications)
+      .where(eq(schema.techSubslotApplications.id, application.id));
+    await appendEvent(d, {
+      actor: userId,
+      kind: "subslot.application_withdrawn",
+      subjectType: "tech_subslot",
+      subjectId: subslotId,
+      payload: { techId: tech.id },
+    });
+    return ok({ withdrawn: true });
   } catch (e) {
     return respondError(e);
   }

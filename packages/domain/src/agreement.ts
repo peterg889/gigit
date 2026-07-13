@@ -2,6 +2,20 @@ import type { BookingTerms } from "./booking/states.js";
 
 export const AGREEMENT_TEMPLATE_VERSION = "v1";
 
+function formatTermTime(value: string, timeZone?: string): string {
+  if (!timeZone) return `${value} (UTC)`;
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZone,
+    timeZoneName: "short",
+  }).format(new Date(value));
+}
+
 /**
  * Click-wrap performance agreement (engineering-spec K7). Deterministic
  * render from locked terms; both parties accept this exact text in-flow and
@@ -10,8 +24,11 @@ export const AGREEMENT_TEMPLATE_VERSION = "v1";
  */
 export function renderAgreement(input: {
   venueName: string;
+  venueAddress?: string;
   performerName: string;
   terms: BookingTerms;
+  /** Venue timezone used in the customer-visible accepted terms. */
+  timeZone?: string;
   /**
    * Discovery-first launch (default false): Gigit doesn't process the money,
    * so the doc is a plain terms summary — no charge/escrow/payout or fee-
@@ -20,7 +37,18 @@ export function renderAgreement(input: {
    */
   paymentsEnabled?: boolean;
 }): string {
-  const { venueName, performerName, terms, paymentsEnabled = false } = input;
+  const {
+    venueName,
+    venueAddress,
+    performerName,
+    terms,
+    timeZone,
+    paymentsEnabled = false,
+  } = input;
+  const lockedVenueAddress = terms.venueAddress ?? venueAddress;
+  const lockedTimeZone = terms.timeZone ?? timeZone;
+  const startsAt = formatTermTime(terms.startsAt, lockedTimeZone);
+  const endsAt = formatTermTime(terms.endsAt, lockedTimeZone);
   const amount = `$${(terms.amountCents / 100).toFixed(2)}`;
   const provides: string[] = [];
   if (terms.provides?.pa) provides.push("house PA system");
@@ -57,10 +85,11 @@ export function renderAgreement(input: {
       : `BOOKING TERMS (Gigit ${AGREEMENT_TEMPLATE_VERSION})`,
     ``,
     `Venue: ${venueName}`,
+    ...(lockedVenueAddress ? [`Location: ${lockedVenueAddress}`] : []),
     `Performer: ${performerName}`,
     ``,
     `1. PERFORMANCE. ${performerName} will perform at ${venueName} from ` +
-      `${terms.startsAt} to ${terms.endsAt} (UTC)` +
+      `${startsAt} to ${endsAt}` +
       (terms.setLengthMinutes ? `, set length ${terms.setLengthMinutes} minutes` : "") +
       `.`,
     compensation,

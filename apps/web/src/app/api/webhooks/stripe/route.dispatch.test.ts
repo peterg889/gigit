@@ -36,6 +36,7 @@ describe("stripe webhook → booking state machine dispatch", () => {
   const uBand = newId("user");
   const venueId = newId("venue");
   const performerId = newId("performer");
+  let bookingSequence = 0;
 
   beforeEach(() => mockConstruct.mockReset());
   afterAll(async () => {
@@ -64,7 +65,7 @@ describe("stripe webhook → booking state machine dispatch", () => {
     const d = db();
     const slotId = newId("slot");
     const appId = newId("application");
-    const startsAt = new Date(Date.now() + 5 * 86_400_000);
+    const startsAt = new Date(Date.now() + (5 + bookingSequence++) * 86_400_000);
     await d.insert(schema.slots).values({
       id: slotId,
       venueId,

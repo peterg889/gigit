@@ -29,6 +29,7 @@ export const TERMINAL_STATES: ReadonlySet<BookingState> = new Set([
 
 export const BOOKING_EVENTS = [
   "PERFORMER_ACCEPTED",
+  "PERFORMER_DECLINED",
   "PAYMENT_SUCCEEDED",
   "PAYMENT_FAILED",
   "OFFER_EXPIRED",
@@ -51,6 +52,9 @@ export interface BookingTerms {
   setLengthMinutes?: number;
   provides?: { pa?: boolean; meal?: boolean; parking?: boolean };
   notes?: string;
+  /** Venue location snapshot locked when the firm offer is created. */
+  venueAddress?: string;
+  timeZone?: string;
 }
 
 export interface BookingSnapshot {
@@ -65,12 +69,17 @@ export interface BookingSnapshot {
 }
 
 export type DisputeResolution =
-  | { kind: "release_full" }
-  | { kind: "refund_full" }
-  | { kind: "partial"; releaseCents: number; refundCents: number };
-
+  | { kind: "release_full"; fault?: "venue" | "performer" | "neither" }
+  | { kind: "refund_full"; fault?: "venue" | "performer" | "neither" }
+  | {
+      kind: "partial";
+      releaseCents: number;
+      refundCents: number;
+      fault?: "venue" | "performer" | "neither";
+    };
 export type BookingEvent =
   | { kind: "PERFORMER_ACCEPTED" }
+  | { kind: "PERFORMER_DECLINED" }
   | { kind: "PAYMENT_SUCCEEDED" }
   | { kind: "PAYMENT_FAILED"; reason?: string }
   | { kind: "OFFER_EXPIRED" }
@@ -93,4 +102,4 @@ export type Effect =
   | { kind: "cancellation_fee"; feeCents: number; refundCents: number }
   | { kind: "reopen_slot" }
   | { kind: "notify"; template: string; to: "venue" | "performer" | "both" }
-  | { kind: "reliability_strike"; against: "performer" };
+  | { kind: "reliability_strike"; against: "venue" | "performer" };

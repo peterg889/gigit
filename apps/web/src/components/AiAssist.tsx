@@ -6,6 +6,7 @@
  */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { formatVenueDateTime } from "@/lib/date-time";
 
 async function post(url: string, body: unknown, method: "POST" | "PATCH" = "POST") {
   const res = await fetch(url, {
@@ -134,7 +135,7 @@ export function ProfileIngestWidget() {
 }
 
 /** Describe the night in plain English → confirm the parsed slot (F2.8). */
-export function SlotParseWidget() {
+export function SlotParseWidget({ timeZone }: { timeZone: string }) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -180,11 +181,7 @@ export function SlotParseWidget() {
           )}
           <p>
             <span className="badge">{draft.format}</span>{" "}
-            {new Date(draft.startsAt).toLocaleString("en-US", {
-              dateStyle: "full",
-              timeStyle: "short",
-              timeZone: "UTC",
-            })}{" "}
+            {formatVenueDateTime(draft.startsAt, timeZone, "full")}{" "}
             · {draft.durationMinutes} min ·{" "}
             <span className="money">${(draft.budgetCents / 100).toFixed(0)}</span>
           </p>
@@ -202,7 +199,7 @@ export function SlotParseWidget() {
                   budgetCents: draft.budgetCents,
                   notes: draft.notes || undefined,
                 });
-                router.push("/");
+                router.push("/slots");
                 router.refresh();
               } catch (e) {
                 setError(String(e instanceof Error ? e.message : e));

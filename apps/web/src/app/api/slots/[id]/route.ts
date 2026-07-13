@@ -43,14 +43,43 @@ export async function PATCH(req: Request, { params }: Params): Promise<NextRespo
     const parsed = await parseBody(req, slotUpdateSchema);
     if ("response" in parsed) return parsed.response;
     const d = db();
-    await d.update(schema.slots).set(parsed.data).where(eq(schema.slots.id, id));
-    await appendEvent(d, {
-      actor: userId,
-      kind: "slot.updated",
-      subjectType: "slot",
-      subjectId: id,
-      payload: { fields: Object.keys(parsed.data) },
+    const updateResult = await d.transaction(async (tx) => {
+      // Share the slot row lock with createOffer so an edit cannot race an
+      // offer and leave the public listing different from the locked deal.
+      const [current] = await tx
+        .select({ status: schema.slots.status })
+        .from(schema.slots)
+        .where(eq(schema.slots.id, id))
+        .for("update");
+      if (!current || current.status !== "open") return "unavailable" as const;
+      const [offer] = await tx
+        .select({ id: schema.bookings.id })
+        .from(schema.bookings)
+        .where(
+          and(
+            eq(schema.bookings.slotId, id),
+            eq(schema.bookings.state, "offered"),
+          ),
+        );
+      if (offer) return "offer_outstanding" as const;
+      await tx.update(schema.slots).set(parsed.data).where(eq(schema.slots.id, id));
+      await appendEvent(tx, {
+        actor: userId,
+        kind: "slot.updated",
+        subjectType: "slot",
+        subjectId: id,
+        payload: { fields: Object.keys(parsed.data) },
+      });
+      return "updated" as const;
     });
+    if (updateResult === "offer_outstanding")
+      return fail(
+        "offer_outstanding",
+        "Withdraw the firm offer before editing this slot.",
+        409,
+      );
+    if (updateResult === "unavailable")
+      return fail("conflict", "slot is no longer open", 409);
     return ok({ id });
   } catch (e) {
     return respondError(e);

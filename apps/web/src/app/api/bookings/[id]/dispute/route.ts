@@ -12,7 +12,10 @@ import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
 
-const bodySchema = z.object({ reason: z.string().min(5).max(2000) });
+const bodySchema = z.object({
+  category: z.enum(["no_show", "venue_unavailable", "misrepresentation", "other"]).default("other"),
+  reason: z.string().min(5).max(2000),
+});
 
 /** Either party opens a dispute during the post-gig window; payout holds (F7.4). */
 export async function POST(req: Request, { params }: Params) {
@@ -39,7 +42,7 @@ export async function POST(req: Request, { params }: Params) {
 
     const result = await runBookingTransition(
       bookingId,
-      { kind: "DISPUTE_OPENED", openedBy, reason: parsed.data.reason },
+      { kind: "DISPUTE_OPENED", openedBy, reason: "[" + parsed.data.category + "] " + parsed.data.reason },
       userId,
     );
     return ok({ state: result.to });

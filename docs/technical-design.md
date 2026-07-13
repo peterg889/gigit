@@ -131,7 +131,7 @@ From `env()` (zod, fail-fast): required `DATABASE_URL`, `SESSION_SECRET`; defaul
 | A1 | Postgres is the only datastore; queue, outbox, audit, search all live in it until measured pain | assumption | ✅ |
 | A2 | At-least-once delivery everywhere; therefore every consumer idempotent (singleton keys, idempotency keys, version checks, stale-no-op) | requirement | ✅ |
 | A3 | LLM output never directly triggers a money/state transition | requirement | ✅ (drafts only) |
-| A4 | All times UTC in storage; metro timezone for rendering/scheduling | requirement | ✅ storage; rendering TZ not yet metro-aware |
+| A4 | All times UTC in storage; venue IANA timezone for rendering/scheduling | requirement | ✅ venue-local rendering, input conversion, recurrence, SMS, and calendar location |
 | A5 | Single region, single metro; `metro` is a column, not a deployment | requirement | ✅ |
 | A6 | Σ ledger = 0 per booking at terminal states; no transfer without a ledger row | requirement | ✅ in code; **deferred at launch** — discovery-first means no money moves, so the ledger carries no real entries (NullGateway); reconciliation job missing (pricing.md §4) |
 | A7 | 1–3 engineers; two deployable units max | constraint | ✅ |

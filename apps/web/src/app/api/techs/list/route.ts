@@ -12,6 +12,7 @@ export async function GET() {
       gear: schema.techs.gear,
       rateLaborCents: schema.techs.rateLaborCents,
       rateWithRigCents: schema.techs.rateWithRigCents,
+      reliabilityStrikes: schema.techs.reliabilityStrikes,
       travelRadiusKm: schema.techs.travelRadiusKm,
     })
     .from(schema.techs)

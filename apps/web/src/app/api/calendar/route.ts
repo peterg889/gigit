@@ -47,6 +47,11 @@ export async function GET(req: Request) {
         .select({
           booking: schema.bookings,
           venueName: schema.venues.name,
+          venueAddressLine1: schema.venues.addressLine1,
+          venueAddressLine2: schema.venues.addressLine2,
+          venueCity: schema.venues.city,
+          venueRegion: schema.venues.region,
+          venuePostalCode: schema.venues.postalCode,
           performerName: schema.performers.name,
         })
         .from(schema.bookings)
@@ -68,7 +73,18 @@ export async function GET(req: Request) {
         `UID:${r.booking.id}@gigit`,
         `DTSTART:${fmt(r.booking.terms.startsAt)}`,
         `DTEND:${fmt(r.booking.terms.endsAt)}`,
-        `SUMMARY:${r.performerName} at ${r.venueName}`,
+        `SUMMARY:${icalEscape(`${r.performerName} at ${r.venueName}`)}`,
+        `LOCATION:${icalEscape(
+          [
+            r.venueAddressLine1,
+            r.venueAddressLine2,
+            r.venueCity,
+            r.venueRegion,
+            r.venuePostalCode,
+          ]
+            .filter(Boolean)
+            .join(", "),
+        )}`,
         `DESCRIPTION:$${(r.booking.terms.amountCents / 100).toFixed(0)} — booked on Gigit`,
         "END:VEVENT",
       ].join("\r\n"),
@@ -83,4 +99,12 @@ export async function GET(req: Request) {
   return new Response(ics, {
     headers: { "content-type": "text/calendar; charset=utf-8" },
   });
+}
+
+function icalEscape(value: string): string {
+  return value
+    .replaceAll("\\", "\\\\")
+    .replaceAll("\n", "\\n")
+    .replaceAll(",", "\\,")
+    .replaceAll(";", "\\;");
 }

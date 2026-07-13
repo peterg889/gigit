@@ -53,12 +53,19 @@ export default async function AdminPage() {
       <span className="muted">{k}:</span> <strong>{String(v ?? "—")}</strong>
     </p>
   );
+  const activation = await q("select (select count(*) from users) as accounts, (select count(*) from performers) as performer_profiles, (select count(*) from venues) as venue_profiles, (select count(*) from techs) as tech_profiles, (select count(*) from slots) as slots_posted, (select count(*) from applications) as applications, (select count(*) from bookings where state not in ('offered','collapsed')) as committed_bookings");
+  const acquisition = (
+    await pool.query(
+      "select coalesce(nullif(payload->>'source',''),'direct') as source, coalesce(nullif(payload->>'campaign',''),'—') as campaign, count(*)::int as signups from events where kind='user.created' group by 1,2 order by signups desc limit 20",
+    )
+  ).rows;
 
   return (
     <div>
       <h1>Liquidity</h1>
       <p className="muted">
         <Link href="/admin/search">Ops search</Link> ·{" "}
+        <Link href="/admin/disputes">Reliability reports</Link> ·{" "}
         <Link href="/admin/moderation">Moderation queue</Link>
       </p>
       <div className="card">
@@ -87,6 +94,27 @@ export default async function AdminPage() {
             payments are off; the venue pays the act directly.
           </p>
         )}
+      </div>
+      <div className="card">
+        <h2>Outreach activation</h2>
+        <Row k="Accounts" v={activation.accounts} />
+        <Row k="Performer profiles" v={activation.performer_profiles} />
+        <Row k="Venue profiles" v={activation.venue_profiles} />
+        <Row k="Sound profiles" v={activation.tech_profiles} />
+        <Row k="Slots posted" v={activation.slots_posted} />
+        <Row k="Applications" v={activation.applications} />
+        <Row k="Committed bookings" v={activation.committed_bookings} />
+      </div>
+      <div className="card">
+        <h2>Signup sources</h2>
+        {acquisition.length === 0 && <p className="muted">No attributed signups yet.</p>}
+        {acquisition.map((row) => (
+          <p key={row.source + ":" + row.campaign}>
+            <span className="badge">{row.source}</span>{" "}
+            {row.campaign !== "—" && <span className="muted">{row.campaign} · </span>}
+            <strong>{row.signups}</strong>
+          </p>
+        ))}
       </div>
       <div className="card">
         <h2>The scene</h2>

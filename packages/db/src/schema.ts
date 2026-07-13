@@ -122,6 +122,12 @@ export const venues = pgTable("venues", {
   name: text("name").notNull(),
   bio: text("bio").notNull().default(""),
   metro: text("metro").notNull(),
+  addressLine1: text("address_line1").notNull().default(""),
+  addressLine2: text("address_line2"),
+  city: text("city").notNull().default(""),
+  region: text("region").notNull().default(""),
+  postalCode: text("postal_code").notNull().default(""),
+  timeZone: text("time_zone").notNull().default("UTC"),
   lat: doublePrecision("lat").notNull(),
   lng: doublePrecision("lng").notNull(),
   capacity: integer("capacity"),
@@ -136,6 +142,7 @@ export const venues = pgTable("venues", {
     .notNull()
     .default({ hasPA: false }),
   noiseCurfew: text("noise_curfew"),
+  reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
   stripeCustomerId: text("stripe_customer_id"), // saved payment method holder
   defaultPaymentMethodId: text("default_payment_method_id"), // pm_… captured via setup-mode Checkout
   createdAt: ts("created_at").notNull().defaultNow(),
@@ -152,6 +159,7 @@ export const techs = pgTable("techs", {
   rateLaborCents: integer("rate_labor_cents"),
   rateWithRigCents: integer("rate_with_rig_cents"),
   travelRadiusKm: integer("travel_radius_km").notNull().default(50),
+  reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
@@ -191,7 +199,11 @@ export const slotSeries = pgTable("slot_series", {
       freq: "weekly" | "monthly_dow";
       dayOfWeek: number;
       week?: 1 | 2 | 3 | 4 | 5;
-      startTimeUtc: string;
+      /** Venue wall-clock time. New series always carry this + timeZone. */
+      startTimeLocal?: string;
+      timeZone?: string;
+      /** Compatibility for series created before venue-local recurrence. */
+      startTimeUtc?: string;
       durationMinutes: number;
     }>()
     .notNull(),
@@ -295,6 +307,8 @@ export const bookings = pgTable(
         setLengthMinutes?: number;
         provides?: { pa?: boolean; meal?: boolean; parking?: boolean };
         notes?: string;
+        venueAddress?: string;
+        timeZone?: string;
       }>()
       .notNull(),
     offerExpiresAt: ts("offer_expires_at").notNull(),
@@ -307,14 +321,13 @@ export const bookings = pgTable(
   (t) => [
     index("bookings_performer_idx").on(t.performerId),
     index("bookings_venue_idx").on(t.venueId),
-    // One booking may HOLD a slot at a time (double-booking guard). Multiple
-    // 'offered' bookings are fine (a venue can offer two applicants), but only one
-    // may advance to confirming+; the second accept trips this index and surfaces as
-    // SlotUnavailableError -> 409.
+    // One firm offer or engaged booking may hold a slot at a time. The venue
+    // must withdraw or let an offer expire before offering another performer; the
+    // partial unique index also makes concurrent offer requests safe.
     uniqueIndex("bookings_active_slot_uq")
       .on(t.slotId)
       .where(
-        sql`state in ('confirming','confirmed','awaiting_confirmation','disputed','released','partially_released')`,
+        sql`state in ('offered','confirming','confirmed','awaiting_confirmation','disputed','released','partially_released')`,
       ),
   ],
 );
@@ -428,6 +441,23 @@ export const techSubslotApplications = pgTable(
     createdAt: ts("created_at").notNull().defaultNow(),
   },
   (t) => [uniqueIndex("tech_subslot_app_uq").on(t.subslotId, t.techId)],
+);
+
+// Double-blind reviews for the derived sound booking. The paying side reviews
+// the tech and the tech reviews the working conditions/payer.
+export const techSubslotReviews = pgTable(
+  "tech_subslot_reviews",
+  {
+    id: text("id").primaryKey(),
+    subslotId: text("subslot_id")
+      .notNull()
+      .references(() => techSubslots.id),
+    authorRole: text("author_role").notNull(), // payer | tech
+    ratings: jsonb("ratings").$type<Record<string, number>>().notNull(),
+    body: text("body").notNull().default(""),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("tech_subslot_reviews_author_uq").on(t.subslotId, t.authorRole)],
 );
 
 export const reviews = pgTable(

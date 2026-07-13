@@ -147,6 +147,11 @@ describe("tech sub-slot runner (integration)", () => {
     expect(refund?.creditParty).toBe(`venue:${venueId}`);
     const [s] = await db().select().from(techSubslots).where(eq(techSubslots.id, subslotId));
     expect(s.techId).toBeNull();
+    const [cancelledTech] = await db()
+      .select({ strikes: techs.reliabilityStrikes })
+      .from(techs)
+      .where(eq(techs.id, techId));
+    expect(cancelledTech!.strikes).toBe(1);
   });
 
   it("parent cancellation <48h out cascades: 100% of the sub-slot budget to the tech", async () => {

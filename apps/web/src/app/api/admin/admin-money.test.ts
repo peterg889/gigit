@@ -37,6 +37,7 @@ describe("admin money routes", () => {
   const venueId = newId("venue");
   const performerId = newId("performer");
   const AMOUNT = 30_000;
+  let bookingSequence = 0;
 
   beforeAll(async () => {
     const d = db();
@@ -69,7 +70,7 @@ describe("admin money routes", () => {
     const d = db();
     const slotId = newId("slot");
     const appId = newId("application");
-    const startsAt = new Date(Date.now() + 3 * 86_400_000);
+    const startsAt = new Date(Date.now() + (3 + bookingSequence++) * 86_400_000);
     await d.insert(schema.slots).values({
       id: slotId,
       venueId,

@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@gigit/domain";
+import { eq } from "drizzle-orm";
 import { closeDb, createOffer, db, runBookingTransition, schema } from "@gigit/db";
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
@@ -40,6 +41,7 @@ describe("web API authz matrix (audit #5)", () => {
   const venueId = newId("venue");
   const pBand = newId("performer");
   const pRival = newId("performer");
+  let bookingSequence = 0;
 
   beforeAll(async () => {
     const d = db();
@@ -70,7 +72,7 @@ describe("web API authz matrix (audit #5)", () => {
   async function offeredBooking() {
     const slotId = newId("slot");
     const appId = newId("application");
-    const startsAt = new Date(Date.now() + 14 * 86_400_000);
+    const startsAt = new Date(Date.now() + (14 + bookingSequence++) * 86_400_000);
     await db().insert(schema.slots).values({
       id: slotId,
       venueId,
@@ -99,11 +101,17 @@ describe("web API authz matrix (audit #5)", () => {
   it("accept: 401 unauthenticated, 403 a different performer, 200 the booking's performer", async () => {
     const { bookingId } = await offeredBooking();
     as(null);
-    expect((await post(acceptPost, bookingId)).status).toBe(401);
+    expect((await post(acceptPost, bookingId, { acceptedTerms: true })).status).toBe(401);
     as(uRival);
-    expect((await post(acceptPost, bookingId)).status).toBe(403);
+    expect((await post(acceptPost, bookingId, { acceptedTerms: true })).status).toBe(403);
     as(uBand);
-    expect((await post(acceptPost, bookingId)).status).toBe(200);
+    expect((await post(acceptPost, bookingId, { acceptedTerms: true })).status).toBe(200);
+  });
+
+  it("accept: requires explicit confirmation of the displayed deal", async () => {
+    const { bookingId } = await offeredBooking();
+    as(uBand);
+    expect((await post(acceptPost, bookingId, {})).status).toBe(422);
   });
 
   it("accept: 403 when the account is suspended (the shared requireUser lock)", async () => {
@@ -112,17 +120,30 @@ describe("web API authz matrix (audit #5)", () => {
     expect((await post(adminStatusPost, uBand, { status: "suspended" })).status).toBe(200);
     try {
       as(uBand);
-      expect((await post(acceptPost, bookingId)).status).toBe(403);
+      expect((await post(acceptPost, bookingId, { acceptedTerms: true })).status).toBe(403);
     } finally {
       as(uAdmin); // always reinstate so a failed assert can't poison later tests
       await post(adminStatusPost, uBand, { status: "active" });
     }
   });
 
+  it("cancel: performer can decline an unaccepted firm offer", async () => {
+    const { appId, bookingId } = await offeredBooking();
+    as(uBand);
+    const response = await post(cancelPost, bookingId);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ state: "collapsed" });
+    const [application] = await db()
+      .select()
+      .from(schema.applications)
+      .where(eq(schema.applications.id, appId));
+    expect(application!.status).toBe("withdrawn");
+  });
+
   it("cancel: 403 a non-party, 200 a party (the venue)", async () => {
     const { bookingId } = await offeredBooking();
     as(uBand);
-    await post(acceptPost, bookingId);
+    await post(acceptPost, bookingId, { acceptedTerms: true });
     await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker");
     as(uStranger);
     expect((await post(cancelPost, bookingId)).status).toBe(403);
@@ -145,6 +166,49 @@ describe("web API authz matrix (audit #5)", () => {
     await db().insert(schema.applications).values({ id: appId, slotId, performerId: pRival });
     as(uStranger);
     expect((await post(offerPost, appId, { amountCents: 30_000 })).status).toBe(403);
+  });
+
+  it("offer: enforces advertised pay and one firm offer per slot", async () => {
+    const slotId = newId("slot");
+    const firstApplicationId = newId("application");
+    const rivalApplicationId = newId("application");
+    await db().insert(schema.slots).values({
+      id: slotId,
+      venueId,
+      metro: "authz-tv",
+      startsAt: new Date(Date.now() + 14 * 86_400_000),
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 30_000,
+    });
+    await db().insert(schema.applications).values([
+      {
+        id: firstApplicationId,
+        slotId,
+        performerId: pBand,
+      },
+      {
+        id: rivalApplicationId,
+        slotId,
+        performerId: pRival,
+      },
+    ]);
+    as(uVenue);
+    expect(
+      (await post(offerPost, firstApplicationId, {
+        amountCents: 25_000,
+      })).status,
+    ).toBe(400);
+    expect(
+      (await post(offerPost, firstApplicationId, {
+        amountCents: 30_000,
+      })).status,
+    ).toBe(201);
+    expect(
+      (await post(offerPost, rivalApplicationId, {
+        amountCents: 30_000,
+      })).status,
+    ).toBe(409);
   });
 
   it("admin status: 403 for a non-admin, 200 for an admin", async () => {

@@ -50,6 +50,7 @@ function makeEvent(kind: BookingEventKind): BookingEvent {
 const LEGAL: Record<BookingState, Partial<Record<BookingEventKind, BookingState>>> = {
   offered: {
     PERFORMER_ACCEPTED: "confirming",
+    PERFORMER_DECLINED: "collapsed",
     OFFER_EXPIRED: "collapsed",
     VENUE_CANCELLED: "collapsed",
   },
@@ -114,6 +115,16 @@ describe("happy path effects", () => {
     });
   });
 
+  it("performer decline cancels expiry, reopens the slot, and tells the venue", () => {
+    const d = decide(booking("offered"), { kind: "PERFORMER_DECLINED" }, now);
+    expect(d.next).toBe("collapsed");
+    expect(d.effects).toEqual([
+      { kind: "cancel_schedule", job: "offer_expiry" },
+      { kind: "reopen_slot" },
+      { kind: "notify", template: "offer_declined", to: "venue" },
+    ]);
+  });
+
   it("payment success schedules the gig-end timer at gig end", () => {
     const d = decide(booking("confirming"), { kind: "PAYMENT_SUCCEEDED" }, now);
     expect(d.effects).toContainEqual({
@@ -176,6 +187,10 @@ describe("cancellation fee windows (venue cancels a $500 gig)", () => {
         feeCents: c.fee,
         refundCents: 50_000 - c.fee,
       });
+      expect(d.effects).toContainEqual({
+        kind: "reliability_strike",
+        against: "venue",
+      });
     });
   }
 
@@ -214,11 +229,15 @@ describe("dispute resolutions", () => {
   it("full refund resolution refunds everything", () => {
     const d = decide(
       booking("disputed"),
-      { kind: "DISPUTE_RESOLVED", resolution: { kind: "refund_full" } },
+      { kind: "DISPUTE_RESOLVED", resolution: { kind: "refund_full", fault: "performer" } },
       now,
     );
     expect(d.next).toBe("refunded");
     expect(d.effects).toContainEqual({ kind: "refund_funds", amountCents: 50_000 });
+    expect(d.effects).toContainEqual({
+      kind: "reliability_strike",
+      against: "performer",
+    });
   });
   it("rejects a partial split that doesn't conserve the booking total (would mint ledger value)", () => {
     expect(() =>

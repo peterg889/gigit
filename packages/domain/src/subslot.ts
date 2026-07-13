@@ -45,6 +45,7 @@ export type SubslotEffect =
   | { kind: "subslot_release"; amountCents: number }
   | { kind: "subslot_fee"; feeCents: number; refundCents: number }
   | { kind: "subslot_refund"; amountCents: number }
+  | { kind: "subslot_reliability_strike"; against: "tech" }
   | { kind: "notify"; template: string; to: "payer" | "tech" | "both" };
 
 export interface SubslotSnapshot {
@@ -124,6 +125,7 @@ export function decideSubslot(
             techId: null,
             effects: [
               { kind: "subslot_refund", amountCents: s.budgetCents },
+              { kind: "subslot_reliability_strike", against: "tech" },
               { kind: "notify", template: "subslot_tech_cancelled", to: "payer" },
             ],
           };

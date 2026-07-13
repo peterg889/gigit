@@ -23,6 +23,7 @@ import { recordLedgerEntry } from "./ledger.js";
 import {
   bookings,
   performers,
+  techs,
   techSubslotApplications,
   techSubslots,
   venues,
@@ -171,6 +172,13 @@ export async function runSubslotTransition(
             amountCents: fx.refundCents,
             idempotencyKey: `${subslotId}:refund:fee:${s.version}`,
           });
+      } else if (fx.kind === "subslot_reliability_strike" && s.techId) {
+        await tx
+          .update(techs)
+          .set({
+            reliabilityStrikes: sql`${techs.reliabilityStrikes} + 1`,
+          })
+          .where(eq(techs.id, s.techId));
       }
     }
 

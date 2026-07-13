@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { newId } from "@gigit/domain";
 import { appendEvent, db, env, schema, slotParse, supportTriage } from "@gigit/db";
 import { eq } from "drizzle-orm";
+import { venueLocationIsComplete } from "@/lib/date-time";
 
 /**
  * Inbound SMS router (PRD F2.8, engineering-spec §10). Order is compliance-
@@ -104,7 +105,7 @@ async function route(phone: string, body: string): Promise<string | null> {
         payload: { venueId, source: "sms" },
       });
       await clearSession(phone);
-      return `Posted: ${summarize(draft)}. We'll text you when acts apply.`;
+      return `Posted: ${summarize(draft, v?.timeZone ?? "UTC")}. We'll text you when acts apply.`;
     }
     if (["NO", "N", "CANCEL THAT", "NEVERMIND"].includes(upper)) {
       await clearSession(phone);
@@ -115,8 +116,10 @@ async function route(phone: string, body: string): Promise<string | null> {
 
   // 3. Venue numbers: plain-English slot posting.
   if (venue && body.length >= 5) {
+    if (!venueLocationIsComplete(venue))
+      return "Add your venue address and timezone on Gigit before posting a night by text.";
     try {
-      const draft = await slotParse(body, user.id);
+      const draft = await slotParse(body, user.id, new Date(), venue.timeZone);
       if (draft.clarificationNeeded) {
         return `One thing first: ${draft.clarificationNeeded}`;
       }
@@ -137,7 +140,7 @@ async function route(phone: string, body: string): Promise<string | null> {
             updatedAt: new Date(),
           },
         });
-      return `Got it: ${summarize(draft)}. Reply YES to post it, NO to scrap it.`;
+      return `Got it: ${summarize(draft, venue.timeZone)}. Reply YES to post it, NO to scrap it.`;
     } catch {
       return "Couldn't read that one. Try like: 'something chill for Sunday brunch, two hours, $200'.";
     }
@@ -180,16 +183,16 @@ function summarize(d: {
   durationMinutes: number;
   format: string;
   budgetCents: number;
-}): string {
+}, timeZone: string): string {
   const when = new Date(d.startsAt).toLocaleString("en-US", {
     weekday: "short",
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
-    timeZone: "UTC",
+    timeZone,
   });
-  return `${d.format}, ${when} UTC, ${d.durationMinutes} min, $${(d.budgetCents / 100).toFixed(0)}`;
+  return `${d.format}, ${when} (${timeZone}), ${d.durationMinutes} min, $${(d.budgetCents / 100).toFixed(0)}`;
 }
 
 function escapeXml(s: string): string {

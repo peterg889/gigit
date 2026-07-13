@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -9,6 +10,7 @@ export default function LoginPage() {
   const [stage, setStage] = useState<"request" | "verify">("request");
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
 
   async function call(path: string, body: unknown) {
     setError(null);
@@ -44,6 +46,18 @@ export default function LoginPage() {
             onChange={(e) => setEmail(e.target.value)}
             required
           />
+          <label className="check-row">
+            <input
+              type="checkbox"
+              checked={termsAccepted}
+              onChange={(event) => setTermsAccepted(event.target.checked)}
+              required
+            />
+            <span>
+              I agree to the <Link href="/terms">Terms</Link> and acknowledge the{" "}
+              <Link href="/privacy">Privacy Notice</Link>.
+            </span>
+          </label>
           <button>Send code</button>
           <p className="muted">Dev environments accept the code 000000.</p>
         </form>
@@ -51,8 +65,21 @@ export default function LoginPage() {
         <form
           onSubmit={async (e) => {
             e.preventDefault();
-            if (await call("/api/auth/verify", { email, code })) {
-              router.push("/me");
+            const query = new URLSearchParams(window.location.search);
+            const source = query.get("source") || undefined;
+            const campaign = query.get("campaign") || undefined;
+            if (await call("/api/auth/verify", {
+              email,
+              code,
+              termsAccepted: true,
+              source,
+              campaign,
+            })) {
+              const requested = query.get("next");
+              const next = requested?.startsWith("/") && !requested.startsWith("//")
+                ? requested
+                : "/onboarding";
+              router.push(next);
               router.refresh();
             }
           }}

@@ -4,6 +4,7 @@ import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
+import { formatAddress, formatVenueDateTime, shortTimeZoneName } from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
 
@@ -71,6 +72,9 @@ export default async function VenuePage({
       <div className="card">
         <h1>
           {v.name} <span className="badge">{v.kind.replace("_", " ")}</span>
+          {v.reliabilityStrikes > 0 && (
+            <> <span className="badge">{v.reliabilityStrikes} cancellation{v.reliabilityStrikes === 1 ? "" : "s"}</span></>
+          )}
           {avg !== null && (
             <span className="badge">
               ★ {avg.toFixed(1)} ({visible.length})
@@ -78,7 +82,7 @@ export default async function VenuePage({
           )}
         </h1>
         <p className="muted">
-          {v.metro} · capacity {v.capacity ?? "?"}
+          {formatAddress(v)} · {v.metro} · capacity {v.capacity ?? "?"}
           {v.noiseCurfew && <> · curfew {v.noiseCurfew}</>}
         </p>
         <p>{v.bio || <span className="muted">No description yet.</span>}</p>
@@ -110,11 +114,8 @@ export default async function VenuePage({
         {openSlots.map((s) => (
           <p key={s.id}>
             <Link href={`/slots/${s.id}`}>
-              {s.startsAt.toLocaleString("en-US", {
-                dateStyle: "medium",
-                timeStyle: "short",
-                timeZone: "UTC",
-              })}
+              {formatVenueDateTime(s.startsAt, v.timeZone)}{" "}
+              {shortTimeZoneName(s.startsAt, v.timeZone)}
             </Link>{" "}
             · <span className="badge">{s.format}</span> ·{" "}
             <span className="money">${(s.budgetCents / 100).toFixed(0)}</span>

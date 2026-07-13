@@ -32,6 +32,7 @@ describe("worker parent→subslot cascade for dispute outcomes (audit #1)", () =
   const venueId = newId("venue");
   const performerId = newId("performer");
   const techId = newId("tech");
+  let bookingSequence = 0;
 
   beforeAll(async () => {
     const d = db();
@@ -74,7 +75,7 @@ describe("worker parent→subslot cascade for dispute outcomes (audit #1)", () =
   async function bookedSubslot(): Promise<{ bookingId: string; subslotId: string }> {
     const d = db();
     const slotId = newId("slot");
-    const startsAt = new Date(Date.now() + 7 * 86_400_000);
+    const startsAt = new Date(Date.now() + (7 + bookingSequence++) * 86_400_000);
     await d.insert(schema.slots).values({
       id: slotId,
       venueId,

@@ -21,6 +21,8 @@ export interface RebookTarget {
   performerId: string;
   venueId: string;
   amountCents: number;
+  provides: { pa?: boolean; meal?: boolean; parking?: boolean };
+  notes: string | null;
 }
 
 /**
@@ -36,12 +38,12 @@ export async function findRebookTarget(
   bookingId: string,
 ): Promise<RebookTarget | null> {
   const { rows } = await getPool().query(
-    `select tgt.id as slot_id, tgt.starts_at, tgt.duration_minutes,
-            b.performer_id, b.venue_id, (b.terms->>'amountCents')::int as amount_cents
+    `select tgt.id as slot_id, tgt.starts_at, tgt.duration_minutes, tgt.provides, tgt.notes,
+            b.performer_id, b.venue_id, tgt.budget_cents as amount_cents
        from bookings b
        join slots orig on orig.id = b.slot_id
        join lateral (
-         select s.id, s.starts_at, s.duration_minutes
+         select s.id, s.starts_at, s.duration_minutes, s.budget_cents, s.provides, s.notes
            from slots s
           where s.series_id = orig.series_id
             and orig.series_id is not null
@@ -73,6 +75,8 @@ export async function findRebookTarget(
     performerId: r.performer_id,
     venueId: r.venue_id,
     amountCents: r.amount_cents,
+    provides: r.provides,
+    notes: r.notes,
   };
 }
 

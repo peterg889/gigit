@@ -253,3 +253,176 @@ pre {
   padding: 14px;
   font-family: var(--font-mono);
 }
+
+/* ── Launch entry, account controls, and legal/support pages ── */
+.eyebrow {
+  display: inline-block;
+  margin-bottom: 8px;
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--amber);
+}
+
+.lede {
+  max-width: 650px;
+  margin: 0 0 22px;
+  color: var(--ink);
+  font-size: clamp(1rem, 2.5vw, 1.2rem);
+  line-height: 1.55;
+}
+
+.hero {
+  padding: clamp(24px, 8vw, 58px) 0 36px;
+}
+.hero h1 {
+  max-width: 700px;
+  margin-bottom: 16px;
+  font-size: clamp(3rem, 11vw, 5.5rem);
+}
+.trust-line {
+  margin-top: 18px;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin: 18px 0 8px;
+}
+.btn.secondary {
+  color: var(--ink);
+  background: transparent;
+  border: 1px solid var(--line);
+}
+.btn.secondary:hover {
+  color: var(--amber-hot);
+  border-color: var(--amber);
+  background: rgba(255, 181, 63, 0.06);
+}
+
+.role-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.role-grid .card { margin: 8px 0; }
+.role-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.role-card h2,
+.role-card h3 {
+  margin-top: 14px;
+}
+.role-card h2::after { display: none; }
+.role-card p { flex: 1; }
+
+.how-it-works { margin: 48px 0; }
+.steps {
+  padding: 0;
+  list-style: none;
+  counter-reset: booking-step;
+}
+.steps li {
+  position: relative;
+  margin: 0;
+  padding: 16px 12px 16px 52px;
+  border-top: 1px solid var(--line);
+  counter-increment: booking-step;
+}
+.steps li::before {
+  content: counter(booking-step);
+  position: absolute;
+  left: 10px;
+  top: 15px;
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  font-weight: 900;
+  line-height: 1;
+  color: var(--amber);
+}
+
+.notice {
+  margin: 16px 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--amber);
+  background: rgba(255, 181, 63, 0.07);
+  color: var(--muted);
+}
+.notice.success { color: var(--ink); }
+
+.check-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 2px 0 16px;
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  letter-spacing: 0;
+  line-height: 1.45;
+  text-transform: none;
+}
+.check-row input[type="checkbox"] {
+  width: auto;
+  flex: 0 0 auto;
+  margin: 3px 0 0;
+  accent-color: var(--amber);
+}
+
+.nav-form { display: inline; }
+header.site .nav-button {
+  padding: 0 0 2px;
+  border: 0;
+  border-bottom: 1px solid transparent;
+  border-radius: 0;
+  color: var(--ink);
+  background: transparent;
+  box-shadow: none;
+  font-size: 0.72rem;
+}
+header.site .nav-button:hover {
+  color: var(--amber-hot);
+  border-bottom-color: var(--amber);
+  background: transparent;
+}
+
+footer.site nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 10px;
+}
+footer.site nav a { color: var(--muted); }
+footer.site nav a:hover { color: var(--amber-hot); }
+
+.danger-zone { border-color: rgba(255, 107, 74, 0.55); }
+button.danger {
+  color: var(--ink);
+  background: #8f2f24;
+}
+button.danger:hover { background: #ad3a2c; }
+button.danger[disabled]:hover { background: #8f2f24; }
+
+.legal-copy h2 { margin-top: 36px; }
+.legal-copy h2::after { display: none; }
+.legal-copy > p { max-width: 68ch; }
+
+:focus-visible {
+  outline: 3px solid var(--amber-hot);
+  outline-offset: 3px;
+}
+
+@media (max-width: 680px) {
+  .role-grid { grid-template-columns: 1fr; }
+  .hero { padding-top: 20px; }
+  header.site { align-items: flex-start; }
+}

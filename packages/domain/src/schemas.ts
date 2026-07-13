@@ -10,6 +10,21 @@ export const venueKinds = [
 ] as const;
 export const slotFormats = ["music", "comedy", "either"] as const;
 
+export function isValidTimeZone(value: string): boolean {
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: value }).format();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const timeZoneSchema = z
+  .string()
+  .min(1)
+  .max(80)
+  .refine(isValidTimeZone, "must be a valid IANA timezone");
+
 const performerObject = z.object({
   kind: z.enum(performerKinds),
   name: z.string().min(1).max(120),
@@ -41,8 +56,16 @@ export const venueCreateSchema = z.object({
   name: z.string().min(1).max(120),
   bio: z.string().max(4000).default(""),
   metro: z.string().min(1).max(80),
-  lat: z.number().min(-90).max(90),
-  lng: z.number().min(-180).max(180),
+  addressLine1: z.string().min(1).max(160),
+  addressLine2: z.string().max(160).optional(),
+  city: z.string().min(1).max(100),
+  region: z.string().min(1).max(100),
+  postalCode: z.string().min(1).max(20),
+  timeZone: timeZoneSchema,
+  // Coordinates remain an internal search seam. They are optional until a
+  // geocoder is introduced; venue owners should never need to look them up.
+  lat: z.number().min(-90).max(90).optional(),
+  lng: z.number().min(-180).max(180).optional(),
   capacity: z.number().int().min(1).max(5000).optional(),
   paInventory: z
     .object({
@@ -186,4 +209,7 @@ export const authVerifySchema = z.object({
   phone: z.string().optional(),
   email: z.string().email().optional(),
   code: z.string().regex(/^[0-9]{6}$/),
+  termsAccepted: z.literal(true),
+  source: z.string().trim().min(1).max(80).optional(),
+  campaign: z.string().trim().min(1).max(120).optional(),
 });

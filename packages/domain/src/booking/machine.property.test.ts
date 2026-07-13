@@ -21,6 +21,7 @@ const GIG_END = new Date("2026-07-10T22:00:00Z");
 
 const EVENTS: BookingEvent[] = [
   { kind: "PERFORMER_ACCEPTED" },
+  { kind: "PERFORMER_DECLINED" },
   { kind: "PAYMENT_SUCCEEDED" },
   { kind: "PAYMENT_FAILED", reason: "card_declined" },
   { kind: "OFFER_EXPIRED" },

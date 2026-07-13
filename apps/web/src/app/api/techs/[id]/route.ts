@@ -19,6 +19,7 @@ export async function GET(_req: Request, { params }: Params) {
       rateLaborCents: schema.techs.rateLaborCents,
       rateWithRigCents: schema.techs.rateWithRigCents,
       travelRadiusKm: schema.techs.travelRadiusKm,
+      reliabilityStrikes: schema.techs.reliabilityStrikes,
       createdAt: schema.techs.createdAt,
     })
     .from(schema.techs)

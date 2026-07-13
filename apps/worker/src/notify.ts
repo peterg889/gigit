@@ -26,6 +26,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "An offer was withdrawn",
     body: "The venue withdrew its offer. Nothing owed either way: {url}/bookings",
   },
+  offer_declined: {
+    subject: "Your offer was declined",
+    body: "The performer passed on this offer. The slot is free for another applicant: {url}/bookings",
+  },
   payment_failed: {
     subject: "Payment didn't go through",
     body: "The charge for a booking failed, so it isn't confirmed. The slot is back on the board: {url}/bookings",

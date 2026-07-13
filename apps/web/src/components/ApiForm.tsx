@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { venueLocalInputToIso } from "@/lib/date-time";
 
 interface Field {
   name: string;
@@ -24,6 +25,7 @@ export function ApiForm({
   redirectTo,
   transform,
   extra,
+  dateTimeZone,
   method = "POST",
 }: {
   endpoint: string;
@@ -32,6 +34,8 @@ export function ApiForm({
   redirectTo?: string;
   transform?: string; // name of a built-in transform; serializable for server components
   extra?: Record<string, unknown>; // constant fields merged into the payload
+  /** Interpret datetime-local fields in this venue timezone, not the browser timezone. */
+  dateTimeZone?: string;
   method?: "POST" | "PATCH"; // PATCH for edit-in-place (partial update) forms
 }) {
   const router = useRouter();
@@ -49,8 +53,17 @@ export function ApiForm({
       if (raw === "") continue;
       if (f.name.endsWith("Cents")) body[f.name] = Math.round(Number(raw) * 100);
       else if (f.type === "number") body[f.name] = Number(raw);
-      else if (f.type === "datetime-local")
-        body[f.name] = new Date(raw).toISOString();
+      else if (f.type === "datetime-local") {
+        try {
+          body[f.name] = dateTimeZone
+            ? venueLocalInputToIso(raw, dateTimeZone)
+            : new Date(raw).toISOString();
+        } catch (err) {
+          setBusy(false);
+          setError(err instanceof Error ? err.message : "Enter a valid date and time.");
+          return;
+        }
+      }
       else body[f.name] = raw;
     }
     if (transform === "ratingsOverall" && typeof body.overall === "number") {
@@ -75,11 +88,32 @@ export function ApiForm({
       }
       body.ratings = ratings;
     }
-    if (transform === "genreTagsCsv" && typeof body.genreTags === "string") {
+    if (
+      (transform === "genreTagsCsv" || transform === "performerProfile") &&
+      typeof body.genreTags === "string"
+    ) {
       body.genreTags = (body.genreTags as string)
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
+    }
+    if (transform === "performerProfile") {
+      if (typeof body.setLengthsMinutes === "string") {
+        body.setLengthsMinutes = body.setLengthsMinutes
+          .split(",")
+          .map((s) => Number(s.trim()))
+          .filter((n) => Number.isInteger(n) && n > 0);
+      }
+      const techNeeds: Record<string, number | boolean> = {};
+      for (const key of ["inputs", "micsNeeded", "monitorsNeeded"] as const) {
+        if (typeof body[key] === "number") techNeeds[key] = body[key] as number;
+        delete body[key];
+      }
+      if (typeof body.canPlayUnamplified === "string") {
+        techNeeds.canPlayUnamplified = body.canPlayUnamplified === "true";
+        delete body.canPlayUnamplified;
+      }
+      if (Object.keys(techNeeds).length > 0) body.techNeeds = techNeeds;
     }
     const res = await fetch(endpoint, {
       method,

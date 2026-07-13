@@ -1,5 +1,12 @@
 import { offerCreateSchema } from "@gigit/domain";
-import { createOffer, db, paymentGateway, schema } from "@gigit/db";
+import {
+  InvalidOfferTermsError,
+  SlotUnavailableError,
+  createOffer,
+  db,
+  paymentGateway,
+  schema,
+} from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
@@ -38,9 +45,18 @@ export async function POST(req: Request, { params }: Params) {
 
     const parsed = await parseBody(req, offerCreateSchema);
     if ("response" in parsed) return parsed.response;
+    if (parsed.data.amountCents !== row.slot.budgetCents)
+      return fail(
+        "offer_amount_mismatch",
+        `Offer must match the advertised $${(row.slot.budgetCents / 100).toFixed(2)}. Edit the slot before making an offer.`,
+        400,
+      );
 
     const startsAt = row.slot.startsAt;
     const endsAt = new Date(startsAt.getTime() + row.slot.durationMinutes * 60_000);
+    const lockedNotes = [row.slot.notes, parsed.data.notes]
+      .filter((note): note is string => Boolean(note?.trim()))
+      .join("\n\n");
     const bookingId = await createOffer({
       applicationId,
       slotId: row.slot.id,
@@ -48,17 +64,26 @@ export async function POST(req: Request, { params }: Params) {
       venueId: venue.id,
       actor: userId,
       terms: {
-        amountCents: parsed.data.amountCents,
+        amountCents: row.slot.budgetCents,
         startsAt: startsAt.toISOString(),
         endsAt: endsAt.toISOString(),
+        provides: row.slot.provides,
         ...(parsed.data.setLengthMinutes !== undefined
           ? { setLengthMinutes: parsed.data.setLengthMinutes }
           : {}),
-        ...(parsed.data.notes !== undefined ? { notes: parsed.data.notes } : {}),
+        ...(lockedNotes ? { notes: lockedNotes } : {}),
       },
     });
     return ok({ bookingId }, 201);
   } catch (e) {
+    if (e instanceof SlotUnavailableError)
+      return fail(
+        "slot_unavailable",
+        "This slot already has a firm offer. Withdraw it or wait for it to expire before offering another act.",
+        409,
+      );
+    if (e instanceof InvalidOfferTermsError)
+      return fail("invalid_offer", e.message, 409);
     return respondError(e);
   }
 }
