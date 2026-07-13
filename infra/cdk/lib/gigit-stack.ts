@@ -19,6 +19,7 @@ import * as s3 from "aws-cdk-lib/aws-s3";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
+import { createHash } from "node:crypto";
 
 export interface GigitStackProps extends cdk.StackProps {
   stage: "staging" | "prod";
@@ -130,7 +131,7 @@ export class GigitStack extends cdk.Stack {
         database.instanceEndpoint.hostname,
         ":",
         database.instanceEndpoint.port.toString(),
-        "/gigit",
+        "/gigit?sslmode=verify-full&sslrootcert=/etc/ssl/certs/aws-rds-global-bundle.pem",
       ]),
     );
     const emptySecretValue = () => cdk.SecretValue.unsafePlainText("");
@@ -356,6 +357,19 @@ export class GigitStack extends cdk.Stack {
       );
     }
 
+    // State Manager can create an association before a new instance has joined
+    // SSM, which makes CloudFormation report CREATE_COMPLETE before the command
+    // eventually runs. A fresh wait-condition handle for every release turns
+    // the host's actual health-gated result into the deployment result.
+    const deploymentKey = createHash("sha256")
+      .update(`${imageTag}:${deploymentNonce}`)
+      .digest("hex")
+      .slice(0, 12);
+    const deploySignalHandle = new cdk.CfnWaitConditionHandle(
+      this,
+      `DeploySignalHandle${deploymentKey}`,
+    );
+
     const deployAssociation = new ssm.CfnAssociation(this, "DeployRelease", {
       name: "AWS-RunShellScript",
       associationName: `gigit-deploy-release-${props.stage}`,
@@ -364,12 +378,29 @@ export class GigitStack extends cdk.Stack {
         commands: [
           `printf '%s\\n' '${deploymentNonce}' > /var/lib/gigit-deployment-nonce`,
           "until [ -x /usr/local/bin/deploy-release.sh ]; do sleep 5; done",
-          `/usr/local/bin/deploy-release.sh '${imageTag}' 'https://${webCdn.distributionDomainName}'`,
+          "set +e",
+          `/usr/local/bin/deploy-release.sh '${imageTag}' 'https://${webCdn.distributionDomainName}' > /var/log/gigit-deploy.log 2>&1`,
+          "DEPLOY_STATUS=$?",
+          "tail -n 200 /var/log/gigit-deploy.log > /dev/console || true",
+          `if [ "$DEPLOY_STATUS" -eq 0 ]; then SIGNAL_STATUS=SUCCESS; SIGNAL_REASON='release ${imageTag} healthy'; else SIGNAL_STATUS=FAILURE; SIGNAL_REASON='release ${imageTag} failed; inspect EC2 console'; fi`,
+          `SIGNAL_URL='${deploySignalHandle.ref}'`,
+          `curl -fsS -X PUT -H 'Content-Type:' --data-binary "{\\"Status\\":\\"$SIGNAL_STATUS\\",\\"Reason\\":\\"$SIGNAL_REASON\\",\\"UniqueId\\":\\"${deploymentKey}\\",\\"Data\\":\\"${imageTag}\\"}" "$SIGNAL_URL"`,
+          'exit "$DEPLOY_STATUS"',
         ],
       },
       waitForSuccessTimeoutSeconds: 900,
     });
     deployAssociation.node.addDependency(host);
+    const deployWaitCondition = new cdk.CfnWaitCondition(
+      this,
+      `DeployWaitCondition${deploymentKey}`,
+      {
+        count: 1,
+        handle: deploySignalHandle.ref,
+        timeout: "900",
+      },
+    );
+    deployWaitCondition.addDependency(deployAssociation);
 
     // ── Alarms (technical-design §7.7): page a human, not a dashboard ──
     const alerts = new sns.Topic(this, "OpsAlerts"); // subscribe email/SMS post-deploy
