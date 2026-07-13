@@ -1,7 +1,7 @@
 import { db, schema } from "@gigit/db";
 import { and, asc, eq, gte } from "drizzle-orm";
 import Link from "next/link";
-import { performerOwnedBy } from "@/lib/auth";
+import { performerOwnedBy, venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
 import {
@@ -12,9 +12,29 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const GIG_FORMAT_LABEL: Record<string, string> = {
+  music: "Live music",
+  comedy: "Comedy",
+  either: "Music or comedy",
+};
+
+const VENUE_KIND_LABEL: Record<string, string> = {
+  bar: "Bar",
+  restaurant: "Restaurant",
+  coffee_shop: "Coffee shop",
+  brewery: "Brewery",
+  other: "Other venue",
+};
+
+function formatAreaName(value: string) {
+  return value.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase("en-US"));
+}
+
 export default async function FeedPage() {
   const userId = await sessionUserId();
-  const performer = userId ? await performerOwnedBy(userId) : null;
+  const [performer, venue] = userId
+    ? await Promise.all([performerOwnedBy(userId), venueOwnedBy(userId)])
+    : [null, null];
   const searches = performer
     ? await db()
         .select()
@@ -41,31 +61,44 @@ export default async function FeedPage() {
 
   return (
     <div>
-      <h1>Open slots</h1>
+      <h1>Open gigs</h1>
       <p className="muted">
-        Every slot shows its pay up front. Your profile is the application — one
-        tap and you&apos;re in.
+        Every gig shows its pay up front. Your act profile is your application,
+        so applying takes one click.
       </p>
       {rows.length === 0 && (
         <div className="card">
-          Nothing on the board yet. Venues:{" "}
-          <Link href="/slots/new">post the first slot</Link> — it takes three
-          minutes.
+          {venue ? (
+            <>
+              No open gigs yet. <Link href="/slots/new">Post your first open date</Link>
+              — it takes about three minutes.
+            </>
+          ) : performer ? (
+            <>No open gigs yet. Create an alert below and we&apos;ll let you know when one fits.</>
+          ) : (
+            <>
+              No open gigs yet. Venues can <Link href="/onboarding?role=venue">post an open date</Link>.
+            </>
+          )}
         </div>
       )}
       {performer && (
         <div className="card">
-          <h2>Slot alerts</h2>
+          <h2>Gig alerts</h2>
           {searches.length === 0 ? (
             <p className="muted">
-              Save a search and we&apos;ll notify you the moment a matching slot
-              posts. Leave a field blank to match anything.
+              Save a search and we&apos;ll notify you when a matching gig is posted.
+              Leave a field blank to match anything.
             </p>
           ) : (
             searches.map((s) => (
               <p key={s.id}>
-                <span className="badge">{s.format ?? "any format"}</span>{" "}
-                <span className="badge">{s.metro ?? "any metro"}</span>{" "}
+                <span className="badge">
+                  {s.format ? GIG_FORMAT_LABEL[s.format] ?? s.format : "Any format"}
+                </span>{" "}
+                <span className="badge">
+                  {s.metro ? formatAreaName(s.metro) : "Any city or area"}
+                </span>{" "}
                 {s.minBudgetCents != null && (
                   <span className="money">${(s.minBudgetCents / 100).toFixed(0)}+</span>
                 )}{" "}
@@ -82,7 +115,7 @@ export default async function FeedPage() {
             submitLabel="Save alert"
             fields={[
               { name: "format", label: "Format", type: "select", options: ["", "music", "comedy", "either"] },
-              { name: "metro", label: "Metro", placeholder: "e.g. milwaukee" },
+              { name: "metro", label: "City or metro area", placeholder: "e.g. Milwaukee" },
               { name: "minBudgetCents", label: "Minimum pay (USD)", type: "number", placeholder: "200" },
             ]}
           />
@@ -101,12 +134,12 @@ export default async function FeedPage() {
       }) => (
         <div className="card" key={slot.id}>
           <div>
-            <span className="badge">{slot.format}</span>{" "}
-            {slot.seriesId && <span className="badge">recurring</span>}{" "}
+            <span className="badge">{GIG_FORMAT_LABEL[slot.format] ?? slot.format}</span>{" "}
+            {slot.seriesId && <span className="badge">Recurring</span>}{" "}
             <strong>
               <Link href={`/slots/${slot.id}`}>{venueName}</Link>
             </strong>{" "}
-            <span className="muted">({venueKind.replace("_", " ")})</span>
+            <span className="muted">({VENUE_KIND_LABEL[venueKind] ?? "Venue"})</span>
           </div>
           <div>
             {formatVenueDateTime(slot.startsAt, venueTimeZone)}{" "}

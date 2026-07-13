@@ -1,14 +1,15 @@
 import { db, schema } from "@gigit/db";
 import { and, asc, desc, eq } from "drizzle-orm";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
 
 const GEAR_LABEL: Record<string, string> = {
-  none: "labor only — no rig",
-  partial: "partial rig",
-  full_rig: "full PA rig",
+  none: "Labor only — no rig",
+  partial: "Partial rig",
+  full_rig: "Full PA rig",
 };
 
 /** Public sound-tech page (PRD F1.4): gear, rates, travel. */
@@ -64,7 +65,8 @@ export default async function TechPage({
     <div>
       <div className="card">
         <h1>
-          {t.name} <span className="badge">{GEAR_LABEL[t.gear] ?? t.gear}</span>
+          {t.name}{" "}
+          <span className="badge">{GEAR_LABEL[t.gear] ?? "Equipment not listed"}</span>
           {average !== null && (
             <> <span className="badge">★ {average.toFixed(1)} ({visibleReviews.length})</span></>
           )}
@@ -73,17 +75,17 @@ export default async function TechPage({
           )}
         </h1>
         <p className="muted">Travels {t.travelRadiusKm} km</p>
-        <p>{t.bio || <span className="muted">No bio yet.</span>}</p>
+        <p>{t.bio || <span className="muted">No experience summary yet.</span>}</p>
         <p className="muted">
           {t.rateLaborCents != null && (
             <>
-              labor <span className="money">${(t.rateLaborCents / 100).toFixed(0)}</span>
+              Labor: <span className="money">${(t.rateLaborCents / 100).toFixed(0)}</span>
             </>
           )}
+          {t.rateLaborCents != null && t.rateWithRigCents != null && " · "}
           {t.rateWithRigCents != null && (
             <>
-              {" "}
-              · with rig{" "}
+              With rig:{" "}
               <span className="money">${(t.rateWithRigCents / 100).toFixed(0)}</span>
             </>
           )}
@@ -113,11 +115,12 @@ export default async function TechPage({
           {visibleReviews.map((review) => (
             <p key={review.id}>
               ★ {review.ratings.overall} —{" "}
-              {review.body || <span className="muted">no comment</span>}
+              {review.body || <span className="muted">No written comment.</span>}
             </p>
           ))}
         </div>
       )}
+      <p><Link href="/techs">Browse sound techs</Link></p>
     </div>
   );
 }

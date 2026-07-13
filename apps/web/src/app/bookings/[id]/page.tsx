@@ -16,6 +16,49 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const BOOKING_STATE_LABELS: Record<string, string> = {
+  offered: "Offer awaiting response",
+  confirming: "Confirming booking",
+  confirmed: "Confirmed",
+  awaiting_confirmation: "Gig played — awaiting confirmation",
+  released: "Completed",
+  collapsed: "Offer closed",
+  disputed: "Under review",
+  cancelled_by_venue: "Cancelled by venue",
+  cancelled_by_performer: "Cancelled by act",
+  refunded: "Cancelled and refunded",
+  partially_released: "Resolved",
+};
+
+const SOUND_STATE_LABELS: Record<string, string> = {
+  open: "Open",
+  booked: "Tech booked",
+  released: "Completed",
+  cancelled_by_payer: "Cancelled",
+  cancelled_with_parent: "Cancelled with gig",
+};
+
+const SOUND_APPLICATION_LABELS: Record<string, string> = {
+  submitted: "Application received",
+  booked: "Booked",
+  declined: "Not selected",
+};
+
+const GEAR_LABELS: Record<string, string> = {
+  none: "Labor only",
+  partial: "Partial rig",
+  full_rig: "Full PA rig",
+};
+
+const PARTY_LABELS: Record<string, string> = {
+  venue: "venue",
+  performer: "act",
+};
+
+function friendlyLabel(labels: Record<string, string>, value: string) {
+  return labels[value] ?? value.replaceAll("_", " ");
+}
+
 export default async function BookingPage({
   params,
 }: {
@@ -148,7 +191,7 @@ export default async function BookingPage({
       <div className="card">
         <h1>
           {row.performerName} at {row.venueName} <span className="badge">
-            {state === "offered" ? "firm offer" : state.replaceAll("_", " ")}
+            {friendlyLabel(BOOKING_STATE_LABELS, state)}
           </span>
         </h1>
         <p>
@@ -176,7 +219,7 @@ export default async function BookingPage({
             <ActionButton
               endpoint={`/api/bookings/${id}/cancel`}
               label="Withdraw firm offer"
-              confirm="Withdraw this firm offer? The performer will be notified and you can then offer the slot to someone else."
+              confirm="Withdraw this firm offer? The act will be notified and you can then offer the date to someone else."
             />
           )}{" "}
           {state === "confirmed" && (
@@ -186,26 +229,26 @@ export default async function BookingPage({
                 label="Cancel booking"
                 confirm={
                   asVenue
-                    ? "Cancel this booking? The slot reopens. " +
+                    ? "Cancel this booking? The date reopens. " +
                       (paymentsEnabled()
                         ? "Per the agreement, the closer to the date the more of the act's fee is owed."
-                        : "Settle anything already arranged with the act directly — Gigit moves no money.")
-                    : "Cancel this booking? The slot reopens for the venue, and a cancellation counts against your reliability."
+                        : "Settle anything already arranged with the act directly — Gigit does not process gig payments during beta.")
+                    : "Cancel this booking? The date reopens for the venue, and a cancellation counts against your reliability."
                 }
               />{" "}
               <span className="muted">
                 {asVenue
                   ? paymentsEnabled()
-                    ? "Reopens the slot; per the agreement you owe more of the fee the closer to the date."
-                    : "Reopens the slot; settle anything arranged with the act directly."
-                  : "Reopens the slot; counts against your reliability. No fee owed."}
+                    ? "Reopens the date; per the agreement you owe more of the fee the closer to the date."
+                    : "Reopens the date; settle anything arranged with the act directly."
+                  : "Reopens the date; counts against your reliability. No fee owed."}
               </span>
             </>
           )}{" "}
           {state === "awaiting_confirmation" && asPerformer && (
             <ActionButton
               endpoint={`/api/bookings/${id}/mark-played`}
-              label="Mark it played"
+              label="Mark gig as played"
             />
           )}{" "}
           {state === "awaiting_confirmation" && asVenue && (
@@ -265,12 +308,12 @@ export default async function BookingPage({
           {state === "confirmed" && plan.verdict !== "covered" && (
             <>
               <p className="muted">
-                Post a sound slot for this night — techs see the room, the
+                Post a sound job for this night — techs see the room, the
                 input list, and the pay before they say yes.
               </p>
               <ApiForm
                 endpoint={`/api/bookings/${id}/tech-subslot`}
-                submitLabel="Post the sound slot"
+                submitLabel="Post the sound job"
                 fields={[
                   { name: "payer", label: "Who pays the tech", type: "select", options: ["venue", "performer"], required: true },
                   { name: "budgetCents", label: "Tech pay (USD)", type: "number", required: true, placeholder: "250" },
@@ -286,11 +329,15 @@ export default async function BookingPage({
         <div className="card">
           <h2>Sound</h2>
           <p>
-            <span className="badge">{activeSubslot.state}</span>{" "}
+            <span className="badge">
+              {friendlyLabel(SOUND_STATE_LABELS, activeSubslot.state)}
+            </span>{" "}
             <span className="money">
               ${(activeSubslot.budgetCents / 100).toFixed(0)}
             </span>{" "}
-            <span className="muted">/ paid by the {activeSubslot.payer}</span>
+            <span className="muted">
+              / paid by the {friendlyLabel(PARTY_LABELS, activeSubslot.payer)}
+            </span>
           </p>
           {activeSubslot.needs.gaps.length > 0 && (
             <p className="muted">Gaps: {activeSubslot.needs.gaps.join("; ")}</p>
@@ -298,8 +345,10 @@ export default async function BookingPage({
           {subslotApplicants.map(({ application, tech }) => (
             <p key={application.id}>
               <strong>{tech.name}</strong>{" "}
-              <span className="badge">{tech.gear}</span>{" "}
-              <span className="badge">{application.status}</span>
+              <span className="badge">{friendlyLabel(GEAR_LABELS, tech.gear)}</span>{" "}
+              <span className="badge">
+                {friendlyLabel(SOUND_APPLICATION_LABELS, application.status)}
+              </span>
               {application.note && <span className="muted"> / “{application.note}”</span>}{" "}
               {amPayer && activeSubslot.state === "open" && application.status === "submitted" && (
                 <ActionButton
@@ -311,13 +360,15 @@ export default async function BookingPage({
             </p>
           ))}
           {activeSubslot.state === "open" && subslotApplicants.length === 0 && (
-            <p className="muted">No techs have applied yet — they see this in their feed.</p>
+            <p className="muted">
+              No techs have applied yet — this appears with their open sound gigs.
+            </p>
           )}
           {amPayer && (
             <ActionButton
               endpoint={`/api/tech-subslots/${activeSubslot.id}/cancel`}
-              label="Cancel sound slot"
-              confirm="Cancel this sound slot? Any booked tech will be notified and the sound job will close."
+              label="Cancel sound job"
+              confirm="Cancel this sound job? Any booked tech will be notified and the listing will close."
             />
           )}
         </div>
@@ -386,9 +437,8 @@ export default async function BookingPage({
             />
           </p>
           <p className="muted">
-            Sends {row.performerName} an offer for your next series night at the
-            same pay (${(rebookTarget.amountCents / 100).toFixed(0)}). Keeping the
-            residency here makes the next booking one tap, not a text thread.
+            Send {row.performerName} an offer for your next recurring night at the
+            same pay (${(rebookTarget.amountCents / 100).toFixed(0)}).
           </p>
         </div>
       )}
@@ -421,20 +471,19 @@ export default async function BookingPage({
             <ActionButton
               endpoint={`/api/bookings/${id}/cancel`}
               label="Decline this offer"
-              confirm="Decline this firm offer? The venue will be notified and can offer the slot to another act."
+              confirm="Decline this firm offer? The venue will be notified and can offer the date to another act."
             />
           </div>
         )}
         <p className="muted">
-          Venue accepted{" "}
+          Venue accepted: {" "}
           {b.venueAcceptedAt
             ? formatVenueDateTime(b.venueAcceptedAt, dealTimeZone)
-            : "—"}{" "}
-          / performer accepted{" "}
+            : "Not yet"}{" "}
+          · Act accepted: {" "}
           {b.performerAcceptedAt
             ? formatVenueDateTime(b.performerAcceptedAt, dealTimeZone)
-            : "—"}{" "}
-          / template {b.agreementTemplateVer}
+            : "Not yet"}
         </p>
       </div>
     </div>

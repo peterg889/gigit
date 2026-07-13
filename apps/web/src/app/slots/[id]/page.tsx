@@ -14,6 +14,38 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const SLOT_STATUS_LABELS: Record<string, string> = {
+  draft: "Not yet open",
+  open: "Open gig",
+  filled: "Booked",
+  expired: "Date passed",
+  cancelled: "Cancelled",
+};
+
+const APPLICATION_STATUS_LABELS: Record<string, string> = {
+  submitted: "Pending",
+  withdrawn: "Withdrawn",
+  declined: "Not selected",
+  offered: "Offer sent",
+};
+
+const GIG_FORMAT_LABEL: Record<string, string> = {
+  music: "Live music",
+  comedy: "Comedy",
+  either: "Music or comedy",
+};
+
+const ACT_KIND_LABEL: Record<string, string> = {
+  band: "Band",
+  solo: "Solo act",
+  comedian: "Comedian",
+  other: "Other act",
+};
+
+function friendlyLabel(labels: Record<string, string>, value: string) {
+  return labels[value] ?? value.replaceAll("_", " ");
+}
+
 export default async function SlotPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const d = db();
@@ -86,8 +118,9 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
     <div>
       <div className="card">
         <h1>
-          {venue.name} <span className="badge">{slot.format}</span>{" "}
-          <span className="badge">{slot.status}</span>
+          {venue.name}{" "}
+          <span className="badge">{GIG_FORMAT_LABEL[slot.format] ?? slot.format}</span>{" "}
+          <span className="badge">{friendlyLabel(SLOT_STATUS_LABELS, slot.status)}</span>
         </h1>
         <p>
           {formatVenueDateTime(slot.startsAt, venue.timeZone, "full")}{" "}
@@ -96,25 +129,26 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
           <span className="money">${(slot.budgetCents / 100).toFixed(0)}</span>
         </p>
         {slot.notes && <p>{slot.notes}</p>}
+        <p className="muted">{formatAddress(venue)}</p>
+        {venue.bio && <p className="muted">{venue.bio}</p>}
         <p className="muted">
-          {formatAddress(venue)} / {venue.bio} / PA:{" "}
-          {venue.paInventory.hasPA ? "house system" : "none"} /
-          capacity {venue.capacity ?? "?"}
+          Sound: {venue.paInventory.hasPA ? "house PA" : "no house PA"} · Capacity:{" "}
+          {venue.capacity ?? "not listed"}
         </p>
         {performer && !isOwner && slot.status === "open" && (
           myApplication?.status === "submitted" ? (
             <p>
-              <span className="badge">application pending</span>{" "}
+              <span className="badge">Application sent</span>{" "}
               <ActionButton
                 endpoint={`/api/applications/${myApplication.id}/status`}
                 label="Withdraw application"
                 body={{ action: "withdraw" }}
-                confirm="Withdraw your application from this slot?"
+                confirm="Withdraw your application from this gig?"
               />
             </p>
           ) : myApplication ? (
             <p className="muted">
-              Your application is {myApplication.status.replaceAll("_", " ")}.
+              Your application is {friendlyLabel(APPLICATION_STATUS_LABELS, myApplication.status).toLowerCase()}.
             </p>
           ) : (
             <div>
@@ -124,7 +158,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               </p>
               <ApiForm
                 endpoint={`/api/slots/${slot.id}/applications`}
-                submitLabel="Apply for this slot"
+                submitLabel="Apply for this gig"
                 fields={[
                   {
                     name: "note",
@@ -137,13 +171,39 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
             </div>
           )
         )}
+        {!isOwner && slot.status === "open" && !performer && (
+          <p className="muted">
+            Want this gig?{" "}
+            {userId ? (
+              <Link href="/onboarding?role=performer">Create an act profile</Link>
+            ) : (
+              <>
+                <Link href={`/login?next=${encodeURIComponent(`/slots/${slot.id}`)}`}>Sign in</Link>
+                {" or "}
+                <Link href="/onboarding?role=performer">create an act profile</Link>
+              </>
+            )}{" "}
+            to apply.
+          </p>
+        )}
+        {!isOwner && slot.status !== "open" && (
+          <p className="muted">
+            {slot.status === "filled"
+              ? "This gig has been booked."
+              : slot.status === "expired"
+                ? "This date has passed."
+                : slot.status === "cancelled"
+                  ? "This gig was cancelled."
+                  : "This gig is not accepting applications yet."}
+          </p>
+        )}
       </div>
 
       {isOwner && slot.status === "open" && (
         <div className="card">
-          <h2>Manage this slot</h2>
+          <h2>Manage this open date</h2>
           <details>
-            <summary className="muted" style={{ cursor: "pointer" }}>Edit slot</summary>
+            <summary className="muted" style={{ cursor: "pointer" }}>Edit listing</summary>
             <ApiForm
               endpoint={`/api/slots/${slot.id}`}
               method="PATCH"
@@ -158,11 +218,11 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
           <p style={{ marginTop: 8 }}>
             <ActionButton
               endpoint={`/api/slots/${slot.id}`}
-              label="Close this slot"
+              label="Close this listing"
               method="DELETE"
-              confirm="Close this slot? It will come off the public board. You can post a new slot later."
+              confirm="Close this listing? It will no longer appear with open gigs. You can post a new date later."
             />{" "}
-            <span className="muted">— takes it off the board; you can always post a new one.</span>
+            <span className="muted">— removes it from open gigs; you can post a new date anytime.</span>
           </p>
         </div>
       )}
@@ -170,6 +230,9 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
       {isOwner && (
         <div className="card">
           <h2>Applicants ({applicants.length})</h2>
+          {applicants.length === 0 && (
+            <p className="muted">No applications yet. Share this listing or check back soon.</p>
+          )}
           {applicants.map(({ application, performer: p }) => {
             const plan = soundPlan(venue.paInventory, p.techNeeds);
             const rel = performerReliability(
@@ -180,9 +243,11 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               <strong>
                 <Link href={`/p/${p.id}`}>{p.name}</Link>
               </strong>{" "}
-              <span className="badge">{p.kind}</span>{" "}
+              <span className="badge">{ACT_KIND_LABEL[p.kind] ?? "Act"}</span>{" "}
               <span className="badge" title="show-up history">{rel.label}</span>{" "}
-              <span className="badge">{application.status}</span>{" "}
+              <span className="badge">
+                {friendlyLabel(APPLICATION_STATUS_LABELS, application.status)}
+              </span>{" "}
               <span className="badge">
                 {plan.verdict === "covered"
                   ? "sound: covered"
@@ -243,11 +308,11 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
                     ]}
                   />
                   <p className="muted">
-                    Pay, date, and duration match the public slot. This is one
+                    Pay, date, and duration match the public listing. This is one
                     firm offer; withdraw it before offering another act.{" "}
                     {paymentsEnabled()
                       ? "The contract and payment run through Gigit."
-                      : "You and the act settle pay directly - Gigit keeps the booking, not the money."}
+                      : "During beta, you and the act arrange payment directly. Gigit records the booking but does not process the payment."}
                   </p>
                 </>
               )}

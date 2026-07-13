@@ -3,7 +3,7 @@ import { SlotParseWidget } from "@/components/AiAssist";
 import { venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import Link from "next/link";
-import { venueLocationIsComplete } from "@/lib/date-time";
+import { friendlyTimeZoneName, venueLocationIsComplete } from "@/lib/date-time";
 
 export default async function NewSlotPage() {
   const userId = await sessionUserId();
@@ -11,7 +11,8 @@ export default async function NewSlotPage() {
   if (!venue)
     return (
       <div className="card">
-        <Link href="/me">Create a venue profile</Link> before posting a slot.
+        <Link href="/onboarding?role=venue">Create a venue profile</Link> before
+        posting an open date.
       </div>
     );
   if (!venueLocationIsComplete(venue))
@@ -28,17 +29,17 @@ export default async function NewSlotPage() {
     <div>
     <SlotParseWidget timeZone={venue.timeZone} />
     <div className="card">
-      <h1>Post a slot</h1>
+      <h1>Post an open date</h1>
       <p className="muted">
-        The pay goes on the poster. Every slot shows its budget — that&apos;s
-        policy, and it&apos;s why good acts apply.
+        Add the pay up front so acts know what the gig offers before they
+        apply.
       </p>
       <p className="muted">
-        Times are entered in {venue.timeZone.replaceAll("_", " ")}.
+        Times are entered in {friendlyTimeZoneName(venue.timeZone)}.
       </p>
       <ApiForm
         endpoint="/api/slots"
-        submitLabel="Post slot"
+        submitLabel="Post open date"
         redirectTo="/slots"
         dateTimeZone={venue.timeZone}
         fields={[
@@ -54,9 +55,9 @@ export default async function NewSlotPage() {
     <div className="card">
       <h2>Make it a series</h2>
       <p className="muted">
-        Weekly music night, first-Tuesday comedy — recurring slots are how a
-        room becomes a scene. The next four nights post automatically and stay
-        topped up; cancel anytime and booked nights still stand.
+        Weekly music night, first-Tuesday comedy — recurring nights help a room
+        become a scene. We&apos;ll keep the next four dates posted. You can end
+        the series anytime; existing bookings stay confirmed.
       </p>
       <ApiForm
         endpoint="/api/series"
@@ -72,9 +73,6 @@ export default async function NewSlotPage() {
           { name: "notes", label: "About the night", type: "textarea" },
         ]}
       />
-      <p className="muted">
-        “monthly_dow” = same weekday each month (e.g. first Tuesday).
-      </p>
     </div>
     </div>
   );

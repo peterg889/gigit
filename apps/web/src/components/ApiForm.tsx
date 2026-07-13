@@ -4,14 +4,65 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { venueLocalInputToIso } from "@/lib/date-time";
 
+type SelectOption = string | { value: string; label: string };
+
 interface Field {
   name: string;
   label: string;
   type?: "text" | "number" | "datetime-local" | "textarea" | "select";
-  options?: string[];
+  options?: SelectOption[];
   required?: boolean;
   placeholder?: string;
   defaultValue?: string | number;
+}
+
+const OPTION_LABELS: Record<string, string> = {
+  "": "Any",
+  false: "No",
+  true: "Yes",
+  band: "Band",
+  solo: "Solo act",
+  comedian: "Comedian",
+  other: "Other",
+  bar: "Bar",
+  restaurant: "Restaurant",
+  coffee_shop: "Coffee shop",
+  brewery: "Brewery",
+  none: "Labor only — no rig",
+  partial: "Partial rig",
+  full_rig: "Full PA rig",
+  music: "Music",
+  comedy: "Comedy",
+  either: "Music or comedy",
+  weekly: "Weekly",
+  monthly_dow: "Monthly — same week and weekday",
+  no_show: "No-show",
+  venue_unavailable: "Venue unavailable",
+  misrepresentation: "Listing or profile was inaccurate",
+  venue: "Venue",
+  performer: "Act",
+  neither: "Neither",
+  refund_venue: "Refund venue",
+  pay_performer: "Pay act",
+  "America/New_York": "Eastern Time",
+  "America/Chicago": "Central Time",
+  "America/Denver": "Mountain Time",
+  "America/Phoenix": "Arizona Time",
+  "America/Los_Angeles": "Pacific Time",
+  "America/Anchorage": "Alaska Time",
+  "Pacific/Honolulu": "Hawaii Time",
+};
+
+function optionDetails(option: SelectOption): { value: string; label: string } {
+  if (typeof option !== "string") return option;
+  return {
+    value: option,
+    label:
+      OPTION_LABELS[option] ??
+      option
+        .replaceAll("_", " ")
+        .replace(/\b\w/g, (letter) => letter.toUpperCase()),
+  };
 }
 
 /**
@@ -145,11 +196,14 @@ export function ApiForm({
             />
           ) : f.type === "select" ? (
             <select id={f.name} name={f.name} required={f.required} defaultValue={f.defaultValue}>
-              {f.options?.map((o) => (
-                <option key={o} value={o}>
-                  {o}
-                </option>
-              ))}
+              {f.options?.map((option) => {
+                const { value, label } = optionDetails(option);
+                return (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                );
+              })}
             </select>
           ) : (
             <input
@@ -194,7 +248,7 @@ export function RedirectButton({
             return;
           }
           if (data?.url) window.location.href = data.url;
-          else setNote("Payments aren't configured in this environment — nothing to set up.");
+          else setNote("Payment setup is unavailable right now. Please contact support.");
         }}
       >
         {busy ? "Working…" : label}

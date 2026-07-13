@@ -494,34 +494,42 @@ function supportKb(): string {
   unless a dispute is opened. Standard payouts arrive via Stripe in 1-2
   business days after release.`
     : `- Payments: Gigit does not handle gig money. The venue pays the act directly
-  (cash, an app, a check — whatever they agree). The budget shown on the slot
-  is the pay, in full, with nothing taken out.`;
+  using whatever method they agree on. The pay shown on the open gig is the
+  full amount, with nothing taken out.`;
   const cancellation = on
     ? `- Cancellation policy: venue cancels more than 14 days out — no charge;
   48 hours to 14 days — 50% to the act; under 48 hours — 100% to the act.
   Act cancels — full refund to the venue, and it counts against reliability.`
-    : `- Cancellation: either side can cancel, but the slot reopens right away and
-  repeated late cancellations count against reliability. Any pay is settled
-  directly between the parties — Gigit holds no money.`;
+    : `- Cancellation: either side can cancel, but the open date reappears right away.
+  Repeated late cancellations count against reliability. Any pay is settled
+  directly between the parties — Gigit does not process it.`;
   const disputes = on
     ? `- Disputes: open one from the booking page within 24 hours after the gig ends.
   The payout pauses and a person reviews within 5 business days.`
     : `- Disputes: open one from the booking page within 24 hours after the gig ends.
   Reviews are held and a person looks within 5 business days.`;
   const sound = on
-    ? `- Sound techs: get booked through sound slots attached to bookings, with the
-  room specs and input list shown up front; paid like the act, after the show.`
-    : `- Sound techs: get booked through sound slots attached to bookings, with the
-  room specs and input list shown up front; settled directly with whoever's
+    ? `- Sound techs: get booked through sound jobs attached to bookings, with the
+  room specs and input list shown up front; paid like the act after the show.`
+    : `- Sound techs: get booked through sound jobs attached to bookings, with the
+  room specs and input list shown up front; paid directly by whoever is
   paying, after the show.`;
   return `
 # Gigit support knowledge base (v1)
 ${payments}
 ${cancellation}
-- Fees: performers and sound techs never pay anything, ever. Venues are free at
-  launch.
-- Applying: a performer profile is the application — one tap on any open slot.
-  The budget on the slot is the pay.
+- Beta membership: Gigit is free during beta. The first 500 eligible act
+  profiles and first 500 eligible venue profiles Gigit confirms as onboarded
+  receive a Founding Membership with no recurring standard-membership fee for
+  as long as Gigit operates.
+- Eligibility: profiles are counted in confirmation order and must be complete,
+  authentic, and non-duplicate, with one Founding Membership per real-world act
+  or venue. Pricing for later members has not been set; Gigit explains it before
+  asking anyone to pay and never starts a paid plan without agreement.
+- Founding-status questions: automated support cannot determine whether a
+  particular profile qualifies or is among the first 500. Escalate to a person.
+- Applying: an act profile is the application, so applying to an open gig takes
+  one click. Every listing shows the pay up front.
 ${disputes}
 ${sound}
 - Account: sign-in is a six-digit code by email or text. No passwords.

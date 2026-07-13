@@ -21,7 +21,10 @@ export default function LoginPage() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => null);
-      setError(data?.error?.message ?? `failed (${res.status})`);
+      setError(
+        data?.error?.message ??
+          "We couldn’t complete that request. Please try again.",
+      );
       return false;
     }
     return true;
@@ -29,8 +32,11 @@ export default function LoginPage() {
 
   return (
     <div className="card">
-      <h1>Sign in</h1>
-      <p className="muted">No password — we&apos;ll send you a six-digit code.</p>
+      <h1>Sign in or join Gigit</h1>
+      <p className="muted">
+        Enter your email and we’ll send a six-digit sign-in code. No password
+        needed.
+      </p>
       {stage === "request" ? (
         <form
           onSubmit={async (e) => {
@@ -59,7 +65,7 @@ export default function LoginPage() {
             </span>
           </label>
           <button>Send code</button>
-          <p className="muted">Dev environments accept the code 000000.</p>
+          <p className="muted">Gigit is free during beta. No card needed.</p>
         </form>
       ) : (
         <form
@@ -92,7 +98,20 @@ export default function LoginPage() {
             pattern="[0-9]{6}"
             required
           />
-          <button>Verify</button>
+          <div className="button-row">
+            <button>Verify code</button>
+            <button
+              className="btn secondary"
+              type="button"
+              onClick={() => {
+                setStage("request");
+                setCode("");
+                setError(null);
+              }}
+            >
+              Use a different email
+            </button>
+          </div>
         </form>
       )}
       {error && <p className="error">{error}</p>}

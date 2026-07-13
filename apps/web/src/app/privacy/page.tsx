@@ -5,38 +5,39 @@ export const metadata = { title: "Privacy Notice — Gigit" };
 export default function PrivacyPage() {
   return (
     <article className="legal-copy">
-      <span className="eyebrow">Launch draft · July 13, 2026</span>
+      <span className="eyebrow">Beta · Effective July 13, 2026</span>
       <h1>Privacy Notice</h1>
       <p className="lede">
-        This notice explains what Gigit collects, why we use it, and the choices
-        you have while we run the early-access service.
+        This notice explains what Gigit collects, how we use it, and the
+        choices available to you.
       </p>
 
       <h2>Information we collect</h2>
       <p>
         We collect the email address or phone number you use to sign in;
-        performer, venue, or sound-tech profile details you choose to publish;
-        slot, application, booking, message, review, support, and dispute
+        act, venue, or sound tech profile details you choose to publish; open
+        gig, application, booking, message, review, support, and dispute
         records; uploaded media; and basic security and delivery logs.
       </p>
       <p>
-        Venue addresses, and coordinates derived from them when available, are
-        used to show where a gig happens and support local discovery.
-        Confirmed-booking participants may see contact and logistics details
-        that are not public.
+        Venue profiles and open gigs are public, including the venue name,
+        full street address, room details, and schedule. Act and sound
+        professional profile information submitted for publication is also public.
+        Application notes, booking threads, contact details, and
+        additional logistics are shared only with the relevant participants.
       </p>
 
       <h2>How we use information</h2>
       <p>
-        We use it to operate the marketplace, match people to local work,
+        We use it to operate Gigit, match people to local work,
         deliver sign-in codes and booking notices, prevent abuse, moderate
-        content, answer support requests, resolve disputes, measure whether the
-        marketplace works, and comply with law.
+        content, answer support requests, resolve disputes, understand how
+        Gigit is used, improve the service, and comply with law.
       </p>
 
       <h2>Who receives information</h2>
       <p>
-        Public profile and open-slot information can be seen by anyone.
+        Public profile and open-gig information can be seen by anyone.
         Information you send in an application, booking, thread, or review is
         shared with the relevant participants as the product indicates.
       </p>
@@ -72,15 +73,15 @@ export default function PrivacyPage() {
 
       <h2>Changes and contact</h2>
       <p>
-        We may update this notice as the pilot changes. We will post the new
+        We may update this notice as Gigit changes. We will post the updated
         date here and give additional notice if a change materially affects how
         we use information. Questions belong in{" "}
         <Link href="/help">Help &amp; Support</Link>.
       </p>
 
       <div className="notice">
-        This is an early-access privacy notice, not a substitute for
-        jurisdiction-specific legal review before a broad public launch.
+        Gigit is in beta. Features may change, but we will update this notice
+        before using personal information in a materially different way.
       </div>
     </article>
   );

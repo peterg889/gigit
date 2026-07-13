@@ -8,6 +8,19 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { formatVenueDateTime } from "@/lib/date-time";
 
+const ACT_TYPE_LABELS: Record<string, string> = {
+  band: "Band",
+  solo: "Solo act",
+  comedian: "Comedian",
+  other: "Other",
+};
+
+const FORMAT_LABELS: Record<string, string> = {
+  music: "Music",
+  comedy: "Comedy",
+  either: "Music or comedy",
+};
+
 async function post(url: string, body: unknown, method: "POST" | "PATCH" = "POST") {
   const res = await fetch(url, {
     method,
@@ -81,7 +94,7 @@ export function ProfileIngestWidget() {
             onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
           >
             {["band", "solo", "comedian", "other"].map((k) => (
-              <option key={k}>{k}</option>
+              <option key={k} value={k}>{ACT_TYPE_LABELS[k]}</option>
             ))}
           </select>
           <label>Bio</label>
@@ -100,9 +113,9 @@ export function ProfileIngestWidget() {
               })
             }
           />
-          <label>Home metro</label>
+          <label>Home city or metro area</label>
           <input
-            placeholder="e.g. milwaukee"
+            placeholder="e.g. Milwaukee"
             value={homeMetro}
             onChange={(e) => setHomeMetro(e.target.value)}
           />
@@ -151,10 +164,10 @@ export function SlotParseWidget({ timeZone }: { timeZone: string }) {
 
   return (
     <div className="card">
-      <h2>Or just say the night</h2>
+      <h2>Describe the night</h2>
       <p className="muted">
-        “Something chill for Sunday brunch, two hours, $200ish” — the same thing
-        you&apos;ll soon be able to text us.
+        Describe the date, time, format, and pay in a sentence. We&apos;ll turn it
+        into a draft you can review.
       </p>
       <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} />
       <button
@@ -171,7 +184,7 @@ export function SlotParseWidget({ timeZone }: { timeZone: string }) {
           setBusy(false);
         }}
       >
-        {busy ? "Reading…" : "Draft the slot"}
+        {busy ? "Reading…" : "Draft the listing"}
       </button>
       {error && <p className="error">{error}</p>}
       {draft && (
@@ -180,7 +193,9 @@ export function SlotParseWidget({ timeZone }: { timeZone: string }) {
             <p className="error">Needs clarifying: {draft.clarificationNeeded}</p>
           )}
           <p>
-            <span className="badge">{draft.format}</span>{" "}
+            <span className="badge">
+              {FORMAT_LABELS[draft.format] ?? draft.format}
+            </span>{" "}
             {formatVenueDateTime(draft.startsAt, timeZone, "full")}{" "}
             · {draft.durationMinutes} min ·{" "}
             <span className="money">${(draft.budgetCents / 100).toFixed(0)}</span>
@@ -207,11 +222,11 @@ export function SlotParseWidget({ timeZone }: { timeZone: string }) {
               setBusy(false);
             }}
           >
-            Post this slot
+            Post this date
           </button>
           {draft.budgetCents < 1 && (
             <p className="muted">
-              Name the pay — every slot on Gigit shows its budget.
+              Add the pay — every open gig on Gigit shows it up front.
             </p>
           )}
         </div>
@@ -288,17 +303,23 @@ export function GearExtractWidget({ venueId }: { venueId: string }) {
           <p className="muted">
             Check the counts — the sound plan is only as good as these numbers.
           </p>
-          <label>PA?</label>
+          <label>House PA available?</label>
           <select
             value={String(draft.hasPA)}
             onChange={(e) => setDraft({ ...draft, hasPA: e.target.value === "true" })}
           >
-            <option value="true">yes</option>
-            <option value="false">no</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
           </select>
           {(["mixerChannels", "micsAvailable", "monitors"] as const).map((k) => (
             <div key={k}>
-              <label>{k}</label>
+              <label>
+                {k === "mixerChannels"
+                  ? "Mixer channels"
+                  : k === "micsAvailable"
+                    ? "Microphones available"
+                    : "Stage monitors"}
+              </label>
               <input
                 type="number"
                 value={draft[k]}
@@ -306,13 +327,13 @@ export function GearExtractWidget({ venueId }: { venueId: string }) {
               />
             </div>
           ))}
-          <label>Someone runs sound?</label>
+          <label>Sound operator included?</label>
           <select
             value={String(draft.hasOperator)}
             onChange={(e) => setDraft({ ...draft, hasOperator: e.target.value === "true" })}
           >
-            <option value="true">yes</option>
-            <option value="false">no</option>
+            <option value="true">Yes</option>
+            <option value="false">No</option>
           </select>
           {draft.uncertainties && <p className="muted">Unsure about: {draft.uncertainties}</p>}
           <button

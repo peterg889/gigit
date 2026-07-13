@@ -13,9 +13,16 @@ import {
 export const dynamic = "force-dynamic";
 
 const GEAR_LABEL: Record<string, string> = {
-  none: "labor only",
-  partial: "partial rig",
-  full_rig: "full PA rig",
+  none: "Labor only",
+  partial: "Partial rig",
+  full_rig: "Full PA rig",
+};
+
+const APPLICATION_STATUS_LABEL: Record<string, string> = {
+  submitted: "Application sent",
+  booked: "Booked",
+  declined: "Not selected",
+  withdrawn: "Withdrawn",
 };
 
 /** Sound tech directory — venues and performers can hire sound (PRD F6). */
@@ -68,13 +75,26 @@ export default async function TechsPage() {
   return (
     <div>
       <h1>Sound techs</h1>
+      <p className="muted">
+        Find local live engineers by their experience, rates, equipment, and
+        travel range. Venues and acts can contact them directly when a night
+        needs sound.
+      </p>
       <div className="card">
         <h2>Gigs that need sound</h2>
         {openSubslots.length === 0 && (
-          <p className="muted">
-            Nothing open right now. Sound slots post here when a booked night
-            needs a tech — room specs and input list included.
-          </p>
+          <>
+            <p className="muted">
+              No sound jobs are open right now. New jobs appear here when a
+              booked gig needs a tech, with room specs and an input list included.
+            </p>
+            {!myTech && (
+              <p>
+                <Link href="/onboarding?role=tech">Create a sound tech profile</Link>{" "}
+                so you are ready to apply.
+              </p>
+            )}
+          </>
         )}
         {openSubslots.map(({
           subslot,
@@ -95,11 +115,13 @@ export default async function TechsPage() {
             <p className="muted">
               {formatVenueDateTime(terms.startsAt, venueTimeZone)}{" "}
               {shortTimeZoneName(terms.startsAt, venueTimeZone)}{" "}
-              · {subslot.needs.inputs} inputs · house PA:{" "}
+              · {subslot.needs.inputs} inputs ·{" "}
               {paInventory.hasPA
-                ? `${paInventory.mixerChannels ?? "?"} ch`
-                : "none — bring a rig"}
-              {subslot.needs.gaps.length > 0 && <> · gaps: {subslot.needs.gaps.join("; ")}</>}
+                ? paInventory.mixerChannels != null
+                  ? `house PA · ${paInventory.mixerChannels} channels`
+                  : "house PA · channel count not listed"
+                : "no house PA · bring a rig"}
+              {subslot.needs.gaps.length > 0 && <> · sound gaps: {subslot.needs.gaps.join("; ")}</>}
               {subslot.needs.notes && <> · {subslot.needs.notes}</>}
             </p>
             <p className="muted">
@@ -112,12 +134,16 @@ export default async function TechsPage() {
               })}
             </p>
             <p className="muted">
-              The {subslot.payer} pays you directly; Gigit never touches the gig money.
+              The {subslot.payer === "venue" ? "venue" : "act"} pays you directly;
+              Gigit does not process the gig payment.
             </p>
             {myTech ? (
               myApplicationBySubslot.has(subslot.id) ? (
                 <p>
-                  <span className="badge">{myApplicationBySubslot.get(subslot.id)!.status}</span>{" "}
+                  <span className="badge">
+                    {APPLICATION_STATUS_LABEL[myApplicationBySubslot.get(subslot.id)!.status] ??
+                      "Application updated"}
+                  </span>{" "}
                   <Link href={"/sound/" + subslot.id}>View your application</Link>
                 </p>
               ) : (
@@ -127,48 +153,52 @@ export default async function TechsPage() {
                 />
               )
             ) : (
-              <span className="muted">Create a tech profile to apply.</span>
+              <span className="muted">
+                <Link href="/onboarding?role=tech">Create a sound tech profile</Link>{" "}
+                to apply.
+              </span>
             )}
           </div>
         ))}
       </div>
-      <p className="muted">
-        Live engineers, with or without a rig — booked on the same feed, with the
-        same standing as the act. Venues and performers can message them directly
-        to cover a night.
-      </p>
+      <h2>Sound tech directory</h2>
       {techs.length === 0 && (
-        <div className="card">No techs on the board yet.</div>
+        <div className="card">
+          No sound tech profiles yet. {!myTech && (
+            <Link href="/onboarding?role=tech">Create the first one.</Link>
+          )}
+        </div>
       )}
       {techs.map((t) => (
         <div className="card" key={t.id}>
           <strong>
             <Link href={`/t/${t.id}`}>{t.name}</Link>
           </strong>{" "}
-          <span className="badge">{GEAR_LABEL[t.gear]}</span>{" "}
+          <span className="badge">{GEAR_LABEL[t.gear] ?? "Equipment not listed"}</span>{" "}
           {t.reliabilityStrikes > 0 && (
             <span className="badge">{t.reliabilityStrikes} cancellation{t.reliabilityStrikes === 1 ? "" : "s"}</span>
           )}
-          <p className="muted">{t.bio}</p>
+          <p className="muted">{t.bio || "No experience summary yet."}</p>
           <p className="muted">
             {t.rateLaborCents != null && (
               <>
-                labor{" "}
+                Labor: {" "}
                 <span className="money">
                   ${(t.rateLaborCents / 100).toFixed(0)}
                 </span>
               </>
             )}
+            {t.rateLaborCents != null && t.rateWithRigCents != null && " · "}
             {t.rateWithRigCents != null && (
               <>
-                {" "}
-                · with rig{" "}
+                With rig: {" "}
                 <span className="money">
                   ${(t.rateWithRigCents / 100).toFixed(0)}
                 </span>
               </>
-            )}{" "}
-            · travels {t.travelRadiusKm} km
+            )}
+            {t.rateLaborCents == null && t.rateWithRigCents == null && "Rates not listed"}
+            {" · "}Travels {t.travelRadiusKm} km
           </p>
           {canInvite && (
             <ApiForm

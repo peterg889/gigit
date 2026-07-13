@@ -8,6 +8,20 @@ import { formatAddress, formatVenueDateTime, shortTimeZoneName } from "@/lib/dat
 
 export const dynamic = "force-dynamic";
 
+const VENUE_KIND_LABEL: Record<string, string> = {
+  bar: "Bar",
+  restaurant: "Restaurant",
+  coffee_shop: "Coffee shop",
+  brewery: "Brewery",
+  other: "Other venue",
+};
+
+const GIG_FORMAT_LABEL: Record<string, string> = {
+  music: "Live music",
+  comedy: "Comedy",
+  either: "Music or comedy",
+};
+
 /** Public venue page: room, PA inventory, photos, open slots. */
 export default async function VenuePage({
   params,
@@ -71,7 +85,8 @@ export default async function VenuePage({
     <div>
       <div className="card">
         <h1>
-          {v.name} <span className="badge">{v.kind.replace("_", " ")}</span>
+          {v.name}{" "}
+          <span className="badge">{VENUE_KIND_LABEL[v.kind] ?? "Venue"}</span>
           {v.reliabilityStrikes > 0 && (
             <> <span className="badge">{v.reliabilityStrikes} cancellation{v.reliabilityStrikes === 1 ? "" : "s"}</span></>
           )}
@@ -82,15 +97,23 @@ export default async function VenuePage({
           )}
         </h1>
         <p className="muted">
-          {formatAddress(v)} · {v.metro} · capacity {v.capacity ?? "?"}
+          {formatAddress(v)} · {v.capacity != null ? `capacity ${v.capacity}` : "capacity not listed"}
           {v.noiseCurfew && <> · curfew {v.noiseCurfew}</>}
         </p>
         <p>{v.bio || <span className="muted">No description yet.</span>}</p>
         <p className="muted">
-          Sound:{" "}
-          {pa.hasPA
-            ? `house PA (${pa.mixerChannels ?? "?"} ch, ${pa.micsAvailable ?? 0} mics, ${pa.monitors ?? 0} monitors${pa.hasOperator ? ", operated" : ", unstaffed"})`
-            : "no house PA — bring your own or book a tech"}
+          {pa.hasPA ? (
+            <>
+              House PA ·{" "}
+              {pa.mixerChannels != null
+                ? `${pa.mixerChannels} channels`
+                : "channel count not listed"}{" "}
+              · {pa.micsAvailable ?? 0} microphones · {pa.monitors ?? 0} monitors ·{" "}
+              {pa.hasOperator ? "house sound tech included" : "no house sound tech"}
+            </>
+          ) : (
+            <>No house PA — bring your own or <Link href="/techs">find a sound tech</Link>.</>
+          )}
         </p>
       </div>
 
@@ -109,15 +132,19 @@ export default async function VenuePage({
       )}
 
       <div className="card">
-        <h2>Open slots</h2>
-        {openSlots.length === 0 && <p className="muted">Nothing open right now.</p>}
+        <h2>Open gigs</h2>
+        {openSlots.length === 0 && (
+          <p className="muted">
+            No open gigs here right now. <Link href="/slots">Browse all open gigs</Link>.
+          </p>
+        )}
         {openSlots.map((s) => (
           <p key={s.id}>
             <Link href={`/slots/${s.id}`}>
               {formatVenueDateTime(s.startsAt, v.timeZone)}{" "}
               {shortTimeZoneName(s.startsAt, v.timeZone)}
             </Link>{" "}
-            · <span className="badge">{s.format}</span> ·{" "}
+            · <span className="badge">{GIG_FORMAT_LABEL[s.format] ?? "Open format"}</span> ·{" "}
             <span className="money">${(s.budgetCents / 100).toFixed(0)}</span>
           </p>
         ))}
@@ -125,11 +152,11 @@ export default async function VenuePage({
 
       {visible.length > 0 && (
         <div className="card">
-          <h2>Reviews from performers</h2>
+          <h2>Reviews from acts</h2>
           {visible.map((r) => (
             <p key={r.id}>
               ★ {r.ratings.overall} —{" "}
-              {r.body || <span className="muted">no comment</span>}
+              {r.body || <span className="muted">No written comment.</span>}
             </p>
           ))}
         </div>

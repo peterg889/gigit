@@ -1,10 +1,29 @@
 import { performerReliability, visibleReviews } from "@gigit/domain";
 import { db, performerReliabilityStats, schema } from "@gigit/db";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
 
 export const dynamic = "force-dynamic";
+
+const ACT_KIND_LABEL: Record<string, string> = {
+  band: "Band",
+  solo: "Solo act",
+  comedian: "Comedian",
+  other: "Other act",
+};
+
+const MEDIA_PROVIDER_LABEL: Record<string, string> = {
+  youtube: "YouTube",
+  vimeo: "Vimeo",
+  bandcamp: "Bandcamp",
+  soundcloud: "SoundCloud",
+};
+
+function formatAreaName(value: string) {
+  return value.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase("en-US"));
+}
 
 /** Public performer EPK: bio, photos, audio, video embeds, reviews. */
 export default async function PerformerPage({
@@ -70,7 +89,8 @@ export default async function PerformerPage({
     <div>
       <div className="card">
         <h1>
-          {p.name} <span className="badge">{p.kind}</span>{" "}
+          {p.name}{" "}
+          <span className="badge">{ACT_KIND_LABEL[p.kind] ?? "Act"}</span>{" "}
           <span className="badge" title="show-up history">{rel.label}</span>
           {avg !== null && (
             <span className="badge">
@@ -79,10 +99,10 @@ export default async function PerformerPage({
           )}
         </h1>
         <p className="muted">
-          {p.homeMetro} · travels {p.travelRadiusKm} km
+          {formatAreaName(p.homeMetro)} · travels {p.travelRadiusKm} km
           {p.genreTags.length > 0 && <> · {p.genreTags.join(", ")}</>}
         </p>
-        <p>{p.bio || <span className="muted">No bio yet.</span>}</p>
+        <p>{p.bio || <span className="muted">This act has not added a bio yet.</span>}</p>
         {p.rateMinCents != null && p.rateMaxCents != null && (
           <p className="muted">
             Typical rate:{" "}
@@ -95,7 +115,9 @@ export default async function PerformerPage({
       </div>
 
       {images.length === 0 && audio.length === 0 && embeds.length === 0 && visible.length === 0 && (
-        <div className="card muted">No photos, audio, or reviews up yet — check back soon.</div>
+        <div className="card muted">
+          This act has not added photos, audio, video, or reviews yet.
+        </div>
       )}
 
       {images.length > 0 && (
@@ -129,7 +151,12 @@ export default async function PerformerPage({
               <a href={m.embedUrl!} target="_blank" rel="noreferrer">
                 ▶ {m.embedMeta?.title ?? m.embedUrl}
               </a>{" "}
-              <span className="badge">{m.embedMeta?.provider}</span>
+              {m.embedMeta?.provider && (
+                <span className="badge">
+                  {MEDIA_PROVIDER_LABEL[m.embedMeta.provider.toLowerCase()] ??
+                    m.embedMeta.provider}
+                </span>
+              )}
             </p>
           ))}
         </div>
@@ -140,11 +167,13 @@ export default async function PerformerPage({
           <h2>Reviews from venues</h2>
           {visible.map((r) => (
             <p key={r.id}>
-              ★ {r.ratings.overall} — {r.body || <span className="muted">no comment</span>}
+              ★ {r.ratings.overall} —{" "}
+              {r.body || <span className="muted">No written comment.</span>}
             </p>
           ))}
         </div>
       )}
+      <p><Link href="/performers">Browse more local acts</Link></p>
     </div>
   );
 }

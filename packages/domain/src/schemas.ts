@@ -25,12 +25,19 @@ const timeZoneSchema = z
   .max(80)
   .refine(isValidTimeZone, "must be a valid IANA timezone");
 
+const metroSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .transform((value) => value.toLocaleLowerCase("en-US"));
+
 const performerObject = z.object({
   kind: z.enum(performerKinds),
   name: z.string().min(1).max(120),
   bio: z.string().max(4000).default(""),
   genreTags: z.array(z.string().min(1).max(40)).max(10).default([]),
-  homeMetro: z.string().min(1).max(80),
+  homeMetro: metroSchema,
   travelRadiusKm: z.number().int().min(0).max(500).default(50),
   rateMinCents: z.number().int().min(0).optional(),
   rateMaxCents: z.number().int().min(0).optional(),
@@ -55,7 +62,7 @@ export const venueCreateSchema = z.object({
   kind: z.enum(venueKinds),
   name: z.string().min(1).max(120),
   bio: z.string().max(4000).default(""),
-  metro: z.string().min(1).max(80),
+  metro: metroSchema,
   addressLine1: z.string().min(1).max(160),
   addressLine2: z.string().max(160).optional(),
   city: z.string().min(1).max(100),
@@ -149,7 +156,7 @@ export const techSubslotBookSchema = z.object({
 // Saved-search alert (PRD F2.3): all fields optional — empty = "any new slot".
 export const savedSearchCreateSchema = z.object({
   format: z.enum(slotFormats).optional(),
-  metro: z.string().min(1).max(80).optional(),
+  metro: metroSchema.optional(),
   minBudgetCents: z.number().int().min(0).optional(),
 });
 

@@ -36,6 +36,16 @@ export function shortTimeZoneName(value: DateValue, timeZone: string): string {
   return part?.value ?? timeZone;
 }
 
+export function friendlyTimeZoneName(timeZone: string): string {
+  const part = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "longGeneric",
+  })
+    .formatToParts(new Date())
+    .find((item) => item.type === "timeZoneName");
+  return part?.value ?? timeZone.replaceAll("_", " ");
+}
+
 export function formatWallTime(value: string): string {
   const [hour = 0, minute = 0] = value.split(":").map(Number);
   return new Intl.DateTimeFormat("en-US", {

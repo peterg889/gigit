@@ -8,6 +8,38 @@ import { formatVenueDateTime, shortTimeZoneName } from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
 
+const BOOKING_STATE_LABELS: Record<string, string> = {
+  offered: "Offer awaiting response",
+  confirming: "Confirming booking",
+  confirmed: "Confirmed",
+  awaiting_confirmation: "Gig played — awaiting confirmation",
+  released: "Completed",
+  collapsed: "Offer closed",
+  disputed: "Under review",
+  cancelled_by_venue: "Cancelled by venue",
+  cancelled_by_performer: "Cancelled by act",
+  refunded: "Cancelled and refunded",
+  partially_released: "Resolved",
+};
+
+const SOUND_STATE_LABELS: Record<string, string> = {
+  open: "Open",
+  booked: "Tech booked",
+  released: "Completed",
+  cancelled_by_payer: "Cancelled",
+  cancelled_with_parent: "Cancelled with gig",
+};
+
+const SOUND_APPLICATION_LABELS: Record<string, string> = {
+  submitted: "Application sent",
+  booked: "Booked",
+  declined: "Not selected",
+};
+
+function friendlyLabel(labels: Record<string, string>, value: string) {
+  return labels[value] ?? value.replaceAll("_", " ");
+}
+
 export default async function BookingsPage() {
   const userId = await sessionUserId();
   if (!userId)
@@ -70,8 +102,10 @@ export default async function BookingsPage() {
       <h1>Bookings</h1>
       {rows.length === 0 && soundRows.length === 0 && (
         <div className="card">
-          Nothing on the calendar yet. The <Link href="/slots">open slots</Link> are
-          the place to fix that.
+          <p>Nothing on your calendar yet.</p>
+          {venue && <p><Link href="/slots/new">Post an open date</Link> to start hearing from acts.</p>}
+          {performer && <p><Link href="/slots">Browse open gigs</Link> and apply when one fits.</p>}
+          {tech && <p><Link href="/techs">See gigs that need sound</Link>.</p>}
         </div>
       )}
       {rows.map(({ booking, performerName, venueName, venueTimeZone }) => {
@@ -84,9 +118,7 @@ export default async function BookingsPage() {
                 <strong>{performerName}</strong> at <strong>{venueName}</strong>
               </Link>{" "}
               <span className="badge">
-                {booking.state === "offered"
-                  ? "firm offer"
-                  : booking.state.replaceAll("_", " ")}
+                {friendlyLabel(BOOKING_STATE_LABELS, booking.state)}
               </span>
             </div>
             <div className="muted">
@@ -113,8 +145,8 @@ export default async function BookingsPage() {
                 label="Cancel booking"
                 confirm={
                   mineAsPerformer
-                    ? "Cancel this booking? The venue will reopen the slot, and this cancellation counts against your reliability."
-                    : "Cancel this booking? The slot will reopen. Settle anything already arranged with the act directly."
+                    ? "Cancel this booking? The venue will reopen the date, and this cancellation counts against your reliability."
+                    : "Cancel this booking? The date will reopen. Settle anything already arranged with the act directly."
                 }
               />
             )}
@@ -132,8 +164,8 @@ export default async function BookingsPage() {
                 </Link>{" "}
                 <span className="badge">
                   {subslot.techId === tech?.id
-                    ? subslot.state.replaceAll("_", " ")
-                    : application.status}
+                    ? friendlyLabel(SOUND_STATE_LABELS, subslot.state)
+                    : friendlyLabel(SOUND_APPLICATION_LABELS, application.status)}
                 </span>
               </div>
               <div className="muted">
@@ -146,7 +178,7 @@ export default async function BookingsPage() {
                   ? "You are the booked tech. Open for load-in details and contacts."
                   : application.status === "submitted"
                     ? "Application pending."
-                    : "This sound slot was filled by another tech."}
+                    : "This sound job was filled by another tech."}
               </p>
             </div>
           ))}

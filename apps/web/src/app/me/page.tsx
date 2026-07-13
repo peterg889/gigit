@@ -7,11 +7,33 @@ import { GearExtractWidget, ProfileIngestWidget } from "@/components/AiAssist";
 import { MediaManager } from "@/components/MediaManager";
 import {
   formatAddress,
+  friendlyTimeZoneName,
   formatWallTime,
   venueLocationIsComplete,
 } from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
+
+const ACT_KIND_LABEL: Record<string, string> = {
+  band: "Band",
+  solo: "Solo act",
+  comedian: "Comedian",
+  other: "Other",
+};
+
+const VENUE_KIND_LABEL: Record<string, string> = {
+  bar: "Bar",
+  restaurant: "Restaurant",
+  coffee_shop: "Coffee shop",
+  brewery: "Brewery",
+  other: "Other",
+};
+
+const GEAR_LABEL: Record<string, string> = {
+  none: "Labor only — no rig",
+  partial: "Partial rig",
+  full_rig: "Full PA rig",
+};
 
 export default async function MePage() {
   const userId = await sessionUserId();
@@ -44,15 +66,18 @@ export default async function MePage() {
       <h1>Your profiles</h1>
       <p className="muted">
         One account can hold multiple roles — a comedian who books rooms, a
-        musician who runs sound. You&apos;ll never pay to be on Gigit.
+        musician who runs sound. Gigit is free to use during beta.
       </p>
 
       <div className="card">
-        <h2>Performer</h2>
+        <h2>Act</h2>
         {performer ? (
           <>
           <p>
-            <strong>{performer.name}</strong> <span className="badge">{performer.kind}</span>{" "}
+            <strong>{performer.name}</strong>{" "}
+            <span className="badge">
+              {ACT_KIND_LABEL[performer.kind] ?? performer.kind}
+            </span>{" "}
             <Link href={`/p/${performer.id}`}>view public page</Link>
             <br />
             <span className="muted">{performer.bio}</span>
@@ -81,8 +106,8 @@ export default async function MePage() {
                 { name: "name", label: "Act name", defaultValue: performer.name },
                 { name: "bio", label: "Bio", type: "textarea", defaultValue: performer.bio ?? "" },
                 { name: "genreTags", label: "Genres (comma-separated)", defaultValue: (performer.genreTags ?? []).join(", ") },
-                { name: "rateMinCents", label: "Rate floor ($)", type: "number", defaultValue: performer.rateMinCents != null ? performer.rateMinCents / 100 : undefined },
-                { name: "rateMaxCents", label: "Rate ceiling ($)", type: "number", defaultValue: performer.rateMaxCents != null ? performer.rateMaxCents / 100 : undefined },
+                { name: "rateMinCents", label: "Typical rate from ($)", type: "number", defaultValue: performer.rateMinCents != null ? performer.rateMinCents / 100 : undefined },
+                { name: "rateMaxCents", label: "Typical rate to ($)", type: "number", defaultValue: performer.rateMaxCents != null ? performer.rateMaxCents / 100 : undefined },
                 { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: performer.travelRadiusKm },
                 { name: "setLengthsMinutes", label: "Set lengths in minutes (comma-separated)", defaultValue: (performer.setLengthsMinutes ?? []).join(", ") },
                 { name: "inputs", label: "Audio inputs needed", type: "number", defaultValue: performer.techNeeds.inputs },
@@ -99,12 +124,12 @@ export default async function MePage() {
           <ProfileIngestWidget />
           <ApiForm
             endpoint="/api/performers"
-            submitLabel="Create performer profile"
+            submitLabel="Create act profile"
             transform="performerProfile"
             fields={[
               { name: "name", label: "Act name", required: true },
               { name: "kind", label: "Type", type: "select", options: ["band", "solo", "comedian", "other"], required: true },
-              { name: "homeMetro", label: "Home metro (e.g. milwaukee)", required: true },
+              { name: "homeMetro", label: "Home city or metro area", required: true, placeholder: "e.g. Milwaukee" },
               { name: "bio", label: "Bio", type: "textarea" },
               { name: "genreTags", label: "Genres (comma-separated)" },
               { name: "rateMinCents", label: "Typical rate from ($)", type: "number" },
@@ -125,46 +150,36 @@ export default async function MePage() {
         <h2>Venue</h2>
         <details>
           <summary className="muted" style={{ cursor: "pointer" }}>
-            Music licensing — what hosting live music means for your room
+            Music licensing for live performances
           </summary>
           <div className="muted" style={{ marginTop: 8 }}>
             <p>
-              If acts play cover songs in your room, US law says the venue (not
-              the band) needs licenses from the performing-rights organizations
-              — ASCAP, BMI, SESAC, and GMR. For a small room that&apos;s
-              typically on the order of $1,500/year combined, scaled to your
-              capacity. It&apos;s a real obligation: ASCAP actively pursues
-              small venues, and statutory damages run far past the license
-              cost.
-            </p>
-            <p>
-              Two honest paths: budget the licenses as part of running live
-              music, or program originals-only nights (which reduces, but
-              doesn&apos;t eliminate, exposure — covers in a set are common).
-              Check whether your state restaurant association offers PRO
-              discounts; many do.
-            </p>
-            <p>
-              This is guidance, not legal advice — confirm your situation with
-              the PROs or a lawyer.
+              Venues are responsible for any music licenses required for
+              performances in their room. Requirements vary, especially when
+              acts play cover songs. Check directly with ASCAP, BMI, SESAC,
+              GMR, or a lawyer for guidance. This is general information, not
+              legal advice.
             </p>
           </div>
         </details>
         {venue ? (
           <>
           <p>
-            <strong>{venue.name}</strong> <span className="badge">{venue.kind}</span>{" "}
+            <strong>{venue.name}</strong>{" "}
+            <span className="badge">
+              {VENUE_KIND_LABEL[venue.kind] ?? venue.kind}
+            </span>{" "}
             <Link href={`/v/${venue.id}`}>view public page</Link>
             <br />
             <span className="muted">{venue.bio}</span>
           </p>
           <p className="muted">
-            {formatAddress(venue)} · {venue.timeZone.replaceAll("_", " ")}
+            {formatAddress(venue)} · {friendlyTimeZoneName(venue.timeZone)}
           </p>
           {!venueLocationIsComplete(venue) && (
             <p className="error">
-              Add the complete address and choose the venue timezone before posting a
-              night. Existing UTC-only profiles cannot safely schedule a real gig.
+              Add your venue&apos;s full address and timezone before posting a
+              night so listings and calendar invites show the correct time.
             </p>
           )}
           {paymentsEnabled() ? (
@@ -177,7 +192,8 @@ export default async function MePage() {
             </p>
           ) : (
             <p className="muted">
-              You pay the act directly — no card needed to post slots or send offers.
+              You pay the act directly — no card needed to post an open date or
+              send an offer.
             </p>
           )}
           {series.length > 0 && (
@@ -191,8 +207,8 @@ export default async function MePage() {
                     : `${WEEK[s.pattern.week ?? 1]} ${DOW[s.pattern.dayOfWeek]} monthly`}{" "}
                   · {formatWallTime(s.pattern.startTimeLocal ?? s.pattern.startTimeUtc ?? "00:00")}{" "}
                   {s.pattern.timeZone
-                    ? s.pattern.timeZone.replaceAll("_", " ")
-                    : "UTC (legacy series)"}{" "}
+                    ? friendlyTimeZoneName(s.pattern.timeZone)
+                    : "Timezone not set"}{" "}
                   ·{" "}
                   <span className="money">${(s.defaults.budgetCents / 100).toFixed(0)}</span>{" "}
                   <ActionButton
@@ -203,8 +219,8 @@ export default async function MePage() {
                 </p>
               ))}
               <p className="muted">
-                Ending a series closes its future open nights. Booked nights
-                stand — they&apos;re contracts.
+                Ending a series closes its future open nights. Existing
+                bookings stay confirmed.
               </p>
             </div>
           )}
@@ -240,7 +256,13 @@ export default async function MePage() {
           <MediaManager subjectType="venue" />
           </>
         ) : (
-          <ApiForm
+          <>
+            <p className="muted">
+              Your full venue address appears on your public venue profile and
+              open gigs. Choose the correct timezone so offers and calendar
+              entries show the right local time.
+            </p>
+            <ApiForm
             endpoint="/api/venues"
             submitLabel="Create venue profile"
             fields={[
@@ -251,7 +273,7 @@ export default async function MePage() {
               { name: "city", label: "City", required: true, placeholder: "Milwaukee" },
               { name: "region", label: "State", required: true, placeholder: "WI" },
               { name: "postalCode", label: "ZIP code", required: true, placeholder: "53212" },
-              { name: "metro", label: "Metro area", required: true, placeholder: "milwaukee" },
+              { name: "metro", label: "City or metro area", required: true, placeholder: "e.g. Milwaukee" },
               {
                 name: "timeZone",
                 label: "Timezone",
@@ -262,7 +284,8 @@ export default async function MePage() {
               },
               { name: "bio", label: "About the room", type: "textarea" },
             ]}
-          />
+            />
+          </>
         )}
       </div>
 
@@ -271,7 +294,8 @@ export default async function MePage() {
         {tech ? (
           <>
           <p>
-            <strong>{tech.name}</strong> <span className="badge">{tech.gear}</span>
+            <strong>{tech.name}</strong>{" "}
+            <span className="badge">{GEAR_LABEL[tech.gear] ?? tech.gear}</span>
             <br />
             <span className="muted">{tech.bio}</span>
           </p>
@@ -296,7 +320,7 @@ export default async function MePage() {
         ) : (
           <ApiForm
             endpoint="/api/techs"
-            submitLabel="Create tech profile"
+            submitLabel="Create sound tech profile"
             fields={[
               { name: "name", label: "Name", required: true },
               { name: "gear", label: "Gear", type: "select", options: ["none", "partial", "full_rig"], required: true },

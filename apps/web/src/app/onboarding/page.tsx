@@ -7,16 +7,22 @@ export const dynamic = "force-dynamic";
 
 type Role = "venue" | "performer" | "tech";
 
+const roleName: Record<Role, string> = {
+  venue: "Venue",
+  performer: "Act",
+  tech: "Sound tech",
+};
+
 const roleCopy: Record<Role, { label: string; headline: string; detail: string }> = {
   venue: {
-    label: "I book a room",
+    label: "I book acts for a venue",
     headline: "Fill your next open night",
     detail: "Post the date, pay, and room details. Compare local applicants and make one clear offer.",
   },
   performer: {
     label: "I perform",
     headline: "Put your act in the running",
-    detail: "Build one useful profile, find paid local slots, and apply without writing the same pitch again.",
+    detail: "Create your act profile once, find paid gigs nearby, and apply without rewriting your pitch.",
   },
   tech: {
     label: "I run sound",
@@ -51,20 +57,28 @@ export default async function OnboardingPage({
         <p className="lede">
           {role
             ? roleCopy[role].detail
-            : "Tell us what you do. One account can add another role later."}
+            : "Tell us what you do. You can add another role to the same account later."}
         </p>
         <div className="card">
           <h2>First, sign in</h2>
           <p>
-            Gigit uses a six-digit email code—no password to remember. Creating
-            a profile and applying are free.
+            Gigit uses a six-digit email code—no password to remember. Gigit is
+            free to use during beta.
           </p>
           <Link className="btn" href={"/login?" + loginParams.toString()}>
             Sign in to continue
           </Link>
         </div>
+        {role !== "tech" && (
+          <div className="notice">
+            The first 500 eligible act profiles and first 500 eligible venue
+            profiles we confirm as onboarded receive a Founding Membership with
+            no recurring standard-membership fee for as long as Gigit operates.{" "}
+            <Link href="/help">See offer details.</Link>
+          </div>
+        )}
         <p>
-          <Link href="/slots">Browse open slots first</Link>
+          <Link href="/slots">Browse open gigs first</Link>
         </p>
       </div>
     );
@@ -82,13 +96,13 @@ export default async function OnboardingPage({
         <span className="eyebrow">Get started</span>
         <h1>What brings you to Gigit?</h1>
         <p className="lede">
-          Choose the job you want to do first. You can add another role from
+          Choose how you want to use Gigit first. You can add another role from
           your profile whenever you need it.
         </p>
         <div className="role-grid">
           {(Object.keys(roleCopy) as Role[]).map((item) => (
             <div className="card role-card" key={item}>
-              <span className="badge">{item}</span>
+              <span className="badge">{roleName[item]}</span>
               <h2>{roleCopy[item].label}</h2>
               <p>{roleCopy[item].detail}</p>
               <Link className="btn" href={"/onboarding?role=" + item}>
@@ -116,9 +130,9 @@ export default async function OnboardingPage({
         <h1>{roleCopy[role].headline}</h1>
         <div className="card">
           <h2>{existing.name}</h2>
-          <p>Your {role} profile is ready.</p>
+          <p>Your {roleName[role].toLowerCase()} profile is ready.</p>
           <Link className="btn" href={nextHref}>
-            {role === "venue" ? "Post an open night" : role === "performer" ? "Find a gig" : "View sound work"}
+            {role === "venue" ? "Post an open date" : role === "performer" ? "Find a gig" : "View sound work"}
           </Link>{" "}
           <Link href="/me">Edit profile</Link>
         </div>
@@ -128,9 +142,17 @@ export default async function OnboardingPage({
 
   return (
     <div>
-      <span className="eyebrow">Step 1 of 1 · {role}</span>
+      <span className="eyebrow">Create your {roleName[role].toLowerCase()} profile</span>
       <h1>{roleCopy[role].headline}</h1>
       <p className="lede">{roleCopy[role].detail}</p>
+      {role !== "tech" && (
+        <div className="notice">
+          Founding offer: the first 500 eligible act profiles and first 500
+          eligible venue profiles we confirm as onboarded receive a Founding
+          Membership with no recurring standard-membership fee for as long as
+          Gigit operates. <Link href="/help">See offer details.</Link>
+        </div>
+      )}
       <p>
         Picked the wrong path? <Link href="/onboarding">Choose another role</Link>.
       </p>
@@ -138,16 +160,16 @@ export default async function OnboardingPage({
       <div className="card">
         {role === "performer" && (
           <>
-            <h2>Your performer profile</h2>
+            <h2>Your act profile</h2>
             <ApiForm
               endpoint="/api/performers"
-              submitLabel="Create profile and find slots"
+              submitLabel="Create profile and find gigs"
               redirectTo="/slots"
               transform="performerProfile"
               fields={[
                 { name: "name", label: "Act name", required: true },
                 { name: "kind", label: "Type", type: "select", options: ["band", "solo", "comedian", "other"], required: true },
-                { name: "homeMetro", label: "Home metro", required: true, placeholder: "milwaukee" },
+                { name: "homeMetro", label: "Home city or metro area", required: true, placeholder: "e.g. Milwaukee" },
                 { name: "bio", label: "What should a booker know?", type: "textarea" },
                 { name: "genreTags", label: "Genres (comma-separated)" },
                 { name: "rateMinCents", label: "Typical rate from ($)", type: "number" },
@@ -167,12 +189,13 @@ export default async function OnboardingPage({
           <>
             <h2>Your venue</h2>
             <p className="muted">
-              The full address is shared where the gig happens; accurate
-              timezone details keep every offer and calendar entry aligned.
+              Your full venue address appears on your public venue profile and
+              open gigs. Choose the correct timezone so offers and calendar
+              entries show the right local time.
             </p>
             <ApiForm
               endpoint="/api/venues"
-              submitLabel="Create venue and post a slot"
+              submitLabel="Create venue and post an open date"
               redirectTo="/slots/new"
               fields={[
                 { name: "name", label: "Venue name", required: true },
@@ -182,7 +205,7 @@ export default async function OnboardingPage({
                 { name: "city", label: "City", required: true, placeholder: "Milwaukee" },
                 { name: "region", label: "State", required: true, placeholder: "WI" },
                 { name: "postalCode", label: "ZIP code", required: true, placeholder: "53212" },
-                { name: "metro", label: "Metro area", required: true, placeholder: "milwaukee" },
+                { name: "metro", label: "City or metro area", required: true, placeholder: "e.g. Milwaukee" },
                 {
                   name: "timeZone",
                   label: "Timezone",
@@ -208,10 +231,10 @@ export default async function OnboardingPage({
 
         {role === "tech" && (
           <>
-            <h2>Your sound profile</h2>
+            <h2>Your sound tech profile</h2>
             <ApiForm
               endpoint="/api/techs"
-              submitLabel="Create sound profile"
+              submitLabel="Create sound tech profile"
               redirectTo="/bookings"
               fields={[
                 { name: "name", label: "Name or business name", required: true },

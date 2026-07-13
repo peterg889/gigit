@@ -13,6 +13,21 @@ import {
 
 export const dynamic = "force-dynamic";
 
+const SOUND_STATE_LABEL: Record<string, string> = {
+  open: "Open",
+  booked: "Tech booked",
+  released: "Completed",
+  cancelled_by_payer: "Cancelled",
+  cancelled_with_parent: "Cancelled with gig",
+};
+
+const APPLICATION_STATUS_LABEL: Record<string, string> = {
+  submitted: "Application sent",
+  booked: "Booked",
+  declined: "Not selected",
+  withdrawn: "Withdrawn",
+};
+
 export default async function SoundBookingPage({
   params,
 }: {
@@ -103,7 +118,9 @@ export default async function SoundBookingPage({
       <div className="card">
         <h1>
           Sound for {row.performer.name} at {row.venue.name}{" "}
-          <span className="badge">{row.subslot.state.replaceAll("_", " ")}</span>
+          <span className="badge">
+            {SOUND_STATE_LABEL[row.subslot.state] ?? "Sound job updated"}
+          </span>
         </h1>
         <p>
           {formatVenueDateTime(row.booking.terms.startsAt, row.venue.timeZone, "full")}{" "}
@@ -112,25 +129,39 @@ export default async function SoundBookingPage({
         </p>
         <p className="muted">{formatAddress(row.venue)}</p>
         <p className="muted">
-          The {row.subslot.payer} pays the tech directly. Gigit records the
-          commitment but never touches the gig money.
+          The {row.subslot.payer === "venue" ? "venue" : "act"} pays the tech
+          directly. Gigit records the commitment but does not process the gig
+          payment.
         </p>
         <p>{row.subslot.needs.inputs} inputs
-          {row.subslot.needs.gaps.length > 0 && <> · gaps: {row.subslot.needs.gaps.join("; ")}</>}
+          {row.subslot.needs.gaps.length > 0 && <> · sound gaps: {row.subslot.needs.gaps.join("; ")}</>}
         </p>
         {row.subslot.needs.notes && <p>{row.subslot.needs.notes}</p>}
-        <p className="muted">House PA: {row.venue.paInventory.hasPA
-          ? <>{row.venue.paInventory.mixerChannels ?? "?"} channels, {row.venue.paInventory.micsAvailable ?? 0} mics, {row.venue.paInventory.monitors ?? 0} monitors</>
-          : "none — bring a rig"}</p>
+        <p className="muted">
+          House PA:{" "}
+          {row.venue.paInventory.hasPA ? (
+            <>
+              {row.venue.paInventory.mixerChannels != null
+                ? row.venue.paInventory.mixerChannels + " channels"
+                : "channel count not listed"}
+              , {row.venue.paInventory.micsAvailable ?? 0} microphones,{" "}
+              {row.venue.paInventory.monitors ?? 0} monitors
+            </>
+          ) : (
+            "None — bring a rig"
+          )}
+        </p>
       </div>
 
       {myApplication && !isAssignedTech && (
         <div className="card">
           <h2>Your application</h2>
-          <p><span className="badge">{myApplication.status}</span>{" "}
+          <p><span className="badge">
+            {APPLICATION_STATUS_LABEL[myApplication.status] ?? "Application updated"}
+          </span>{" "}
             {myApplication.status === "submitted"
               ? "The paying side has your application and will respond here."
-              : "This sound slot was filled by another tech."}</p>
+              : "This sound job was filled by another tech."}</p>
           {myApplication.status === "submitted" && (
             <ActionButton endpoint={"/api/tech-subslots/" + id + "/applications"}
               method="DELETE" label="Withdraw application"
@@ -155,7 +186,9 @@ export default async function SoundBookingPage({
           {applicants.map(({ application, tech }) => (
             <p key={application.id}>
               <Link href={"/t/" + tech.id}><strong>{tech.name}</strong></Link>{" "}
-              <span className="badge">{application.status}</span>{" "}
+              <span className="badge">
+                {APPLICATION_STATUS_LABEL[application.status] ?? "Application updated"}
+              </span>{" "}
               {row.subslot.state === "open" && application.status === "submitted" && (
                 <ActionButton endpoint={"/api/tech-subslots/" + id + "/book"}
                   label="Book this tech" body={{ techId: tech.id }}

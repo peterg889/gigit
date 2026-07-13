@@ -25,7 +25,7 @@ const mono = Spline_Sans_Mono({
 export const metadata: Metadata = {
   title: "Gigit — get the gig.",
   description:
-    "Live music, comedy, and sound for small rooms. Every slot shows its pay. Find the room, book the night, on Gigit.",
+    "Gigit helps independent venues book local bands, solo acts, comedians, and sound techs. Every open gig shows its pay.",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/icon.svg" },
 };
@@ -49,10 +49,10 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             Gigit
           </Link>
           <nav aria-label="Main navigation">
-            <Link href="/slots">Open slots</Link>
+            <Link href="/slots">Open gigs</Link>
             <Link href="/performers">Find an act</Link>
             <Link href="/techs">Sound techs</Link>
-            {venue && <Link href="/slots/new">Post a slot</Link>}
+            {venue && <Link href="/slots/new">Post an open date</Link>}
             {userId ? (
               <>
                 <Link href="/bookings">Bookings</Link>
@@ -76,8 +76,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <main>{children}</main>
         <footer className="site">
           <div>
-            <span className="footer-mark">Gigit</span> — where the local scene does
-            business. No fees to join or apply, ever. The pay is always on the table.
+            <span className="footer-mark">Gigit</span> — where independent venues and
+            local acts book gigs. Free during beta. The first 500 eligible act
+            profiles and first 500 eligible venue profiles we confirm as onboarded
+            receive a Founding Membership with no recurring standard-membership
+            fee for as long as Gigit operates.
           </div>
           <nav aria-label="Footer navigation">
             <Link href="/help">Help &amp; Support</Link>

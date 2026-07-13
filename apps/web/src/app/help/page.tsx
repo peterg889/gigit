@@ -17,6 +17,22 @@ export default async function HelpPage() {
       </p>
 
       <div className="card">
+        <h2>Beta and Founding Memberships</h2>
+        <p>
+          Gigit is free during beta. The first 500 eligible act profiles and
+          first 500 eligible venue profiles we confirm as onboarded receive a
+          Founding Membership.
+        </p>
+        <p className="muted">
+          Founding Membership has no recurring standard-membership fee for as
+          long as Gigit operates. Gig pay, third-party costs, and optional
+          services are separate. Pricing for later members has not been set;
+          we’ll explain it before asking anyone to pay. We confirm eligibility
+          after onboarding.
+        </p>
+      </div>
+
+      <div className="card">
         <h2>Before the gig</h2>
         <p>
           Keep the date, local start time, pay, set length, sound plan, and

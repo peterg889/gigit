@@ -5,19 +5,19 @@ export const metadata = { title: "Terms — Gigit" };
 export default function TermsPage() {
   return (
     <article className="legal-copy">
-      <span className="eyebrow">Launch draft · July 13, 2026</span>
+      <span className="eyebrow">Beta · Effective July 13, 2026</span>
       <h1>Terms of Use</h1>
       <p className="lede">
-        These terms are the ground rules for using Gigit during early access.
-        By creating or using an account, you agree to them.
+        These terms are the ground rules for using Gigit while the service is
+        in beta. By creating or using an account, you agree to them.
       </p>
 
       <h2>What Gigit does</h2>
       <p>
-        Gigit helps venues, performers, and sound professionals find one
-        another and record booking terms. Gigit is not the venue, performer,
+        Gigit helps venues, acts, and sound professionals find one another and
+        record booking terms. Gigit is not the venue, act,
         employer, agent, insurer, payment processor, or event producer. We do
-        not guarantee that a slot will fill, a gig will happen, or either party
+        not guarantee that an open date will fill, a gig will happen, or either party
         will perform or pay.
       </p>
 
@@ -29,11 +29,31 @@ export default function TermsPage() {
         errors.
       </p>
 
+      <h2>Beta and Founding Memberships</h2>
+      <p>
+        Gigit is free during beta. The first 500 eligible act profiles and first
+        500 eligible venue profiles we confirm as onboarded receive a Founding
+        Membership with no recurring standard-membership fee for as long as
+        Gigit operates and the account remains in good standing.
+      </p>
+      <p>
+        We count profiles in the order we confirm onboarding. To qualify, a
+        profile must be complete, authentic, and non-duplicate. The offer is
+        limited to one Founding Membership per real-world act or venue. We
+        confirm Founding status after onboarding.
+      </p>
+      <p>
+        A Founding Membership is non-transferable and does not cover gig pay,
+        taxes, third-party costs, or separately offered optional services. We
+        will explain any future pricing before asking anyone to pay, and we
+        will not charge a payment method without authorization.
+      </p>
+
       <h2>Bookings and payment</h2>
       <p>
         A venue must publish honest pay and logistics. An offer and acceptance
-        create a commitment between the venue and performer on the displayed
-        terms. Unless Gigit explicitly says otherwise, participants arrange and
+        create a commitment between the venue and act on the displayed terms.
+        Unless Gigit explicitly says otherwise, participants arrange and
         make payment directly; Gigit does not hold or guarantee gig money.
       </p>
       <p>
@@ -48,7 +68,7 @@ export default function TermsPage() {
         You are responsible for permits, taxes, insurance, worker
         classification, music and performance licenses, accessibility,
         age restrictions, safety, equipment, and compliance that applies to
-        your role and event. Gigit’s product copy is general information, not
+        your role and event. Information on Gigit is general information, not
         legal, tax, or safety advice.
       </p>
 
@@ -57,7 +77,7 @@ export default function TermsPage() {
         Do not impersonate others; harass or discriminate; post deceptive,
         illegal, infringing, or unsafe content; scrape or disrupt the service;
         evade moderation; or use contact information outside legitimate
-        marketplace activity. You keep ownership of your content and give
+        booking activity. You keep ownership of your content and give
         Gigit a non-exclusive license to host, display, process, and transmit it
         as needed to operate and promote your listing or profile.
       </p>
@@ -66,17 +86,17 @@ export default function TermsPage() {
       <p>
         We may screen content, investigate reports, remove material, limit
         features, suspend accounts, or preserve evidence when reasonably needed
-        for safety, marketplace integrity, legal compliance, or service
+        for safety, booking integrity, legal compliance, or service
         security. You may ask for review through support.
       </p>
 
       <h2>Service limits</h2>
       <p>
-        Early access is provided “as is” and may change or experience
-        interruptions. To the extent the law allows, Gigit is not liable for
+        Gigit is currently in beta. Features may change, and the service may
+        experience interruptions. To the extent the law allows, Gigit is not liable for
         indirect, incidental, special, consequential, or lost-profit damages,
         or for acts, omissions, injury, property damage, payment disputes, or
-        content of marketplace participants. Rights that cannot legally be
+        content from other participants. Rights that cannot legally be
         waived remain in effect.
       </p>
 
@@ -93,11 +113,6 @@ export default function TermsPage() {
         Contact us through <Link href="/help">Help &amp; Support</Link>. Our{" "}
         <Link href="/privacy">Privacy Notice</Link> explains data handling.
       </p>
-
-      <div className="notice">
-        These pilot terms need jurisdiction, company-identity, governing-law,
-        and liability-cap review by counsel before a broad public launch.
-      </div>
     </article>
   );
 }

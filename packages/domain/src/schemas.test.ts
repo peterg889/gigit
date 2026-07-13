@@ -19,6 +19,11 @@ describe("venue profile validation", () => {
     expect(parsed.lng).toBeUndefined();
   });
 
+  it("normalizes metro names so natural capitalization still matches", () => {
+    const parsed = venueCreateSchema.parse({ ...venue, metro: " Milwaukee " });
+    expect(parsed.metro).toBe("milwaukee");
+  });
+
   it("rejects invented or misspelled IANA timezones", () => {
     expect(
       venueCreateSchema.safeParse({ ...venue, timeZone: "Central Time" }).success,
