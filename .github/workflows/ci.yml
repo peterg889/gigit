@@ -35,8 +35,8 @@ jobs:
 
   # ── Deploy (engineering-spec §3: staging on merge → manual prod promote) ──
   # Requires repo config: AWS_DEPLOY_ROLE_ARN (OIDC role), AWS_REGION,
-  # STAGING_DATABASE_URL secrets; a "production" environment with required
-  # reviewers gates the promote job.
+  # and DEPLOY_ENABLED=true; PROD_DEPLOY_ENABLED plus a "production"
+  # environment with required reviewers gates the optional production job.
   # Opt-in: set repo variable DEPLOY_ENABLED=true once AWS is wired up. Until
   # then this job is SKIPPED (not failed) so CI reflects code health, not the
   # absence of cloud credentials. (secrets aren't allowed in job-level `if`,
@@ -59,55 +59,91 @@ jobs:
       - name: Build and push images
         run: |
           REG=${{ steps.ecr.outputs.registry }}
-          docker build -f Dockerfile.web -t $REG/gigit-web-staging:latest -t $REG/gigit-web-staging:${{ github.sha }} .
-          docker build -f Dockerfile.worker -t $REG/gigit-worker-staging:latest -t $REG/gigit-worker-staging:${{ github.sha }} .
-          docker push --all-tags $REG/gigit-web-staging
-          docker push --all-tags $REG/gigit-worker-staging
+          docker build --platform linux/amd64 -f Dockerfile.web -t $REG/gigit-web-staging:${{ github.sha }} .
+          docker build --platform linux/amd64 -f Dockerfile.worker -t $REG/gigit-worker-staging:${{ github.sha }} .
+          docker push $REG/gigit-web-staging:${{ github.sha }}
+          docker push $REG/gigit-worker-staging:${{ github.sha }}
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Run migrations against staging
+      - name: Roll out stack, private migrations, and services
         env:
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-        run: pnpm db:migrate
-      # web: App Runner auto-deploys on the :latest push (K11).
-      - name: Redeploy worker via SSM
+          CDK_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
         run: |
-          IDS=$(aws ec2 describe-instances \
-            --filters "Name=tag:aws:cloudformation:stack-name,Values=GigitStaging" "Name=instance-state-name,Values=running" \
-            --query "Reservations[].Instances[].InstanceId" --output text)
-          [ -z "$IDS" ] && { echo "no worker instance found"; exit 1; }
-          # run-worker.sh (written by the instance userData) re-pulls and restarts
-          # the container with env materialized from AppSecrets + the computed vars.
-          aws ssm send-command --instance-ids $IDS --document-name AWS-RunShellScript \
-            --parameters 'commands=["bash /usr/local/bin/run-worker.sh"]'
+          pnpm --filter @gigit/infra exec cdk deploy GigitStaging \
+            --require-approval never \
+            --context imageTag=${{ github.sha }} \
+            --context deploymentNonce=${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify staging health
+        run: |
+          WEB_URL=$(aws cloudformation describe-stacks --stack-name GigitStaging --query "Stacks[0].Outputs[?OutputKey=='WebUrl'].OutputValue" --output text)
+          deadline=$((SECONDS + 600))
+          while (( SECONDS < deadline )); do
+            if curl -fsS --connect-timeout 5 --max-time 15 "$WEB_URL/api/health" >/dev/null && \
+               curl -fsS --connect-timeout 5 --max-time 15 "$WEB_URL/slots" >/dev/null; then
+              echo "staging healthy: $WEB_URL"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "staging failed health checks" >&2
+          exit 1
 
   promote-production:
     needs: deploy-staging
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && vars.PROD_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: production # required-reviewer gate = the manual promote
     permissions:
       id-token: write
       contents: read
     steps:
+      - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_PROD }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - uses: aws-actions/amazon-ecr-login@v2
         id: ecr
-      - name: Retag staging images for production
+      - name: Build and push production images
         run: |
           REG=${{ steps.ecr.outputs.registry }}
           for app in web worker; do
-            docker pull $REG/gigit-$app-staging:${{ github.sha }}
-            docker tag $REG/gigit-$app-staging:${{ github.sha }} $REG/gigit-$app-prod:latest
-            docker push $REG/gigit-$app-prod:latest
+            docker build --platform linux/amd64 -f Dockerfile.$app \
+              -t $REG/gigit-$app-prod:${{ github.sha }} .
+            docker push $REG/gigit-$app-prod:${{ github.sha }}
           done
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Migrate and roll out production
+        env:
+          CDK_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
+        run: |
+          pnpm --filter @gigit/infra exec cdk deploy GigitProd \
+            --require-approval never \
+            --context imageTag=${{ github.sha }} \
+            --context deploymentNonce=${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: Verify production health
+        run: |
+          WEB_URL=$(aws cloudformation describe-stacks --stack-name GigitProd --query "Stacks[0].Outputs[?OutputKey=='WebUrl'].OutputValue" --output text)
+          deadline=$((SECONDS + 600))
+          while (( SECONDS < deadline )); do
+            if curl -fsS --connect-timeout 5 --max-time 15 "$WEB_URL/api/health" >/dev/null && \
+               curl -fsS --connect-timeout 5 --max-time 15 "$WEB_URL/slots" >/dev/null; then
+              echo "production healthy: $WEB_URL"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "production failed health checks" >&2
+          exit 1
 
   e2e:
     needs: build-test

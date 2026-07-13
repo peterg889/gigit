@@ -31,45 +31,46 @@
 | K8 | **Media kept simple: photos and audio tracks uploaded natively (stored as-is, no transcode service); video via YouTube/Vimeo embed only (§8).** S3 + CloudFront; image renditions via sharp in the worker; MP3/M4A served directly. | Photos have no embed alternative; audio-as-is costs pennies and needs no pipeline; video was the only media demanding a transcode service (MediaConvert) — embeds delete that entire subsystem. `profile_ingest` (F1.8) finds artists' existing YouTube links automatically, so the embed requirement costs performers nothing. | Low |
 | K9 | **All LLM use flows through one internal `ai` module** ("AI gateway"): task registry, repo-versioned prompts, zod-validated structured outputs, per-task model routing, full I/O logging to `events`, cost metering, golden-set eval harness in CI. No ad-hoc model calls anywhere else in the codebase. | Centralizes safety (injection surface, output validation), cost control, and the PRD's draft-never-publish invariant; makes model swaps a config change. | High to retrofit |
 | K10 | **Single region, single metro-aware schema.** Every domain row carries `metro_id`; no per-metro databases, no sharding. | Metro #2 must be an INSERT, not a deployment. | Low |
-| K11 | **AWS-native but minimal, IaC in CDK (TypeScript): App Runner (web) + one small EC2 worker — no Fargate, no ALB, no cluster.** Web on App Runner (managed TLS/autoscaling, auto-deploy from ECR). Worker is a Node container on a single t4g EC2 instance (docker + systemd, redeployed via SSM) — App Runner CPU-throttles outside requests, so background jobs need an always-on box. Webhooks (Stripe/Twilio) terminate at the web service, which verifies signatures and enqueues transactionally; the worker has no inbound surface. RDS Postgres (single-AZ at launch), S3 + CloudFront, SES, Secrets Manager, CloudWatch; staging/prod in separate accounts; GitHub Actions via OIDC. | Two moving parts a 1–3 person team can hold in their heads. Scaling path (second worker, or Fargate if ever needed) is a CDK change, not a redesign. | Low |
+| K11 | **AWS-native but minimal, IaC in CDK (TypeScript): one x86 `t3.small` EC2 host runs the web and worker linux/amd64 containers — no Fargate, cluster, or NAT gateway.** CloudFront provides the public HTTPS origin in front of a public ALB; the ALB permits only the CloudFront origin prefix and a generated verification header. The host sits in a public subnet for direct internet-gateway egress, has no SSH ingress, and accepts its web port only from the ALB security group; the worker has no inbound surface. RDS Postgres is encrypted, single-AZ, and in private-isolated subnets. S3 + CloudFront, SES, Secrets Manager, CloudWatch, and GitHub Actions OIDC complete the staging stack; production is an optional, manually gated per-account deployment. | One small host is the lowest-cost shape a 1–3 person team can operate. Web and worker remain separate containers, so moving either to a second host or managed compute later is a CDK change rather than an application redesign. | Low |
+
+> **2026 deployment constraint:** AWS App Runner stopped accepting new customers on March 31, 2026, and this AWS account has no recorded App Runner usage before that cutoff. The EC2/ALB/CloudFront shape is therefore the dependable first-deploy path, not a speculative optimization. See the [AWS App Runner availability notice](https://docs.aws.amazon.com/apprunner/latest/dg/apprunner-availability-change.html).
 
 ## 3. System overview
 
 ```
-                       CloudFront (CDN: public profile media from S3)
-                                            │
-                ┌───────────────────────────┴───────────────────────────────────────────┐
-                │  Web service — Next.js (mobile-first web + PWA) on AWS App Runner     │
-   Performers   │   • feeds, profiles, slot mgmt, booking flows, review queues          │
-   Venues   ───▶│   • API routes (reads, simple writes); presigned S3 upload grants     │
-   Techs        │   • webhook endpoints: Stripe, Twilio (verify signature →             │
-                │     insert event + enqueue transactionally → 200)                     │
-                └───────────────┬───────────────────────────────────────────────────────┘
-                                │ writes that matter → enqueue/transition via domain pkg
-                ┌───────────────▼───────────────────────────────────────────────────────┐
-                │  Worker — Node container on one small EC2 (t4g, docker + systemd)     │
-                │   • pg-boss consumers: notifications, AI tasks, payment ops,          │
-                │     image/audio processing, scheduled jobs (release T+24h, reminders) │
-                │   • outbox dispatcher: events → notifications / external webhooks     │
-                │   • no inbound surface (webhooks land at the web service)             │
-                └───────────────┬───────────────────────────────────────────────────────┘
-                                │
-        ┌───────────────────────▼────────────────────────┐   ┌───────────────────────────┐
-        │  RDS Postgres                                  │   │  AWS managed               │
-        │   schema: identity | profiles | marketplace |  │   │   S3 (media, docs, backups)│
-        │           booking | money | comms | ai | events│   │   SES (email)              │
-        │   extensions: PostGIS, pgvector, pg_trgm       │   │   Secrets Mgr, CloudWatch  │
-        │   pg-boss job tables                           │   ├───────────────────────────┤
-        └────────────────────────────────────────────────┘   │  External                  │
-                                                             │   Stripe Connect           │
-                                                             │   Twilio (SMS)             │
-                                                             │   Gemini API (AI)          │
-                                                             │   YouTube/Vimeo (embeds)   │
-                                                             │   Sentry (errors)          │
-                                                             └───────────────────────────┘
+   Performers / Venues / Techs
+                │ HTTPS
+                ▼
+        CloudFront (web TLS) ─────────────── CloudFront (media) ◀── private S3
+                │
+                ▼
+        Public application load balancer
+                │ web port; ALB security group is the only inbound source
+                ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Public-subnet x86 t3.small EC2 host (no SSH; internet-gateway egress)       │
+│                                                                             │
+│  web container — Next.js mobile web/API/webhooks                            │
+│   • feeds, profiles, slots, booking flows, reviews, presigned S3 grants     │
+│   • Stripe/Twilio webhooks verify, write, enqueue transactionally           │
+│                                                                             │
+│  worker container — no inbound surface                                      │
+│   • pg-boss timers, outbox dispatch, notifications, AI and media jobs       │
+└───────────────────────────────┬─────────────────────────────────────────────┘
+                                │ database security group only
+                                ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ Private-isolated RDS Postgres                                               │
+│ identity | profiles | marketplace | booking | money | comms | ai | events  │
+│ PostGIS | pgvector | pg_trgm | pg-boss                                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+The EC2 host reaches SES, Twilio, Gemini, Sentry, and other provider APIs through
+its public route and internet gateway. No provider can initiate a connection to it,
+and there is no NAT gateway.
 ```
 
-Deploy: all infrastructure on AWS, defined in **CDK (TypeScript)** — App Runner service (web; auto-deploys on ECR push), one t4g EC2 instance running the worker container (redeploy via SSM command), RDS Postgres (single-AZ at launch, Multi-AZ flip when revenue justifies), S3 + CloudFront, SES, Secrets Manager, CloudWatch alarms; staging and production in separate AWS accounts. CI on GitHub Actions (OIDC into AWS, no long-lived keys): typecheck, unit/property tests, state-machine exhaustiveness check, AI golden-set evals, migration dry-run; deploy to staging on merge → manual-promote to production.
+Deploy: all infrastructure is AWS-native and defined in **CDK (TypeScript)**. CI uses GitHub Actions OIDC (no long-lived keys), runs typecheck/tests/builds, builds and pushes both linux/amd64 containers with an immutable `imageTag`, and deploys staging with a unique `deploymentNonce`. The nonce drives a CloudFormation-managed SSM association on the app host: pull the exact images, materialize `AppSecrets`, append the actual CloudFront `APP_URL`, run Drizzle migrations, then restart web and worker. CloudFormation generates the database credentials/`DATABASE_URL` and `SESSION_SECRET`, keeps provider secrets operator-managed, and sets `PAYMENTS_ENABLED=false` with empty Stripe values. Production is not an automatic promotion: an optional GitHub environment-gated job builds/pushes production images in that account and deploys them after manual approval. It does not retag or pull staging images across accounts.
 
 ## 4. Domain model (core tables, abridged)
 

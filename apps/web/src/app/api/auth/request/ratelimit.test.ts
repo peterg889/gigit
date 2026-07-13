@@ -1,6 +1,9 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { closeDb } from "@gigit/db";
+import { randomUUID } from "node:crypto";
 import { POST } from "./route";
+
+const runId = randomUUID();
 
 const post = (body: unknown, ip?: string) =>
   POST(
@@ -26,15 +29,16 @@ describe("auth/request rate limits", () => {
   });
 
   it("caps at 5 codes per destination", async () => {
-    const email = "ratelimit-dest@x.test";
+    const email = `ratelimit-dest-${runId}@x.test`;
     for (let i = 0; i < 5; i++) expect((await post({ email })).status).toBe(200);
     expect((await post({ email })).status).toBe(429);
   });
 
   it("caps per requesting IP across many destinations (fan-out / toll fraud)", async () => {
-    const ip = "203.0.113.7";
+    const suffix = runId.replaceAll("-", "");
+    const ip = `2001:db8:${suffix.slice(0, 4)}:${suffix.slice(4, 8)}::1`;
     for (let i = 0; i < 20; i++)
-      expect((await post({ email: `ipcap-${i}@x.test` }, ip)).status).toBe(200);
-    expect((await post({ email: "ipcap-over@x.test" }, ip)).status).toBe(429);
+      expect((await post({ email: `ipcap-${runId}-${i}@x.test` }, ip)).status).toBe(200);
+    expect((await post({ email: `ipcap-${runId}-over@x.test` }, ip)).status).toBe(429);
   });
 });

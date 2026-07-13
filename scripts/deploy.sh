@@ -7,8 +7,7 @@
 #   ./scripts/deploy.sh prod
 #
 # Requires: local AWS creds for the target account, docker, pnpm. Run from repo
-# root. The service stack's AppSecrets must be filled in Secrets Manager before
-# the app is healthy (the script reminds you).
+# root. The stack generates boot-safe secrets and applies migrations privately.
 set -euo pipefail
 
 STAGE="${1:-staging}"
@@ -16,6 +15,11 @@ REGION="${CDK_REGION:-us-east-1}"
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 REGISTRY="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
 CDK="pnpm --filter @gigit/infra exec cdk"
+IMAGE_TAG="${GIGIT_IMAGE_TAG:-$(git rev-parse --short=12 HEAD)}"
+# Keep the image immutable while changing this nonce on every rollout. This
+# makes same-commit secret/config rollouts rerun migrations and restart both
+# services without racing an uncontrolled image update.
+DEPLOYMENT_NONCE="${GIGIT_DEPLOYMENT_NONCE:-${IMAGE_TAG}-$(date -u +%Y%m%dT%H%M%SZ)}"
 
 if [[ "$STAGE" != "staging" && "$STAGE" != "prod" ]]; then
   echo "usage: $0 [staging|prod]" >&2; exit 1
@@ -27,47 +31,58 @@ echo "▶ Deploying gigit ($STAGE) to account $ACCOUNT / $REGION"
 $CDK bootstrap "aws://${ACCOUNT}/${REGION}"
 
 # 2. Foundation: ECR repos + OIDC + deploy role.
-echo "▶ [1/4] Foundation stack (ECR, OIDC, deploy role)"
+echo "▶ [1/3] Foundation stack (ECR, OIDC, deploy role)"
 $CDK deploy "GigitBootstrap-${STAGE}" --require-approval never
 
 # 3. Build + push images to the now-existing repos.
-echo "▶ [2/4] Build & push images"
+echo "▶ [2/3] Build & push linux/amd64 images ($IMAGE_TAG)"
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY"
 for app in web worker; do
   REPO="${REGISTRY}/gigit-${app}-${STAGE}"
-  docker build -f "Dockerfile.${app}" -t "${REPO}:latest" .
-  docker push "${REPO}:latest"
+  docker build --platform linux/amd64 -f "Dockerfile.${app}" \
+    -t "${REPO}:${IMAGE_TAG}" .
+  docker push "${REPO}:${IMAGE_TAG}"
 done
 
-# 4. Service stack: RDS, S3/CloudFront, App Runner (web), EC2 (worker), alarms.
-echo "▶ [3/4] Service stack"
+# 4. Service stack. The deployment nonce updates the CloudFormation-managed SSM
+# association, which applies private RDS migrations and restarts both services.
+# The caller therefore needs no direct ssm:SendCommand or database ingress.
+echo "▶ [3/3] Service stack + private migrations/service rollout"
 STACK="$([[ "$STAGE" == "prod" ]] && echo GigitProd || echo GigitStaging)"
-$CDK deploy "$STACK" --require-approval never --outputs-file "/tmp/gigit-${STAGE}-outputs.json"
+$CDK deploy "$STACK" --require-approval never \
+  --context "imageTag=${IMAGE_TAG}" \
+  --context "deploymentNonce=${DEPLOYMENT_NONCE}" \
+  --outputs-file "/tmp/gigit-${STAGE}-outputs.json"
 
-# 5. Redeploy the worker to pull the image just pushed (App Runner auto-deploys
-#    web on push; the EC2 worker needs a nudge).
-echo "▶ [4/4] Redeploy worker"
-IDS="$(aws ec2 describe-instances \
-  --filters "Name=tag:aws:cloudformation:stack-name,Values=${STACK}" \
-            "Name=instance-state-name,Values=running" \
-  --query "Reservations[].Instances[].InstanceId" --output text)"
-if [[ -n "$IDS" ]]; then
-  # The instance's run-worker.sh (written by userData) re-materializes env from
-  # AppSecrets + the CDK-computed vars and restarts the container with --env-file.
-  aws ssm send-command --instance-ids $IDS --document-name AWS-RunShellScript \
-    --parameters "commands=[\"bash /usr/local/bin/run-worker.sh\"]" \
-    --output text --query "Command.CommandId" >/dev/null
-  echo "  worker redeploy command sent to: $IDS"
-else
-  echo "  no running worker instance yet (first deploy: it boots the image itself)"
+WEB_URL="$(node -e 'const fs=require("fs"); const [f,s]=process.argv.slice(1); const v=JSON.parse(fs.readFileSync(f,"utf8"))[s]?.WebUrl; if (!v) process.exit(1); process.stdout.write(v);' "/tmp/gigit-${STAGE}-outputs.json" "$STACK")"
+echo "▶ Waiting for database-aware web health at ${WEB_URL}"
+healthy=false
+deadline=$((SECONDS + 600))
+while (( SECONDS < deadline )); do
+  if curl -fsS --connect-timeout 5 --max-time 15 "${WEB_URL}/api/health" >/dev/null && \
+     curl -fsS --connect-timeout 5 --max-time 15 "${WEB_URL}/slots" >/dev/null; then
+    healthy=true
+    break
+  fi
+  sleep 10
+done
+if ! $healthy; then
+  echo "${STAGE} health checks did not pass within 10 minutes" >&2
+  exit 1
 fi
 
 echo ""
 echo "✅ Deploy complete. Outputs in /tmp/gigit-${STAGE}-outputs.json"
+echo "   Web: ${WEB_URL}"
 echo "   Next:"
-echo "   • Fill AppSecrets in Secrets Manager (DATABASE_URL, SESSION_SECRET, APP_URL, EMAIL_FROM, TWILIO_*, GEMINI_API_KEY, SENTRY_DSN; STRIPE_* deferred)"
-echo "     (STORAGE_DRIVER/S3_BUCKET/AWS_REGION/MEDIA_CDN_URL/NODE_ENV are wired automatically by the stack)"
-echo "   • Run migrations:  DATABASE_URL=… pnpm db:migrate"
-echo "   • Put the deploy-role ARN (from the foundation outputs) in the GitHub secret AWS_DEPLOY_ROLE_ARN${STAGE/staging/}"
+echo "   • Configure at least EMAIL_FROM (SES) before real-user sign-in; TWILIO_*, GEMINI_API_KEY, and SENTRY_DSN are optional"
+echo "   • After changing AppSecrets, rerun ./scripts/deploy.sh ${STAGE} so both containers load the new values"
+echo "   • Leave PAYMENTS_ENABLED=false and Stripe values empty for discovery-first launch"
+if [[ "$STAGE" == "prod" ]]; then
+  ROLE_SECRET="AWS_DEPLOY_ROLE_ARN_PROD"
+else
+  ROLE_SECRET="AWS_DEPLOY_ROLE_ARN"
+fi
+echo "   • Put the deploy-role ARN (from the foundation outputs) in the GitHub secret ${ROLE_SECRET}"
 echo "   • Subscribe to the OpsAlertsTopic SNS topic"

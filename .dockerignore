@@ -1,0 +1,16 @@
+.git
+.agents
+.codex
+node_modules
+**/node_modules
+**/.next
+**/dist
+**/cdk.out
+coverage
+test-results
+playwright-report
+*.orig
+*.rej
+.env
+.env.*
+!.env.example

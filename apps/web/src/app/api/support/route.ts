@@ -2,6 +2,7 @@ import { appendEvent, db, schema, supportTriage } from "@gigit/db";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser, respondError } from "@/lib/auth";
+import { clientIp } from "@/lib/client-ip";
 import { fail, ok, parseBody } from "@/lib/respond";
 import { sessionUserId } from "@/lib/session";
 
@@ -31,7 +32,7 @@ export async function POST(req: Request) {
 
       const d = db();
       const hourAgo = new Date(Date.now() - 3_600_000);
-      const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim() || "unknown";
+      const ip = clientIp(req) || "unknown";
       const base = and(
         eq(schema.events.kind, "support.escalated"),
         eq(schema.events.subjectType, "support"),

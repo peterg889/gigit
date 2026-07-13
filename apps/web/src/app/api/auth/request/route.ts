@@ -1,6 +1,7 @@
 import { authRequestSchema, newId } from "@gigit/domain";
 import { appendEvent, db, emailConfigured, env, schema, smsConfigured } from "@gigit/db";
 import { and, eq, gte, sql, type SQL } from "drizzle-orm";
+import { clientIp } from "@/lib/client-ip";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 const OTP_HOURLY_CAP = 5; // per destination
@@ -11,7 +12,7 @@ export async function POST(req: Request) {
   const parsed = await parseBody(req, authRequestSchema);
   if ("response" in parsed) return parsed.response;
   const destination = parsed.data.phone ?? parsed.data.email!;
-  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0]?.trim() || "";
+  const ip = clientIp(req);
   const hourAgo = new Date(Date.now() - 3_600_000);
   const countOtps = (where: SQL | undefined) =>
     db()

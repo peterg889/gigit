@@ -1,19 +1,19 @@
 # Gigit on-call runbook (v1)
 
-**Audience:** whoever is holding the pager. Two deployables (web on App Runner, worker on one EC2), one Postgres. Most incidents are one of the five patterns below.
+**Audience:** whoever is holding the pager. Two containers (web and worker) on one x86 `t3.small` EC2 host, one Postgres. Most incidents are one of the five patterns below.
 
 > **Discovery-first launch — money-path procedures below are DEFERRED.** At launch Gigit processes no gig money (the venue pays the act directly), so the payments apparatus is switched off — `NullGateway` when `STRIPE_SECRET_KEY` is unset, also gated by `PAYMENTS_ENABLED` (default false). Anything tagged *deferred* below (nightly money reconciliation, Stripe PaymentIntent/webhook flows, the ledger) does not apply at the discovery-first launch and only becomes operational when payments turn on in Phase 2. **Seam, not deletion** — the procedures stay documented and ready, they just can't fire yet. See [`pricing.md`](pricing.md) §4.
 
 ## The system in one breath
 
-Web (Next.js, App Runner) takes requests and webhooks, writes transactionally, and appends outbox events. Worker (EC2 docker) polls the outbox every second, runs timers (pg-boss), notifications (Twilio/SES), payments (Stripe gateway — *deferred at launch; NullGateway, no money moves*), media screening, series materialization, night-facts snapshots, and nightly money reconciliation (*deferred at launch — nothing to reconcile until payments turn on*). Postgres is the single source of truth — if web and worker disagree, the database is right.
+CloudFront provides the public HTTPS endpoint and forwards app traffic through a public ALB to the Next.js web container. The ALB accepts network traffic only from AWS's CloudFront origin prefix list and forwards only requests carrying its generated origin-verification header; direct origin requests receive 403. The web and worker containers share one x86 `t3.small` EC2 host in a public subnet; the host accepts web traffic only from the ALB security group and has no SSH ingress. Its public route provides outbound access to SES/Twilio/Gemini without a NAT gateway. The worker polls the outbox every second and runs timers (pg-boss), notifications, media screening, series materialization, night-facts snapshots, and money operations (*deferred at launch; `NullGateway`, no money moves*). RDS is encrypted, private-isolated, and reachable only from the host. Postgres is the single source of truth — if web and worker disagree, the database is right.
 
 ## Health checks
 
 | What | How | Healthy |
 |---|---|---|
-| Web | `GET /` returns 200 | < 1s |
-| Worker alive | EC2 instance status + `docker ps` shows `worker` | running |
+| Web + DB | `GET /api/health` returns 200 | database reachable; no cache |
+| App processes | EC2 instance status + `docker ps` shows `web` and `worker` | both running |
 | Outbox | `select count(*) from events where dispatched_at is null` | < 100 and draining |
 | Outbox lag | worker logs `outbox.LAGGING` when oldest undispatched > 5 min | absent |
 | Timers | `timers.reconcile` re-arms anything missed every 10 min | self-healing |
@@ -44,29 +44,29 @@ Launch math: hundreds of bookings/month ≈ single-digit requests/second peak. 1
 
 ## First deploy (one-time, from a keyboard with AWS admin creds)
 
-The infra is two stacks per stage: a **foundation** (`GigitBootstrap-{stage}` — ECR repos + GitHub OIDC + deploy role) that must exist before images, and the **service** stack (`GigitStaging`/`GigitProd` — RDS, S3/CloudFront, App Runner web, EC2 worker, alarms) that imports those repos. `scripts/deploy.sh` orders the whole sequence so you don't have to:
+The infra is two stacks per stage: a **foundation** (`GigitBootstrap-{stage}` — ECR repos + GitHub OIDC + deploy role) that must exist before images, and the **service** stack (`GigitStaging` or the optional `GigitProd` — public ALB, CloudFront HTTPS, one EC2 app host, private-isolated RDS, S3/media CDN, and alarms) that imports those repos. There is no NAT gateway. `scripts/deploy.sh` orders the whole sequence so you don't have to:
 
 ```bash
 export AWS_PROFILE=…           # creds for the target account
 export CDK_REGION=us-east-1
-./scripts/deploy.sh staging    # cdk bootstrap → foundation → build+push images → service → worker redeploy
+./scripts/deploy.sh staging    # bootstrap → foundation → immutable images → service/migrate/restart
 ```
 
-Then, the four things the script reminds you of (it can't do them for you):
-1. **Fill `AppSecrets`** in Secrets Manager — `DATABASE_URL`, `SESSION_SECRET` (≥32 chars), `APP_URL` (the public web origin, e.g. `https://gigit.app` — it goes into every emailed/SMS link and Stripe redirect, so a missing value silently sends `localhost` links), at least one notification channel (`EMAIL_FROM` for SES, and/or all three `TWILIO_*` together — half a Twilio config fails fast), plus `GEMINI_API_KEY`, `SENTRY_DSN` if you have them. Without `DATABASE_URL`/`SESSION_SECRET` the app won't boot (fail-fast by design). The stack wires `NODE_ENV`, `STORAGE_DRIVER=s3`, `S3_BUCKET`, `AWS_REGION`, and `MEDIA_CDN_URL` for you (App Runner `runtimeEnvironmentVariables` + the worker's `run-worker.sh`), so they're not on this list. **`STRIPE_*` is deferred at the discovery-first launch** — leave it unset so the gateway resolves to `NullGateway` (`PAYMENTS_ENABLED` defaults false); it returns in Phase 2 as Stripe *Billing* for the venue subscription, not Connect.
-2. **Run migrations**: `DATABASE_URL=<rds-url> pnpm db:migrate` (the RDS endpoint is in the stack outputs / `/tmp/gigit-staging-outputs.json`).
-3. **Wire CI**: put the foundation's `DeployRoleArn` output into the GitHub repo secret `AWS_DEPLOY_ROLE_ARN` (and `…_PROD` for prod), set the `AWS_REGION` repo variable, and add `STAGING_DATABASE_URL`. After this, merges to `main` deploy app code automatically.
+Then, the four operator tasks the script cannot decide for you:
+1. **Configure provider delivery** in the output `AppSecretsArn`: set `EMAIL_FROM` and/or all three `TWILIO_*`, plus `GEMINI_API_KEY`/`SENTRY_DSN` when available. CloudFormation generates the database credentials/`DATABASE_URL` and `SESSION_SECRET`, sets `PAYMENTS_ENABLED=false`, and leaves Stripe values empty. The deployment association appends the actual CloudFront `APP_URL` to the materialized container environment. These generated/computed values are not operator copy/paste fields. **After any AppSecrets edit, rerun `./scripts/deploy.sh staging`**; the unique nonce rematerializes the environment and restarts both containers.
+2. **Trust the private migration gate**: the CloudFormation-managed SSM association pulls the immutable web and worker `imageTag`, materializes `AppSecrets`, applies Drizzle migrations from the app host, then restarts both containers. A failed migration fails the deployment; there is no caller-side database connection or separate local migration step.
+3. **Wire CI**: put `DeployRoleArn` in the GitHub secret `AWS_DEPLOY_ROLE_ARN`, set `AWS_REGION`, and set `DEPLOY_ENABLED=true`. No staging database secret is needed. Every deployment uses an immutable `imageTag` plus a unique `deploymentNonce`; the nonce reruns the association even when the infrastructure shape is unchanged.
 4. **Subscribe to alarms**: `aws sns subscribe --topic-arn <OpsAlertsTopic output> --protocol email --notification-endpoint you@…`.
 
 Gotchas the synth can't catch but the deploy will:
 - **OIDC provider already exists** in the account → the foundation stack errors on create. Re-run with `-c oidcProviderArn=arn:aws:iam::<acct>:oidc-provider/token.actions.githubusercontent.com` to import it instead.
-- App Runner takes a few minutes to go healthy after the first image lands; the service-stack deploy waits on it.
+- The ALB target can take a few minutes to pass `/api/health` after the first image lands; CloudFront is the public HTTPS URL used by the live smoke gate.
 
 ## Ongoing deploys & secrets
 
-- Merge to `main` → CI `deploy-staging` (build/push images → ECR, migrations, worker redeploy via SSM). App Runner auto-deploys web on the `:latest` push. **Infra changes** (anything in `infra/cdk`) are NOT deployed by CI — re-run `./scripts/deploy.sh <stage>` or `cdk deploy` by hand. Prod app promotion is the `promote-production` job behind the GitHub `production` environment (required reviewer = the manual promote).
-- **Cross-account note:** if prod ECR can't pull staging images, grant cross-account pull on the staging repos (or rebuild in the promote job) — current workflow assumes the grant.
-- Secrets live in AWS Secrets Manager (`DATABASE_URL`, `SESSION_SECRET`, `STRIPE_*`, `TWILIO_*`, `GEMINI_API_KEY`, `SENTRY_DSN`); the worker materializes env from there at redeploy. Rotate quarterly (spec §11).
+- Merge to `main` → CI `deploy-staging` (build/push linux/amd64 web and worker images under an immutable `imageTag` → CDK update with a unique `deploymentNonce` → SSM migrate/restart both containers → live CloudFront health gate).
+- Production is not implied by the staging workflow. If enabled later, its optional job is manually gated by the GitHub `production` environment and builds/pushes production images in the production account before deploying; it does not retag or pull staging images across accounts.
+- Secrets live in AWS Secrets Manager. Database/session values are generated by CloudFormation; the SSM association materializes those secrets for both containers and appends the computed CloudFront `APP_URL`. Provider settings (`EMAIL_FROM`, `TWILIO_*`, `GEMINI_API_KEY`, `SENTRY_DSN`) remain operator-managed. `PAYMENTS_ENABLED=false` and empty Stripe settings are the launch configuration. Rerun the stage deploy after every AppSecrets edit so running containers load it. Rotate credentials quarterly (spec §11).
 - Subscribe a human to the `OpsAlerts` SNS topic after each `cdk deploy` (output `OpsAlertsTopic`).
 
 ## External-dependency checklist (before launch)

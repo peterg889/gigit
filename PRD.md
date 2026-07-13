@@ -194,7 +194,7 @@ Sound is the **conditional third side** (§5): these requirements engage only fo
 
 - **Mobile-first responsive web app** at launch (performers live on phones; venue managers on tablets/laptops). Native apps P2; push via PWA + SMS until then.
 - Payments (deferred — see [`docs/pricing.md`](docs/pricing.md)): Gigit processes no gig money at launch. The only money it touches is its own venue fees, via Stripe Billing. When the gig-payments rail turns on, PCI scope is minimized via Stripe Elements/Connect; no card data touches our servers.
-- Infrastructure: simple AWS-native deployment (App Runner web service, one small EC2 worker, RDS Postgres, S3 + CloudFront for photos/audio; video via YouTube/Vimeo embeds) — see [`docs/engineering-spec.md`](docs/engineering-spec.md).
+- Infrastructure: simple AWS-native deployment (one x86 `t3.small` EC2 host running separate web and worker containers behind a public ALB and CloudFront HTTPS; private-isolated RDS Postgres; S3 + CloudFront for photos/audio; no NAT gateway; video via YouTube/Vimeo embeds) — see [`docs/engineering-spec.md`](docs/engineering-spec.md).
 - Trust & safety: real-name policy for venue accounts; rate-limited messaging; anti-leakage flagging of attempts to take future booking *relationships* off-platform (detection-flagging, not auto-ban — see Risks). Paying for the gig directly is expected — that's the model — so the concern is circumventing Gigit for *booking*, not for payment.
 - Availability target 99.9%; gig-day flows (runsheet, contacts) must degrade gracefully offline (cached runsheet).
 - Privacy: contact info gated until confirmation; performer addresses never shown; CCPA-grade data handling.
