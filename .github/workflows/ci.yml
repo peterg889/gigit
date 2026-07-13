@@ -73,8 +73,11 @@ jobs:
         env:
           CDK_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
         run: |
+          CFN_EXEC_ROLE=$(aws cloudformation describe-stacks --stack-name GigitBootstrap-staging --query "Stacks[0].Outputs[?OutputKey=='CloudFormationExecutionRoleArn'].OutputValue" --output text)
+          test -n "$CFN_EXEC_ROLE" && test "$CFN_EXEC_ROLE" != "None"
           pnpm --filter @gigit/infra exec cdk deploy GigitStaging \
             --require-approval never \
+            --role-arn "$CFN_EXEC_ROLE" \
             --context imageTag=${{ github.sha }} \
             --context deploymentNonce=${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Verify staging health
@@ -126,8 +129,11 @@ jobs:
         env:
           CDK_REGION: ${{ vars.AWS_REGION || 'us-east-1' }}
         run: |
+          CFN_EXEC_ROLE=$(aws cloudformation describe-stacks --stack-name GigitBootstrap-prod --query "Stacks[0].Outputs[?OutputKey=='CloudFormationExecutionRoleArn'].OutputValue" --output text)
+          test -n "$CFN_EXEC_ROLE" && test "$CFN_EXEC_ROLE" != "None"
           pnpm --filter @gigit/infra exec cdk deploy GigitProd \
             --require-approval never \
+            --role-arn "$CFN_EXEC_ROLE" \
             --context imageTag=${{ github.sha }} \
             --context deploymentNonce=${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
       - name: Verify production health

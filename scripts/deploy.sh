@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # First-deploy + redeploy orchestrator (docs/runbook.md "First deploy").
-# Resolves the image chicken-and-egg by ordering: bootstrap (ECR) -> push
+# Resolves the image chicken-and-egg by ordering: foundation (ECR) -> push
 # images -> service stack. Idempotent: safe to re-run for redeploys.
 #
 #   ./scripts/deploy.sh staging
@@ -27,14 +27,22 @@ fi
 
 echo "▶ Deploying gigit ($STAGE) to account $ACCOUNT / $REGION"
 
-# 1. Bootstrap CDK itself (one-time per account/region; no-op after).
-$CDK bootstrap "aws://${ACCOUNT}/${REGION}"
+# 1. Foundation: ECR repos + OIDC + deploy/execution roles. The app uses CDK's
+# direct-credentials synthesizer because images are pushed explicitly and the
+# stacks contain no CDK-managed assets.
+FOUNDATION_STACK="GigitBootstrap-${STAGE}"
+echo "▶ [1/3] Foundation stack (ECR, OIDC, deploy/execution roles)"
+$CDK deploy "$FOUNDATION_STACK" --require-approval never
+CFN_EXEC_ROLE="$(aws cloudformation describe-stacks --region "$REGION" \
+  --stack-name "$FOUNDATION_STACK" \
+  --query "Stacks[0].Outputs[?OutputKey=='CloudFormationExecutionRoleArn'].OutputValue" \
+  --output text)"
+if [[ -z "$CFN_EXEC_ROLE" || "$CFN_EXEC_ROLE" == "None" ]]; then
+  echo "foundation did not output CloudFormationExecutionRoleArn" >&2
+  exit 1
+fi
 
-# 2. Foundation: ECR repos + OIDC + deploy role.
-echo "▶ [1/3] Foundation stack (ECR, OIDC, deploy role)"
-$CDK deploy "GigitBootstrap-${STAGE}" --require-approval never
-
-# 3. Build + push images to the now-existing repos.
+# 2. Build + push images to the now-existing repos.
 echo "▶ [2/3] Build & push linux/amd64 images ($IMAGE_TAG)"
 aws ecr get-login-password --region "$REGION" \
   | docker login --username AWS --password-stdin "$REGISTRY"
@@ -45,12 +53,13 @@ for app in web worker; do
   docker push "${REPO}:${IMAGE_TAG}"
 done
 
-# 4. Service stack. The deployment nonce updates the CloudFormation-managed SSM
+# 3. Service stack. The deployment nonce updates the CloudFormation-managed SSM
 # association, which applies private RDS migrations and restarts both services.
 # The caller therefore needs no direct ssm:SendCommand or database ingress.
 echo "▶ [3/3] Service stack + private migrations/service rollout"
 STACK="$([[ "$STAGE" == "prod" ]] && echo GigitProd || echo GigitStaging)"
 $CDK deploy "$STACK" --require-approval never \
+  --role-arn "$CFN_EXEC_ROLE" \
   --context "imageTag=${IMAGE_TAG}" \
   --context "deploymentNonce=${DEPLOYMENT_NONCE}" \
   --outputs-file "/tmp/gigit-${STAGE}-outputs.json"

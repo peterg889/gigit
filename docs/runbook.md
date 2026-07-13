@@ -44,13 +44,15 @@ Launch math: hundreds of bookings/month ≈ single-digit requests/second peak. 1
 
 ## First deploy (one-time, from a keyboard with AWS admin creds)
 
-The infra is two stacks per stage: a **foundation** (`GigitBootstrap-{stage}` — ECR repos + GitHub OIDC + deploy role) that must exist before images, and the **service** stack (`GigitStaging` or the optional `GigitProd` — public ALB, CloudFront HTTPS, one EC2 app host, private-isolated RDS, S3/media CDN, and alarms) that imports those repos. There is no NAT gateway. `scripts/deploy.sh` orders the whole sequence so you don't have to:
+The infra is two stacks per stage: a **foundation** (`GigitBootstrap-{stage}` — ECR repos + GitHub OIDC + deploy role + CloudFormation execution role) that must exist before images, and the **service** stack (`GigitStaging` or the optional `GigitProd` — public ALB, CloudFront HTTPS, one EC2 app host, private-isolated RDS, S3/media CDN, and alarms) that imports those repos. There is no NAT gateway. `scripts/deploy.sh` orders the whole sequence so you don't have to:
 
 ```bash
 export AWS_PROFILE=…           # creds for the target account
 export CDK_REGION=us-east-1
-./scripts/deploy.sh staging    # bootstrap → foundation → immutable images → service/migrate/restart
+./scripts/deploy.sh staging    # foundation → immutable images → service/migrate/restart
 ```
+
+The stacks use CDK's direct-credentials synthesizer: container images are pushed explicitly and there are no CDK-managed assets. This avoids requiring the standard CDK bootstrap SSM parameter or roles in restricted accounts. The foundation itself deploys with the caller's credentials; the service stack executes through the foundation's role trusted only by CloudFormation.
 
 Then, the four operator tasks the script cannot decide for you:
 1. **Configure provider delivery** in the output `AppSecretsArn`: set `EMAIL_FROM` and/or all three `TWILIO_*`, plus `GEMINI_API_KEY`/`SENTRY_DSN` when available. CloudFormation generates the database credentials/`DATABASE_URL` and `SESSION_SECRET`, sets `PAYMENTS_ENABLED=false`, and leaves Stripe values empty. The deployment association appends the actual CloudFront `APP_URL` to the materialized container environment. These generated/computed values are not operator copy/paste fields. **After any AppSecrets edit, rerun `./scripts/deploy.sh staging`**; the unique nonce rematerializes the environment and restarts both containers.
