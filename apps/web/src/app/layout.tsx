@@ -23,11 +23,11 @@ const mono = Spline_Sans_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Gigit — get the gig.",
+  title: "EightGig — get the gig.",
   description:
-    "Gigit helps independent venues book local bands, solo acts, comedians, and sound techs. Every open gig shows its pay.",
+    "EightGig helps independent venues book local bands, solo acts, comedians, and sound techs. Every open gig shows its pay.",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/icon.svg" },
+  icons: { icon: "/icon-eightgig.svg" },
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -45,8 +45,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="en">
       <body className={`${display.variable} ${body.variable} ${mono.variable}`}>
         <header className="site">
-          <Link href="/" className="brand" aria-label="Gigit home">
-            Gigit
+          <Link href="/" className="brand" aria-label="EightGig home">
+            EightGig
           </Link>
           <nav aria-label="Main navigation">
             <Link href="/slots">Open gigs</Link>
@@ -76,13 +76,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <main>{children}</main>
         <footer className="site">
           <div>
-            <span className="footer-mark">Gigit</span> — where independent venues and
+            <span className="footer-mark">EightGig</span> — where independent venues and
             local acts book gigs. Free during beta. The first 500 eligible act
             profiles and first 500 eligible venue profiles we confirm as onboarded
             receive a Founding Membership with no recurring standard-membership
-            fee for as long as Gigit operates.
+            fee for as long as EightGig operates.
           </div>
           <nav aria-label="Footer navigation">
+            <Link href="/about">About</Link>
             <Link href="/help">Help &amp; Support</Link>
             <Link href="/privacy">Privacy</Link>
             <Link href="/terms">Terms</Link>

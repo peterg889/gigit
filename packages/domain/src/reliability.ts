@@ -32,7 +32,7 @@ export function performerReliability(stats: ReliabilityStats): Reliability {
   const score = gigsCompleted - cancellations * 5;
 
   if (gigsCompleted === 0 && cancellations === 0) {
-    return { tier: "new", label: "New to Gigit — no gigs yet", score };
+    return { tier: "new", label: "New to EightGig — no gigs yet", score };
   }
 
   const played = `${plural(gigsCompleted, "gig")} played`;

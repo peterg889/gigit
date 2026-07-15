@@ -1,21 +1,21 @@
 import Link from "next/link";
 
-export const metadata = { title: "Terms — Gigit" };
+export const metadata = { title: "Terms — EightGig" };
 
 export default function TermsPage() {
   return (
     <article className="legal-copy">
-      <span className="eyebrow">Beta · Effective July 13, 2026</span>
+      <span className="eyebrow">Beta · Effective July 14, 2026</span>
       <h1>Terms of Use</h1>
       <p className="lede">
-        These terms are the ground rules for using Gigit while the service is
+        These terms are the ground rules for using EightGig while the service is
         in beta. By creating or using an account, you agree to them.
       </p>
 
-      <h2>What Gigit does</h2>
+      <h2>What EightGig does</h2>
       <p>
-        Gigit helps venues, acts, and sound professionals find one another and
-        record booking terms. Gigit is not the venue, act,
+        EightGig helps venues, acts, and sound professionals find one another and
+        record booking terms. EightGig is not the venue, act,
         employer, agent, insurer, payment processor, or event producer. We do
         not guarantee that an open date will fill, a gig will happen, or either party
         will perform or pay.
@@ -31,10 +31,10 @@ export default function TermsPage() {
 
       <h2>Beta and Founding Memberships</h2>
       <p>
-        Gigit is free during beta. The first 500 eligible act profiles and first
+        EightGig is free during beta. The first 500 eligible act profiles and first
         500 eligible venue profiles we confirm as onboarded receive a Founding
         Membership with no recurring standard-membership fee for as long as
-        Gigit operates and the account remains in good standing.
+        EightGig operates and the account remains in good standing.
       </p>
       <p>
         We count profiles in the order we confirm onboarding. To qualify, a
@@ -53,8 +53,8 @@ export default function TermsPage() {
       <p>
         A venue must publish honest pay and logistics. An offer and acceptance
         create a commitment between the venue and act on the displayed terms.
-        Unless Gigit explicitly says otherwise, participants arrange and
-        make payment directly; Gigit does not hold or guarantee gig money.
+        Unless EightGig explicitly says otherwise, participants arrange and
+        make payment directly; EightGig does not hold or guarantee gig money.
       </p>
       <p>
         Review the venue, local date and time, address, duration, pay, sound
@@ -68,7 +68,7 @@ export default function TermsPage() {
         You are responsible for permits, taxes, insurance, worker
         classification, music and performance licenses, accessibility,
         age restrictions, safety, equipment, and compliance that applies to
-        your role and event. Information on Gigit is general information, not
+        your role and event. Information on EightGig is general information, not
         legal, tax, or safety advice.
       </p>
 
@@ -78,7 +78,7 @@ export default function TermsPage() {
         illegal, infringing, or unsafe content; scrape or disrupt the service;
         evade moderation; or use contact information outside legitimate
         booking activity. You keep ownership of your content and give
-        Gigit a non-exclusive license to host, display, process, and transmit it
+        EightGig a non-exclusive license to host, display, process, and transmit it
         as needed to operate and promote your listing or profile.
       </p>
 
@@ -92,8 +92,8 @@ export default function TermsPage() {
 
       <h2>Service limits</h2>
       <p>
-        Gigit is currently in beta. Features may change, and the service may
-        experience interruptions. To the extent the law allows, Gigit is not liable for
+        EightGig is currently in beta. Features may change, and the service may
+        experience interruptions. To the extent the law allows, EightGig is not liable for
         indirect, incidental, special, consequential, or lost-profit damages,
         or for acts, omissions, injury, property damage, payment disputes, or
         content from other participants. Rights that cannot legally be

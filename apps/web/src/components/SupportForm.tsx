@@ -7,6 +7,7 @@ export function SupportForm({ anonymous = false }: { anonymous?: boolean }) {
   const [email, setEmail] = useState("");
   const [reply, setReply] = useState<string | null>(null);
   const [escalated, setEscalated] = useState(false);
+  const [requestId, setRequestId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -17,21 +18,28 @@ export function SupportForm({ anonymous = false }: { anonymous?: boolean }) {
         setBusy(true);
         setReply(null);
         setEscalated(false);
+        setRequestId(null);
         setError(null);
-        const res = await fetch("/api/support", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ message, ...(anonymous ? { email } : {}) }),
-        });
-        const data = await res.json().catch(() => null);
-        setBusy(false);
-        if (!res.ok) {
-          setError(data?.error?.message ?? "We couldn’t send that. Please try again.");
-          return;
+        try {
+          const res = await fetch("/api/support", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ message, ...(anonymous ? { email } : {}) }),
+          });
+          const data = await res.json().catch(() => null);
+          if (!res.ok) {
+            setError(data?.error?.message ?? "We couldn’t send that. Please try again.");
+            return;
+          }
+          setReply(data?.reply ?? "Thanks — we received your message.");
+          setEscalated(Boolean(data?.escalated));
+          setRequestId(typeof data?.requestId === "string" ? data.requestId : null);
+          setMessage("");
+        } catch {
+          setError("We couldn’t reach EightGig support. Check your connection and try again.");
+        } finally {
+          setBusy(false);
         }
-        setReply(data?.reply ?? "Thanks — we received your message.");
-        setEscalated(Boolean(data?.escalated));
-        setMessage("");
       }}
     >
       {anonymous && (
@@ -57,12 +65,13 @@ export function SupportForm({ anonymous = false }: { anonymous?: boolean }) {
         onChange={(event) => setMessage(event.target.value)}
         placeholder="Tell us what you were trying to do and what happened. Include the gig date or venue name if it helps."
       />
-      <button disabled={busy}>{busy ? "Sending…" : "Send to Gigit support"}</button>
+      <button disabled={busy}>{busy ? "Sending…" : "Send to EightGig support"}</button>
       <div aria-live="polite">
         {reply && (
           <div className="notice success" role="status">
             <strong>{escalated ? "A person will take a look." : "Here’s what we found."}</strong>
             <p>{reply}</p>
+            {requestId && <p className="muted">Reference: {requestId}</p>}
           </div>
         )}
         {error && <p className="error">{error}</p>}

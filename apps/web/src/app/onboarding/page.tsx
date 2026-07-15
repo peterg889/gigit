@@ -62,7 +62,7 @@ export default async function OnboardingPage({
         <div className="card">
           <h2>First, sign in</h2>
           <p>
-            Gigit uses a six-digit email code—no password to remember. Gigit is
+            EightGig uses a six-digit email code—no password to remember. EightGig is
             free to use during beta.
           </p>
           <Link className="btn" href={"/login?" + loginParams.toString()}>
@@ -73,7 +73,7 @@ export default async function OnboardingPage({
           <div className="notice">
             The first 500 eligible act profiles and first 500 eligible venue
             profiles we confirm as onboarded receive a Founding Membership with
-            no recurring standard-membership fee for as long as Gigit operates.{" "}
+            no recurring standard-membership fee for as long as EightGig operates.{" "}
             <Link href="/help">See offer details.</Link>
           </div>
         )}
@@ -94,9 +94,9 @@ export default async function OnboardingPage({
     return (
       <div>
         <span className="eyebrow">Get started</span>
-        <h1>What brings you to Gigit?</h1>
+        <h1>What brings you to EightGig?</h1>
         <p className="lede">
-          Choose how you want to use Gigit first. You can add another role from
+          Choose how you want to use EightGig first. You can add another role from
           your profile whenever you need it.
         </p>
         <div className="role-grid">
@@ -150,7 +150,7 @@ export default async function OnboardingPage({
           Founding offer: the first 500 eligible act profiles and first 500
           eligible venue profiles we confirm as onboarded receive a Founding
           Membership with no recurring standard-membership fee for as long as
-          Gigit operates. <Link href="/help">See offer details.</Link>
+          EightGig operates. <Link href="/help">See offer details.</Link>
         </div>
       )}
       <p>

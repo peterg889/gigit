@@ -85,14 +85,14 @@ export async function GET(req: Request) {
             .filter(Boolean)
             .join(", "),
         )}`,
-        `DESCRIPTION:$${(r.booking.terms.amountCents / 100).toFixed(0)} — booked on Gigit`,
+        `DESCRIPTION:$${(r.booking.terms.amountCents / 100).toFixed(0)} — booked on EightGig`,
         "END:VEVENT",
       ].join("\r\n"),
     );
   const ics = [
     "BEGIN:VCALENDAR",
     "VERSION:2.0",
-    "PRODID:-//Gigit//bookings//EN",
+    "PRODID:-//EightGig//bookings//EN",
     ...events,
     "END:VCALENDAR",
   ].join("\r\n");

@@ -85,7 +85,7 @@ echo ""
 echo "✅ Deploy complete. Outputs in /tmp/gigit-${STAGE}-outputs.json"
 echo "   Web: ${WEB_URL}"
 echo "   Next:"
-echo "   • Configure at least EMAIL_FROM (SES) before real-user sign-in; TWILIO_*, GEMINI_API_KEY, and SENTRY_DSN are optional"
+echo "   • Configure EMAIL_FROM (SES) for sign-in and SUPPORT_EMAIL_TO for human escalations; TWILIO_*, GEMINI_API_KEY, and SENTRY_DSN are optional"
 echo "   • After changing AppSecrets, rerun ./scripts/deploy.sh ${STAGE} so both containers load the new values"
 echo "   • Leave PAYMENTS_ENABLED=false and Stripe values empty for discovery-first launch"
 if [[ "$STAGE" == "prod" ]]; then

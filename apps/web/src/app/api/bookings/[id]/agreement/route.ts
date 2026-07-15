@@ -56,6 +56,7 @@ export async function GET(_req: Request, { params }: Params) {
         terms: row.booking.terms,
         timeZone: row.venueTimeZone,
         paymentsEnabled: paymentsEnabled(),
+        templateVersion: row.booking.agreementTemplateVer,
       }),
       venueAcceptedAt: row.booking.venueAcceptedAt,
       performerAcceptedAt: row.booking.performerAcceptedAt,

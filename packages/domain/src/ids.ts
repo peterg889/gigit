@@ -14,6 +14,7 @@ export type ThreadId = Id<"thread">;
 export type MessageId = Id<"message">;
 export type MediaId = Id<"media">;
 export type SeriesId = Id<"series">;
+export type SupportRequestId = Id<"supportRequest">;
 
 const prefixes = {
   user: "usr",
@@ -29,6 +30,7 @@ const prefixes = {
   media: "med",
   series: "srs",
   search: "sch",
+  supportRequest: "spr",
 } as const;
 
 export function newId<K extends keyof typeof prefixes>(kind: K): Id<K> {

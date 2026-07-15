@@ -10,7 +10,7 @@ export async function POST() {
   try {
     // Discovery-first: the venue pays the act directly, no card to capture.
     if (!paymentsEnabled())
-      return fail("payments_disabled", "Gigit doesn't take payment right now", 404);
+      return fail("payments_disabled", "EightGig doesn't take payment right now", 404);
     const userId = await requireUser();
     const venue = await venueOwnedBy(userId);
     if (!venue) return fail("forbidden", "venue profile required", 403);

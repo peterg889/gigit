@@ -226,7 +226,7 @@ export function SlotParseWidget({ timeZone }: { timeZone: string }) {
           </button>
           {draft.budgetCents < 1 && (
             <p className="muted">
-              Add the pay — every open gig on Gigit shows it up front.
+              Add the pay — every open gig on EightGig shows it up front.
             </p>
           )}
         </div>

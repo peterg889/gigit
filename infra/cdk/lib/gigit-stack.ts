@@ -4,6 +4,7 @@
  * No Fargate, no NAT gateway, no cluster.
  */
 import * as cdk from "aws-cdk-lib";
+import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cwactions from "aws-cdk-lib/aws-cloudwatch-actions";
 import * as sns from "aws-cdk-lib/aws-sns";
@@ -15,6 +16,8 @@ import * as elbv2 from "aws-cdk-lib/aws-elasticloadbalancingv2";
 import * as targets from "aws-cdk-lib/aws-elasticloadbalancingv2-targets";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as rds from "aws-cdk-lib/aws-rds";
+import * as route53 from "aws-cdk-lib/aws-route53";
+import * as route53Targets from "aws-cdk-lib/aws-route53-targets";
 import * as s3 from "aws-cdk-lib/aws-s3";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ssm from "aws-cdk-lib/aws-ssm";
@@ -23,12 +26,20 @@ import { createHash } from "node:crypto";
 
 export interface GigitStackProps extends cdk.StackProps {
   stage: "staging" | "prod";
+  domainName?: string;
+  hostedZoneName?: string;
 }
 
 export class GigitStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: GigitStackProps) {
     super(scope, id, props);
     const prod = props.stage === "prod";
+    if (Boolean(props.domainName) !== Boolean(props.hostedZoneName)) {
+      throw new Error("domainName and hostedZoneName must be configured together");
+    }
+    const publicAppUrl = props.domainName
+      ? `https://${props.domainName}`
+      : undefined;
 
     const vpc = new ec2.Vpc(this, "Vpc", {
       maxAzs: 2,
@@ -83,7 +94,7 @@ export class GigitStack extends cdk.Stack {
       cors: [
         {
           allowedMethods: [s3.HttpMethods.PUT],
-          allowedOrigins: ["*"], // tightened to APP_URL post-DNS
+          allowedOrigins: publicAppUrl ? [publicAppUrl] : ["*"],
           allowedHeaders: ["*"],
         },
       ],
@@ -323,7 +334,24 @@ export class GigitStack extends cdk.Stack {
       targetGroups: [webTargets],
     });
 
+    const webHostedZone = props.hostedZoneName
+      ? route53.HostedZone.fromLookup(this, "WebHostedZone", {
+          domainName: props.hostedZoneName,
+        })
+      : undefined;
+    const webCertificate = props.domainName && webHostedZone
+      ? new acm.Certificate(this, "WebCertificate", {
+          domainName: props.domainName,
+          validation: acm.CertificateValidation.fromDns(webHostedZone),
+        })
+      : undefined;
+
     const webCdn = new cloudfront.Distribution(this, "WebCdn", {
+      certificate: webCertificate,
+      domainNames: props.domainName ? [props.domainName] : undefined,
+      minimumProtocolVersion: webCertificate
+        ? cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021
+        : undefined,
       defaultBehavior: {
         origin: new origins.LoadBalancerV2Origin(alb, {
           protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
@@ -339,6 +367,23 @@ export class GigitStack extends cdk.Stack {
         compress: true,
       },
     });
+    if (props.domainName && webHostedZone) {
+      new route53.ARecord(this, "WebAliasIpv4", {
+        zone: webHostedZone,
+        recordName: props.domainName,
+        target: route53.RecordTarget.fromAlias(
+          new route53Targets.CloudFrontTarget(webCdn),
+        ),
+      });
+      new route53.AaaaRecord(this, "WebAliasIpv6", {
+        zone: webHostedZone,
+        recordName: props.domainName,
+        target: route53.RecordTarget.fromAlias(
+          new route53Targets.CloudFrontTarget(webCdn),
+        ),
+      });
+    }
+    const webUrl = publicAppUrl ?? `https://${webCdn.distributionDomainName}`;
 
     const imageTag = String(
       this.node.tryGetContext("imageTag") ?? "initial",
@@ -379,7 +424,7 @@ export class GigitStack extends cdk.Stack {
           `printf '%s\\n' '${deploymentNonce}' > /var/lib/gigit-deployment-nonce`,
           "until [ -x /usr/local/bin/deploy-release.sh ]; do sleep 5; done",
           "set +e",
-          `/usr/local/bin/deploy-release.sh '${imageTag}' 'https://${webCdn.distributionDomainName}' > /var/log/gigit-deploy.log 2>&1`,
+          `/usr/local/bin/deploy-release.sh '${imageTag}' '${webUrl}' > /var/log/gigit-deploy.log 2>&1`,
           "DEPLOY_STATUS=$?",
           "tail -n 200 /var/log/gigit-deploy.log > /dev/console || true",
           `if [ "$DEPLOY_STATUS" -eq 0 ]; then SIGNAL_STATUS=SUCCESS; SIGNAL_REASON='release ${imageTag} healthy'; else SIGNAL_STATUS=FAILURE; SIGNAL_REASON='release ${imageTag} failed; inspect EC2 console'; fi`,
@@ -450,7 +495,7 @@ export class GigitStack extends cdk.Stack {
     new cdk.CfnOutput(this, "OpsAlertsTopic", { value: alerts.topicArn });
     new cdk.CfnOutput(this, "MediaCdnDomain", { value: cdn.distributionDomainName });
     new cdk.CfnOutput(this, "DbEndpoint", { value: database.instanceEndpoint.hostname });
-    new cdk.CfnOutput(this, "WebUrl", { value: `https://${webCdn.distributionDomainName}` });
+    new cdk.CfnOutput(this, "WebUrl", { value: webUrl });
     new cdk.CfnOutput(this, "HostInstanceId", { value: host.instanceId });
     new cdk.CfnOutput(this, "WebAlbDnsName", { value: alb.loadBalancerDnsName });
     new cdk.CfnOutput(this, "AppSecretsArn", { value: appSecrets.secretArn });

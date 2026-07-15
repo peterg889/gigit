@@ -1,5 +1,5 @@
 /**
- * Gigit worker (engineering-spec §5 worker):
+ * EightGig worker (engineering-spec §5 worker):
  *  1. Outbox dispatcher — polls `events` rows with dispatched_at IS NULL,
  *     interprets effects (notify, schedule, request_payment).
  *  2. pg-boss — booking timers (offer expiry, gig end, auto-confirm).
@@ -30,6 +30,7 @@ import {
   notifyOtp,
   notifySlotVenue,
   notifySubslotParties,
+  notifySupportOperator,
   notifyThreadCounterparties,
   notifyUser,
 } from "./notify.js";
@@ -394,6 +395,17 @@ async function dispatchEvent(
       await notifyUser(userId, "new_act", { performerId: row.subject_id });
     if (userIds.length > 0)
       log("alerts.new_act", { performer: row.subject_id, notified: userIds.length });
+  }
+
+  // A support escalation is not complete until a person knows about it.
+  // Legacy rows used the user/public subject; their migration-backed request id
+  // is derived from the immutable event id.
+  if (row.kind === "support.escalated") {
+    const requestId =
+      row.subject_type === "support_request"
+        ? row.subject_id
+        : `spr_legacy_${row.id}`;
+    await notifySupportOperator(requestId);
   }
 
   // Parent booking outcomes cascade into tech sub-slots (PRD F6.2): release

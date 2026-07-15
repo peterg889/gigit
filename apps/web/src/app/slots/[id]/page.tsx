@@ -311,8 +311,8 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
                     Pay, date, and duration match the public listing. This is one
                     firm offer; withdraw it before offering another act.{" "}
                     {paymentsEnabled()
-                      ? "The contract and payment run through Gigit."
-                      : "During beta, you and the act arrange payment directly. Gigit records the booking but does not process the payment."}
+                      ? "The contract and payment run through EightGig."
+                      : "During beta, you and the act arrange payment directly. EightGig records the booking but does not process the payment."}
                   </p>
                 </>
               )}

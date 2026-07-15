@@ -1,4 +1,4 @@
-import { newId } from "@gigit/domain";
+import { AGREEMENT_TEMPLATE_VERSION, newId } from "@gigit/domain";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, db } from "./client.js";
@@ -111,6 +111,12 @@ describe("booking transition runner (integration)", () => {
     const d = db();
     const { slotId, appId, rivalAppId, startsAt } = await makeSlotWithApplications();
     const bookingId = await offerFor(slotId, appId, startsAt);
+
+    const [offered] = await d
+      .select({ agreementTemplateVer: bookings.agreementTemplateVer })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    expect(offered!.agreementTemplateVer).toBe(AGREEMENT_TEMPLATE_VERSION);
 
     const accept = await runBookingTransition(
       bookingId,

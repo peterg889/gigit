@@ -1,4 +1,5 @@
 import {
+  AGREEMENT_TEMPLATE_VERSION,
   decide,
   IllegalTransitionError,
   InvalidResolutionError,
@@ -437,6 +438,7 @@ export async function createOffer(input: CreateOfferInput): Promise<string> {
         state: "offered",
         terms: lockedTerms,
         offerExpiresAt,
+        agreementTemplateVer: AGREEMENT_TEMPLATE_VERSION,
         venueAcceptedAt: new Date(),
       });
       await tx
@@ -452,6 +454,7 @@ export async function createOffer(input: CreateOfferInput): Promise<string> {
           slotId: input.slotId,
           performerId: input.performerId,
           terms: { ...lockedTerms },
+          agreementTemplateVersion: AGREEMENT_TEMPLATE_VERSION,
           effects: offerCreatedEffects(offerExpiresAt.toISOString()),
         },
       });

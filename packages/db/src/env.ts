@@ -1,6 +1,12 @@
 import { z } from "zod";
 
-const envSchema = z.object({
+const optionalEmail = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z.string().email().optional(),
+);
+
+export const envSchema = z.object({
   DATABASE_URL: z.string().url(),
   SESSION_SECRET: z.string().min(32),
   APP_URL: z.string().url().default("http://localhost:3000"),
@@ -8,7 +14,7 @@ const envSchema = z.object({
   S3_BUCKET: z.string().optional(),
   AWS_REGION: z.string().default("us-east-1"),
   // Payments master switch (docs/pricing.md). Discovery-first launch leaves this
-  // false: Gigit processes no gig money — the venue pays the act directly. Set
+  // false: EightGig processes no gig money — the venue pays the act directly. Set
   // true (together with the Stripe keys below) to turn the payments rail on at
   // monetization. Requiring an explicit flag means payments are never activated
   // by accident just because a key is present.
@@ -27,6 +33,7 @@ const envSchema = z.object({
   TWILIO_AUTH_TOKEN: z.string().optional(),
   TWILIO_FROM: z.string().optional(),
   EMAIL_FROM: z.string().optional(), // SES verified sender
+  SUPPORT_EMAIL_TO: optionalEmail, // operator inbox for human escalations
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),

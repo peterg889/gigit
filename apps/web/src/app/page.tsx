@@ -20,7 +20,7 @@ export default async function HomePage() {
         <span className="eyebrow">Live gigs for independent venues</span>
         <h1>Find the room. Fill the night. Get the gig.</h1>
         <p className="lede">
-          Gigit connects independent venues with local bands, solo acts,
+          EightGig connects independent venues with local bands, solo acts,
           comedians, and sound techs. Every open gig shows the pay before anyone
           applies.
         </p>
@@ -31,23 +31,23 @@ export default async function HomePage() {
           </Link>
         </div>
         <p className="trust-line">
-          Free during beta · Gigit takes no cut of gig pay · Payment stays
+          Free during beta · EightGig takes no cut of gig pay · Payment stays
           between the people doing the work
         </p>
       </section>
 
       <section className="card founding-offer">
-        <span className="badge">Gigit beta</span>
+        <span className="badge">EightGig beta</span>
         <h2>Become a Founding Member</h2>
         <p>
-          Gigit is free during beta. The first 500 eligible act profiles—including
+          EightGig is free during beta. The first 500 eligible act profiles—including
           bands, solo artists, comedians, and other live acts—and the first 500
           eligible venue profiles we confirm as onboarded receive a Founding
           Membership.
         </p>
         <p className="muted">
           Founding Membership has no recurring standard-membership fee for as
-          long as Gigit operates. No card needed. Pricing for later members has
+          long as EightGig operates. No card needed. Pricing for later members has
           not been set, and we’ll explain it before asking anyone to pay.{" "}
           <Link href="/help">See offer details.</Link>
         </p>
@@ -130,7 +130,7 @@ export default async function HomePage() {
         <h2>You handle gig payment directly</h2>
         <p>
           Venues pay acts and sound techs directly under the terms they
-          accept. Gigit keeps the offer, agreement, messages, and gig details
+          accept. EightGig keeps the offer, agreement, messages, and gig details
           together without processing the gig payment or taking a cut.
         </p>
         <Link className="btn" href="/slots">Browse open gigs</Link>

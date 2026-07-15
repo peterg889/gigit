@@ -1,6 +1,6 @@
 import type { BookingTerms } from "./booking/states.js";
 
-export const AGREEMENT_TEMPLATE_VERSION = "v1";
+export const AGREEMENT_TEMPLATE_VERSION = "v2";
 
 function formatTermTime(value: string, timeZone?: string): string {
   if (!timeZone) return `${value} (UTC)`;
@@ -30,12 +30,14 @@ export function renderAgreement(input: {
   /** Venue timezone used in the customer-visible accepted terms. */
   timeZone?: string;
   /**
-   * Discovery-first launch (default false): Gigit doesn't process the money,
+   * Discovery-first launch (default false): EightGig doesn't process the money,
    * so the doc is a plain terms summary — no charge/escrow/payout or fee-
    * schedule clauses. The full click-wrap contract returns with the payments
    * rail (docs/pricing.md). Callers pass paymentsEnabled().
    */
   paymentsEnabled?: boolean;
+  /** Stored with the booking so accepted text remains immutable across revisions. */
+  templateVersion?: string;
 }): string {
   const {
     venueName,
@@ -44,7 +46,9 @@ export function renderAgreement(input: {
     terms,
     timeZone,
     paymentsEnabled = false,
+    templateVersion = AGREEMENT_TEMPLATE_VERSION,
   } = input;
+  const brandName = templateVersion === "v1" ? "Gigit" : "EightGig";
   const lockedVenueAddress = terms.venueAddress ?? venueAddress;
   const lockedTimeZone = terms.timeZone ?? timeZone;
   const startsAt = formatTermTime(terms.startsAt, lockedTimeZone);
@@ -60,7 +64,7 @@ export function renderAgreement(input: {
       `by the platform, and released to ${performerName} 24 hours after the ` +
       `performance ends unless a dispute is opened.`
     : `2. COMPENSATION. ${venueName} pays ${performerName} ${amount}, settled ` +
-      `directly between the two of them. Gigit does not charge, hold, or pay ` +
+      `directly between the two of them. ${brandName} does not charge, hold, or pay ` +
       `out this money.`;
   const venueCancellation = paymentsEnabled
     ? `4. CANCELLATION BY VENUE. More than 14 days before start: full refund. ` +
@@ -75,14 +79,14 @@ export function renderAgreement(input: {
     : `5. CANCELLATION BY PERFORMER. The slot reopens for other acts; repeated ` +
       `late cancellations affect the performer's standing on the platform.`;
   const closing = paymentsEnabled
-    ? `Accepted electronically by both parties on the Gigit platform.`
-    : `Agreed by both parties on Gigit — the record of the booking. Gigit is the ` +
+    ? `Accepted electronically by both parties on the ${brandName} platform.`
+    : `Agreed by both parties on ${brandName} — the record of the booking. ${brandName} is the ` +
       `introduction and the handshake, not a party to the payment.`;
 
   return [
     paymentsEnabled
-      ? `PERFORMANCE AGREEMENT (Gigit template ${AGREEMENT_TEMPLATE_VERSION})`
-      : `BOOKING TERMS (Gigit ${AGREEMENT_TEMPLATE_VERSION})`,
+      ? `PERFORMANCE AGREEMENT (${brandName} template ${templateVersion})`
+      : `BOOKING TERMS (${brandName} ${templateVersion})`,
     ``,
     `Venue: ${venueName}`,
     ...(lockedVenueAddress ? [`Location: ${lockedVenueAddress}`] : []),

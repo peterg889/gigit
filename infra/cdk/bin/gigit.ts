@@ -41,6 +41,8 @@ new GigitStack(app, "GigitStaging", {
   env,
   synthesizer: directSynthesizer(),
   stage: "staging",
+  domainName: process.env.STAGING_DOMAIN_NAME ?? "staging.eightgig.com",
+  hostedZoneName: process.env.STAGING_HOSTED_ZONE ?? "eightgig.com",
 });
 // Production lives in a separate AWS account (engineering-spec K11):
 // CDK_ACCOUNT/CDK_REGION select it via the deploy role.

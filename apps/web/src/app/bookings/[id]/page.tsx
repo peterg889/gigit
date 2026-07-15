@@ -232,7 +232,7 @@ export default async function BookingPage({
                     ? "Cancel this booking? The date reopens. " +
                       (paymentsEnabled()
                         ? "Per the agreement, the closer to the date the more of the act's fee is owed."
-                        : "Settle anything already arranged with the act directly — Gigit does not process gig payments during beta.")
+                        : "Settle anything already arranged with the act directly — EightGig does not process gig payments during beta.")
                     : "Cancel this booking? The date reopens for the venue, and a cancellation counts against your reliability."
                 }
               />{" "}
@@ -453,6 +453,7 @@ export default async function BookingPage({
             terms: b.terms,
             timeZone: dealTimeZone,
             paymentsEnabled: paymentsEnabled(),
+            templateVersion: b.agreementTemplateVer,
           })}
         </pre>
         {state === "offered" && asPerformer && (

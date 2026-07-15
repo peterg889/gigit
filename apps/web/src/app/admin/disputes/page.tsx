@@ -43,7 +43,7 @@ export default async function AdminDisputesPage() {
       <h1>Reliability reports</h1>
       <p className="muted">
         A human decides what happened and which side, if either, receives a
-        reliability strike. Gig money stays outside Gigit.
+        reliability strike. Gig money stays outside EightGig.
       </p>
       {withReports.length === 0 && <div className="card">No open reports.</div>}
       {withReports.map(({ booking, performerName, venueName, report }) => (

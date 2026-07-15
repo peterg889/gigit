@@ -71,7 +71,7 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     body: "A venue wants to talk. No obligation, reply when you can: {url}",
   },
   new_message: {
-    subject: "New message on Gigit",
+    subject: "New message on EightGig",
     body: "You have a new message waiting: {url}",
   },
   slot_match: {
@@ -107,12 +107,16 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     body: "One of the videos on your profile no longer plays. Swap it for a live link: {url}/me",
   },
   otp: {
-    subject: "Your Gigit sign-in code",
+    subject: "Your EightGig sign-in code",
     body: "Your sign-in code is {code}. It expires in 10 minutes. If you didn't ask for it, ignore this.",
+  },
+  support_escalated: {
+    subject: "New EightGig support request",
+    body: "A support request needs a person. Open {url}/admin/support/{requestId}",
   },
 };
 
-// Discovery-first launch (PAYMENTS_ENABLED off): Gigit moves no gig money, so
+// Discovery-first launch (PAYMENTS_ENABLED off): EightGig moves no gig money, so
 // the payment-bearing templates above would lie. These overrides replace them
 // with settle-directly copy; the originals return with the payments rail.
 const DISCOVERY_OVERRIDES: Record<string, { subject?: string; body: string }> = {
@@ -216,7 +220,7 @@ function renderTemplate(
   vars: Record<string, string> = {},
 ): { subject: string; body: string } {
   const base = TEMPLATES[template] ?? {
-    subject: "Gigit update",
+    subject: "EightGig update",
     body: `Update (${template}): {url}`,
   };
   const override = paymentsEnabled() ? undefined : DISCOVERY_OVERRIDES[template];
@@ -281,6 +285,31 @@ export async function notifyDestination(
   }
 }
 
+/**
+ * Support alerts are operational, not best-effort customer notifications.
+ * In production a missing mailbox/sender or SES rejection must throw so the
+ * outbox retries and eventually dead-letters loudly instead of losing the handoff.
+ */
+export async function notifySupportOperator(requestId: string): Promise<void> {
+  const destination = env().SUPPORT_EMAIL_TO;
+  const rendered = renderTemplate("support_escalated", { requestId });
+  if (!destination || !emailConfigured()) {
+    if (env().NODE_ENV === "production") {
+      throw new Error(
+        "SUPPORT_EMAIL_TO and EMAIL_FROM are required for support escalation delivery",
+      );
+    }
+    log("notify.log_sink", {
+      destination: destination ?? "support-operator",
+      template: "support_escalated",
+      subject: rendered.subject,
+      requestId,
+    });
+    return;
+  }
+  await sendEmail(destination, rendered.subject, rendered.body, true);
+}
+
 /** Send the sign-in code for a stored OTP row to its destination (auth flow). */
 export async function notifyOtp(otpId: string): Promise<void> {
   if (!otpId) return;
@@ -333,7 +362,12 @@ async function sendSms(to: string, body: string): Promise<void> {
   if (!res.ok) log("notify.sms_failed", { to, status: res.status });
 }
 
-async function sendEmail(to: string, subject: string, body: string): Promise<void> {
+async function sendEmail(
+  to: string,
+  subject: string,
+  body: string,
+  throwOnFailure = false,
+): Promise<void> {
   ses ??= new SESv2Client({ region: env().AWS_REGION });
   try {
     await ses.send(
@@ -345,6 +379,7 @@ async function sendEmail(to: string, subject: string, body: string): Promise<voi
     );
   } catch (err) {
     log("notify.email_failed", { to, err: String(err) });
+    if (throwOnFailure) throw err;
   }
 }
 

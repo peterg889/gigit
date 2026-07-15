@@ -3,7 +3,7 @@ import { paymentsEnabled, paymentGateway } from "./payments.js";
 
 /**
  * The reframe rests on "the flag is enough" (docs/pricing.md §4): with no
- * PAYMENTS_ENABLED and no Stripe key — the launch + test default — Gigit
+ * PAYMENTS_ENABLED and no Stripe key — the launch + test default — EightGig
  * processes no gig money. These guard that posture so it can't silently flip.
  */
 describe("discovery-first is the default payments posture", () => {

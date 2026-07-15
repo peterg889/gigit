@@ -399,6 +399,54 @@ export const aiTasks = pgTable("ai_tasks", {
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
+// ── human support queue ─────────────────────────────────────────────────────
+// Automated support answers only when the KB is sufficient. Everything else
+// lands here so an escalation remains actionable even when email delivery is
+// unavailable. Contact values are snapshots: deactivation can later remove
+// login identifiers without erasing the reply path from an open request.
+export const supportRequests = pgTable(
+  "support_requests",
+  {
+    id: text("id").primaryKey(),
+    requesterUserId: text("requester_user_id").references(() => users.id),
+    contactEmail: text("contact_email"),
+    contactPhone: text("contact_phone"),
+    channel: text("channel").notNull(), // web | sms
+    category: text("category").notNull().default("other"),
+    escalationReason: text("escalation_reason").notNull(), // anonymous | explicit | triage | triage_error | legacy
+    message: text("message").notNull(),
+    status: text("status").notNull().default("open"), // open | resolved
+    claimedByUserId: text("claimed_by_user_id").references(() => users.id),
+    claimedAt: ts("claimed_at"),
+    resolvedByUserId: text("resolved_by_user_id").references(() => users.id),
+    resolvedAt: ts("resolved_at"),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("support_requests_queue_idx").on(t.status, t.createdAt),
+    index("support_requests_requester_idx").on(t.requesterUserId, t.createdAt),
+  ],
+);
+
+export const supportRequestNotes = pgTable(
+  "support_request_notes",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    supportRequestId: text("support_request_id")
+      .notNull()
+      .references(() => supportRequests.id),
+    authorUserId: text("author_user_id")
+      .notNull()
+      .references(() => users.id),
+    kind: text("kind").notNull(), // claim | note | resolution
+    body: text("body").notNull().default(""),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("support_request_notes_request_idx").on(t.supportRequestId, t.createdAt),
+  ],
+);
+
 // ── reviews (PRD F7.1: double-blind; from completed platform bookings only) ──
 // ── tech sub-slots (PRD F6.2/F6.3 — the third side on the rails) ────────────
 export const techSubslots = pgTable(

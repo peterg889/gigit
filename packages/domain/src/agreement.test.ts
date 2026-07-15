@@ -17,11 +17,19 @@ describe("renderAgreement — discovery-first (payments off, the default)", () =
   const text = renderAgreement(base); // paymentsEnabled defaults to false
 
   it("is a plain terms summary, not a performance agreement", () => {
-    expect(text).toContain(`BOOKING TERMS (Gigit ${AGREEMENT_TEMPLATE_VERSION})`);
+    expect(text).toContain(`BOOKING TERMS (EightGig ${AGREEMENT_TEMPLATE_VERSION})`);
     expect(text).not.toContain("PERFORMANCE AGREEMENT");
   });
 
-  it("says the venue and act settle directly and Gigit holds no money", () => {
+  it("preserves the original name in already accepted v1 terms", () => {
+    const legacyText = renderAgreement({ ...base, templateVersion: "v1" });
+
+    expect(legacyText).toContain("BOOKING TERMS (Gigit v1)");
+    expect(legacyText).toContain("Agreed by both parties on Gigit");
+    expect(legacyText).not.toContain("EightGig");
+  });
+
+  it("says the venue and act settle directly and EightGig holds no money", () => {
     expect(text).toMatch(/settled[\s\S]*directly/);
     expect(text).toContain("does not charge, hold, or pay out");
     expect(text).toContain("not a party to the payment");
@@ -62,7 +70,7 @@ describe("renderAgreement — payments on (the deferred configuration)", () => {
   const text = renderAgreement({ ...base, paymentsEnabled: true });
 
   it("is the full click-wrap performance agreement", () => {
-    expect(text).toContain(`PERFORMANCE AGREEMENT (Gigit template ${AGREEMENT_TEMPLATE_VERSION})`);
+    expect(text).toContain(`PERFORMANCE AGREEMENT (EightGig template ${AGREEMENT_TEMPLATE_VERSION})`);
     expect(text).toContain("Accepted electronically by both parties");
   });
 

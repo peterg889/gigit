@@ -11,7 +11,9 @@ import { POST } from "./route";
 // unique per run — the dev/CI database accretes test rows by design
 const PHONE = `+1555${String(Date.now()).slice(-7)}`;
 const STRANGER = `+1444${String(Date.now()).slice(-7)}`;
+const SUPPORT_PHONE = `+1333${String(Date.now()).slice(-7)}`;
 const userId = newId("user");
+const supportUserId = newId("user");
 const venueId = newId("venue");
 
 function smsRequest(from: string, bodyText: string): Request {
@@ -32,6 +34,11 @@ describe("inbound SMS router", () => {
   beforeAll(async () => {
     const d = db();
     await d.insert(schema.users).values({ id: userId, phone: PHONE, email: `${userId}@t.test` });
+    await d.insert(schema.users).values({
+      id: supportUserId,
+      phone: SUPPORT_PHONE,
+      email: `${supportUserId}@t.test`,
+    });
     await d.insert(schema.venues).values({
       id: venueId,
       ownerUserId: userId,
@@ -59,6 +66,7 @@ describe("inbound SMS router", () => {
   it("HELP returns the help text before any other logic", async () => {
     const xml = await reply(PHONE, "HELP");
     expect(xml).toContain("Opt out: STOP");
+    expect(xml).toContain("SUPPORT plus your message");
   });
 
   it("STOP opts the number out; START opts back in", async () => {
@@ -85,6 +93,42 @@ describe("inbound SMS router", () => {
     // without GEMINI_API_KEY slot_parse throws → the router coaches the format
     const xml = await reply(PHONE, "acoustic friday night two hours $300");
     expect(xml).toMatch(/Couldn't read that one|Reply YES/);
+  });
+
+  it("lets a venue owner explicitly bypass slot parsing for human support", async () => {
+    const message = `I need help with my venue account ${Date.now()}`;
+    const xml = await reply(PHONE, `SUPPORT ${message}`);
+
+    expect(xml).toContain("a person will get back to you");
+    const [request] = await db()
+      .select()
+      .from(schema.supportRequests)
+      .where(eq(schema.supportRequests.message, message));
+    expect(request).toMatchObject({
+      requesterUserId: userId,
+      contactPhone: PHONE,
+      channel: "sms",
+      escalationReason: "explicit",
+      status: "open",
+    });
+  });
+
+  it("persists an SMS support escalation for a recognized non-venue user", async () => {
+    const message = `I need help changing a booking ${Date.now()}`;
+    const xml = await reply(SUPPORT_PHONE, message);
+
+    expect(xml).toContain("<Message>");
+    const [request] = await db()
+      .select()
+      .from(schema.supportRequests)
+      .where(eq(schema.supportRequests.requesterUserId, supportUserId));
+    expect(request).toMatchObject({
+      requesterUserId: supportUserId,
+      contactPhone: SUPPORT_PHONE,
+      channel: "sms",
+      status: "open",
+      message,
+    });
   });
 
   it("escapes XML in replies (no TwiML injection)", async () => {

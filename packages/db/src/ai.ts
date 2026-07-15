@@ -249,7 +249,7 @@ async function fetchPageSummary(url: string): Promise<string> {
     await assertPublicUrl(current);
     res = await fetch(current, {
       signal: AbortSignal.timeout(8000),
-      headers: { "user-agent": "GigitBot/0.1 (profile ingestion)" },
+      headers: { "user-agent": "EightGigBot/0.1 (profile ingestion)" },
       redirect: "manual",
     });
     const loc = res.status >= 300 && res.status < 400 ? res.headers.get("location") : null;
@@ -481,7 +481,7 @@ export async function mediaFraudScreen(
 // bookings writable — and it's enforced by the `escalate` contract, not vibes.
 
 /**
- * KB is payments-aware: at the discovery-first launch Gigit moves no gig money,
+ * KB is payments-aware: at the discovery-first launch EightGig moves no gig money,
  * so the payments/cancellation/disputes answers must NOT promise charges,
  * payouts, or a fee schedule (this text is auto-sent to users via /api/support
  * and inbound SMS). The payments-on copy returns with the rail (docs/pricing.md).
@@ -493,7 +493,7 @@ function supportKb(): string {
   is held by the platform and released to the act 24 hours after the gig ends,
   unless a dispute is opened. Standard payouts arrive via Stripe in 1-2
   business days after release.`
-    : `- Payments: Gigit does not handle gig money. The venue pays the act directly
+    : `- Payments: EightGig does not handle gig money. The venue pays the act directly
   using whatever method they agree on. The pay shown on the open gig is the
   full amount, with nothing taken out.`;
   const cancellation = on
@@ -502,7 +502,7 @@ function supportKb(): string {
   Act cancels — full refund to the venue, and it counts against reliability.`
     : `- Cancellation: either side can cancel, but the open date reappears right away.
   Repeated late cancellations count against reliability. Any pay is settled
-  directly between the parties — Gigit does not process it.`;
+  directly between the parties — EightGig does not process it.`;
   const disputes = on
     ? `- Disputes: open one from the booking page within 24 hours after the gig ends.
   The payout pauses and a person reviews within 5 business days.`
@@ -515,16 +515,16 @@ function supportKb(): string {
   room specs and input list shown up front; paid directly by whoever is
   paying, after the show.`;
   return `
-# Gigit support knowledge base (v1)
+# EightGig support knowledge base (v1)
 ${payments}
 ${cancellation}
-- Beta membership: Gigit is free during beta. The first 500 eligible act
-  profiles and first 500 eligible venue profiles Gigit confirms as onboarded
+- Beta membership: EightGig is free during beta. The first 500 eligible act
+  profiles and first 500 eligible venue profiles EightGig confirms as onboarded
   receive a Founding Membership with no recurring standard-membership fee for
-  as long as Gigit operates.
+  as long as EightGig operates.
 - Eligibility: profiles are counted in confirmation order and must be complete,
   authentic, and non-duplicate, with one Founding Membership per real-world act
-  or venue. Pricing for later members has not been set; Gigit explains it before
+  or venue. Pricing for later members has not been set; EightGig explains it before
   asking anyone to pay and never starts a paid plan without agreement.
 - Founding-status questions: automated support cannot determine whether a
   particular profile qualifies or is among the first 500. Escalate to a person.
@@ -553,7 +553,7 @@ export async function supportTriage(
   try {
     result = await geminiJson({
       system:
-        "You are first-line support for Gigit. Answer ONLY from the knowledge " +
+        "You are first-line support for EightGig. Answer ONLY from the knowledge " +
         "base — if the KB does not directly answer the question, or the user " +
         "is upset, mentions money amounts in dispute, or anything legal, set " +
         "escalate=true and write a short holding reply ('a person will get " +
@@ -623,7 +623,7 @@ export function disputeBriefSystem(paymentsOn: boolean): string {
     ? "draftAdjudication proposes an outcome (release / refund / partial split " +
       "with amounts) per the cancellation policy (>14d 0%, 48h-14d 50%, <48h " +
       "100%) and auto-release rules, phrased as a PROPOSAL for a human to sign off. "
-    : "Gigit does NOT process the gig money (the venue pays the act directly), so " +
+    : "EightGig does NOT process the gig money (the venue pays the act directly), so " +
       "draftAdjudication must propose a NON-MONETARY resolution only: uphold or " +
       "dismiss the dispute, who is at fault for reliability, and what to tell each " +
       "side. Never propose a dollar amount or a cancellation-fee split. ";

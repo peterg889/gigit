@@ -64,6 +64,7 @@ export default async function AdminPage() {
     <div>
       <h1>Liquidity</h1>
       <p className="muted">
+        <Link href="/admin/support">Support queue</Link> ·{" "}
         <Link href="/admin/search">Ops search</Link> ·{" "}
         <Link href="/admin/disputes">Reliability reports</Link> ·{" "}
         <Link href="/admin/moderation">Moderation queue</Link>
@@ -90,7 +91,7 @@ export default async function AdminPage() {
         <Row k={paymentsOn ? "Refunded ($)" : "Reversed ($)"} v={money.refunded} />
         {!paymentsOn && (
           <p className="muted">
-            Booked value accrued in the ledger — Gigit moves none of it while
+            Booked value accrued in the ledger — EightGig moves none of it while
             payments are off; the venue pays the act directly.
           </p>
         )}

@@ -12,5 +12,9 @@
       "PrefixListId": "pl-3b927c52",
       "Identifier": "pl-3b927c52"
     }
-  ]
+  ],
+  "hosted-zone:account=794451358339:domainName=eightgig.com:region=us-east-1": {
+    "Id": "/hostedzone/Z05045091HKNUU8YMW8E9",
+    "Name": "eightgig.com."
+  }
 }

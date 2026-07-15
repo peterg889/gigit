@@ -32,7 +32,7 @@ export default function LoginPage() {
 
   return (
     <div className="card">
-      <h1>Sign in or join Gigit</h1>
+      <h1>Sign in or join EightGig</h1>
       <p className="muted">
         Enter your email and we’ll send a six-digit sign-in code. No password
         needed.
@@ -65,7 +65,7 @@ export default function LoginPage() {
             </span>
           </label>
           <button>Send code</button>
-          <p className="muted">Gigit is free during beta. No card needed.</p>
+          <p className="muted">EightGig is free during beta. No card needed.</p>
         </form>
       ) : (
         <form

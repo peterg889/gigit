@@ -1,7 +1,7 @@
-import { appendEvent, db, schema, supportTriage } from "@gigit/db";
+import { createSupportRequest, db, schema, supportTriage } from "@gigit/db";
 import { and, eq, gte, sql } from "drizzle-orm";
 import { z } from "zod";
-import { requireUser, respondError } from "@/lib/auth";
+import { respondError } from "@/lib/auth";
 import { clientIp } from "@/lib/client-ip";
 import { fail, ok, parseBody } from "@/lib/respond";
 import { sessionUserId } from "@/lib/session";
@@ -26,7 +26,14 @@ export async function POST(req: Request) {
     if ("response" in parsed) return parsed.response;
 
     const sessionId = await sessionUserId();
-    if (!sessionId) {
+    const [sessionUser] = sessionId
+      ? await db()
+          .select({ status: schema.users.status })
+          .from(schema.users)
+          .where(eq(schema.users.id, sessionId))
+      : [];
+    const userId = sessionUser?.status === "active" ? sessionId : null;
+    if (!userId) {
       if (!parsed.data.email)
         return fail("validation", "email is required when you are not signed in", 422);
 
@@ -35,8 +42,8 @@ export async function POST(req: Request) {
       const ip = clientIp(req) || "unknown";
       const base = and(
         eq(schema.events.kind, "support.escalated"),
-        eq(schema.events.subjectType, "support"),
         gte(schema.events.occurredAt, hourAgo),
+        sql`${schema.events.payload}->>'requestIp' is not null`,
       );
       const [globalCount, ipCount] = await Promise.all([
         d
@@ -53,36 +60,49 @@ export async function POST(req: Request) {
       if (globalCount >= PUBLIC_GLOBAL_HOURLY_CAP || ipCount >= PUBLIC_IP_HOURLY_CAP)
         return fail("rate_limited", "too many support requests — try again later", 429);
 
-      await appendEvent(d, {
-        actor: "anonymous",
-        kind: "support.escalated",
-        subjectType: "support",
-        subjectId: `public:${crypto.randomUUID()}`,
-        payload: {
-          message: parsed.data.message.slice(0, 500),
-          email: parsed.data.email,
-          requestIp: ip,
-          category: "public",
-        },
+      const requestId = await createSupportRequest({
+        contactEmail: parsed.data.email.toLowerCase(),
+        channel: "web",
+        category: "other",
+        escalationReason: "anonymous",
+        message: parsed.data.message,
+        requestIp: ip,
       });
       return ok({
         reply: "Thanks — we received your message and will use the email you provided to follow up.",
         escalated: true,
+        requestId,
       });
     }
 
-    const userId = await requireUser();
-    const result = await supportTriage(parsed.data.message, userId);
-    if (result.escalate) {
-      await appendEvent(db(), {
-        actor: userId,
-        kind: "support.escalated",
-        subjectType: "user",
-        subjectId: userId,
-        payload: { message: parsed.data.message.slice(0, 500), category: result.category },
+    let result: Awaited<ReturnType<typeof supportTriage>>;
+    try {
+      result = await supportTriage(parsed.data.message, userId);
+    } catch {
+      const requestId = await createSupportRequest({
+        requesterUserId: userId,
+        channel: "web",
+        category: "other",
+        escalationReason: "triage_error",
+        message: parsed.data.message,
+      });
+      return ok({
+        reply: "Got your message — a person will get back to you.",
+        escalated: true,
+        requestId,
       });
     }
-    return ok({ reply: result.reply, escalated: result.escalate });
+    let requestId: string | undefined;
+    if (result.escalate) {
+      requestId = await createSupportRequest({
+        requesterUserId: userId,
+        channel: "web",
+        category: result.category,
+        escalationReason: "triage",
+        message: parsed.data.message,
+      });
+    }
+    return ok({ reply: result.reply, escalated: result.escalate, requestId });
   } catch (e) {
     return respondError(e);
   }

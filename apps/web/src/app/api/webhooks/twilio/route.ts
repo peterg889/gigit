@@ -1,6 +1,14 @@
 import crypto from "node:crypto";
 import { newId } from "@gigit/domain";
-import { appendEvent, db, env, schema, slotParse, supportTriage } from "@gigit/db";
+import {
+  appendEvent,
+  createSupportRequest,
+  db,
+  env,
+  schema,
+  slotParse,
+  supportTriage,
+} from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { venueLocationIsComplete } from "@/lib/date-time";
 
@@ -51,7 +59,7 @@ async function route(phone: string, body: string): Promise<string | null> {
       .update(schema.users)
       .set({ smsOptedOutAt: new Date() })
       .where(eq(schema.users.phone, phone));
-    return "You're unsubscribed from Gigit texts. Reply START to turn them back on.";
+    return "You're unsubscribed from EightGig texts. Reply START to turn them back on.";
   }
   if (upper === "START" || upper === "UNSTOP") {
     await d
@@ -61,13 +69,20 @@ async function route(phone: string, body: string): Promise<string | null> {
     return "You're back on. We only text what matters: offers, confirmations, day-of details.";
   }
   if (upper === "HELP" || upper === "INFO") {
-    return "Gigit — live music, comedy & sound for small rooms. Venues: text what you need ('acoustic Friday, $300'). Help: reply here. Opt out: STOP.";
+    return "EightGig — live music, comedy & sound for small rooms. Venues: text what you need ('acoustic Friday, $300'). For a person: SUPPORT plus your message. Opt out: STOP.";
   }
 
   const [user] = await d.select().from(schema.users).where(eq(schema.users.phone, phone));
   if (!user) {
-    return "This is Gigit. We don't recognize this number — sign up at gigit and add your phone, then texting works.";
+    return "This is EightGig. We don't recognize this number — sign up at eightgig.com and add your phone, then texting works.";
   }
+
+  // Venue free text normally means "post a slot." Give every recognized user
+  // an unambiguous escape hatch to a person without asking AI to infer intent.
+  const explicitSupport = /^SUPPORT(?:\s|$)/i.test(body);
+  const supportMessage = explicitSupport
+    ? body.replace(/^SUPPORT(?:\s+|$)/i, "").trim() || "Requested human support by SMS."
+    : body;
 
   const [venue] = await d
     .select()
@@ -115,16 +130,16 @@ async function route(phone: string, body: string): Promise<string | null> {
   }
 
   // 3. Venue numbers: plain-English slot posting.
-  if (venue && body.length >= 5) {
+  if (venue && !explicitSupport && body.length >= 5) {
     if (!venueLocationIsComplete(venue))
-      return "Add your venue address and timezone on Gigit before posting a night by text.";
+      return "Add your venue address and timezone on EightGig before posting a night by text.";
     try {
       const draft = await slotParse(body, user.id, new Date(), venue.timeZone);
       if (draft.clarificationNeeded) {
         return `One thing first: ${draft.clarificationNeeded}`;
       }
       if (!draft.budgetCents || draft.budgetCents < 1) {
-        return "What's the pay? Every Gigit slot shows its budget — that's why good acts apply.";
+        return "What's the pay? Every EightGig slot shows its budget — that's why good acts apply.";
       }
       await d
         .insert(schema.smsSessions)
@@ -148,24 +163,37 @@ async function route(phone: string, body: string): Promise<string | null> {
 
   // 4. Support (F9.4): KB-grounded answers reply instantly; the rest
   // escalates to a person. Either way the message is on the record.
+  if (explicitSupport) {
+    await createSupportRequest({
+      requesterUserId: user.id,
+      contactPhone: phone,
+      channel: "sms",
+      category: "other",
+      escalationReason: "explicit",
+      message: supportMessage,
+    });
+    return "Got your message — a person will get back to you.";
+  }
   try {
-    const triage = await supportTriage(body, user.id);
+    const triage = await supportTriage(supportMessage, user.id);
     if (triage.escalate)
-      await appendEvent(d, {
-        actor: user.id,
-        kind: "support.escalated",
-        subjectType: "user",
-        subjectId: user.id,
-        payload: { body: body.slice(0, 500), category: triage.category, channel: "sms" },
+      await createSupportRequest({
+        requesterUserId: user.id,
+        contactPhone: phone,
+        channel: "sms",
+        category: triage.category,
+        escalationReason: "triage",
+        message: supportMessage,
       });
     return triage.reply;
   } catch {
-    await appendEvent(d, {
-      actor: user.id,
-      kind: "support.escalated",
-      subjectType: "user",
-      subjectId: user.id,
-      payload: { body: body.slice(0, 500), channel: "sms" },
+    await createSupportRequest({
+      requesterUserId: user.id,
+      contactPhone: phone,
+      channel: "sms",
+      category: "other",
+      escalationReason: "triage_error",
+      message: supportMessage,
     });
     return "Got your message — a person will get back to you.";
   }

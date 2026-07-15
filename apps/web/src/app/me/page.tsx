@@ -66,7 +66,7 @@ export default async function MePage() {
       <h1>Your profiles</h1>
       <p className="muted">
         One account can hold multiple roles — a comedian who books rooms, a
-        musician who runs sound. Gigit is free to use during beta.
+        musician who runs sound. EightGig is free to use during beta.
       </p>
 
       <div className="card">
@@ -92,7 +92,7 @@ export default async function MePage() {
             </p>
           ) : (
             <p className="muted">
-              You arrange pay directly with the venue — Gigit never touches your money.
+              You arrange pay directly with the venue — EightGig never touches your money.
             </p>
           )}
           <details>
