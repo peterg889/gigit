@@ -12,3 +12,4 @@ export * from "./reconcile.js";
 export * from "./analytics.js";
 export * from "./reliability.js";
 export * from "./support.js";
+export * from "./account.js";

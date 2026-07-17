@@ -111,12 +111,15 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
       - uses: aws-actions/amazon-ecr-login@v2
         id: ecr
-      - name: Build and push production images
+      # Promote the EXACT images the staging health gate validated — never
+      # rebuild at promote time, where base-image/apt drift between the staging
+      # build and a days-later approval would ship bits staging never ran.
+      - name: Retag staging images for production
         run: |
           REG=${{ steps.ecr.outputs.registry }}
           for app in web worker; do
-            docker build --platform linux/amd64 -f Dockerfile.$app \
-              -t $REG/gigit-$app-prod:${{ github.sha }} .
+            docker pull $REG/gigit-$app-staging:${{ github.sha }}
+            docker tag $REG/gigit-$app-staging:${{ github.sha }} $REG/gigit-$app-prod:${{ github.sha }}
             docker push $REG/gigit-$app-prod:${{ github.sha }}
           done
       - uses: pnpm/action-setup@v4

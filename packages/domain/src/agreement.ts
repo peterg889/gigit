@@ -24,11 +24,8 @@ function formatTermTime(value: string, timeZone?: string): string {
  */
 export function renderAgreement(input: {
   venueName: string;
-  venueAddress?: string;
   performerName: string;
   terms: BookingTerms;
-  /** Venue timezone used in the customer-visible accepted terms. */
-  timeZone?: string;
   /**
    * Discovery-first launch (default false): EightGig doesn't process the money,
    * so the doc is a plain terms summary — no charge/escrow/payout or fee-
@@ -41,16 +38,19 @@ export function renderAgreement(input: {
 }): string {
   const {
     venueName,
-    venueAddress,
     performerName,
     terms,
-    timeZone,
     paymentsEnabled = false,
     templateVersion = AGREEMENT_TEMPLATE_VERSION,
   } = input;
   const brandName = templateVersion === "v1" ? "Gigit" : "EightGig";
-  const lockedVenueAddress = terms.venueAddress ?? venueAddress;
-  const lockedTimeZone = terms.timeZone ?? timeZone;
+  // Only the terms snapshot may feed the text. Legacy bookings whose terms
+  // predate the venueAddress/timeZone snapshot render without a Location line
+  // and with raw UTC times — exactly the text their parties accepted. Falling
+  // back to the live venue profile would let a later profile edit rewrite an
+  // accepted agreement.
+  const lockedVenueAddress = terms.venueAddress;
+  const lockedTimeZone = terms.timeZone;
   const startsAt = formatTermTime(terms.startsAt, lockedTimeZone);
   const endsAt = formatTermTime(terms.endsAt, lockedTimeZone);
   const amount = `$${(terms.amountCents / 100).toFixed(2)}`;

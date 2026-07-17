@@ -58,9 +58,17 @@ export function localDateTimeParts(date: Date, timeZone: string): Required<Local
 
 /**
  * Convert venue-local calendar fields to a UTC instant without relying on the
- * process or browser timezone. Throws for a nonexistent DST wall-clock time.
+ * process or browser timezone. A nonexistent DST wall-clock time (the
+ * spring-forward gap) throws by default — right for validating a time a user
+ * just typed — but pattern-generated times pass `resolveGapForward` so
+ * "every Friday 2:30 AM" lands at 3:30 AM on the transition night, like
+ * common schedulers, instead of aborting materialization.
  */
-export function zonedDateTimeToDate(local: LocalDateTime, timeZone: string): Date {
+export function zonedDateTimeToDate(
+  local: LocalDateTime,
+  timeZone: string,
+  opts: { resolveGapForward?: boolean } = {},
+): Date {
   const target = Date.UTC(
     local.year,
     local.month - 1,
@@ -70,6 +78,7 @@ export function zonedDateTimeToDate(local: LocalDateTime, timeZone: string): Dat
     local.second ?? 0,
   );
   let candidate = target;
+  let afterGap: number | undefined;
   for (let i = 0; i < 4; i += 1) {
     const actual = localDateTimeParts(new Date(candidate), timeZone);
     const actualAsUtc = Date.UTC(
@@ -82,8 +91,13 @@ export function zonedDateTimeToDate(local: LocalDateTime, timeZone: string): Dat
     );
     const delta = target - actualAsUtc;
     if (delta === 0) return new Date(candidate);
+    // In a gap the iteration oscillates between an instant before the jump
+    // and one after; the one whose wall clock is past the requested time is
+    // the forward resolution.
+    if (actualAsUtc > target) afterGap = candidate;
     candidate += delta;
   }
+  if (opts.resolveGapForward && afterGap !== undefined) return new Date(afterGap);
   throw new RangeError("that local time does not exist in the selected timezone");
 }
 
@@ -133,6 +147,7 @@ export function nextOccurrences(
             minute,
           },
           pattern.timeZone,
+          { resolveGapForward: true },
         );
         if (candidate > after) out.push(candidate);
       }
@@ -155,6 +170,7 @@ export function nextOccurrences(
           minute,
         },
         pattern.timeZone,
+        { resolveGapForward: true },
       );
       if (candidate > after) out.push(candidate);
     }

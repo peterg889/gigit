@@ -44,17 +44,29 @@ describe("renderAgreement — discovery-first (payments off, the default)", () =
   });
 
 
-  it("renders show times in the venue timezone when supplied", () => {
+  it("renders show times in the venue timezone locked into the terms", () => {
     const localText = renderAgreement({
       ...base,
-      timeZone: "America/Chicago",
-      venueAddress: "123 Main St, Milwaukee, WI 53202",
+      terms: {
+        ...terms,
+        timeZone: "America/Chicago",
+        venueAddress: "123 Main St, Milwaukee, WI 53202",
+      },
     });
     expect(localText).toContain("June 30, 2026");
     expect(localText).toContain("9:00 PM CDT");
     expect(localText).toContain("11:00 PM CDT");
     expect(localText).toContain("Location: 123 Main St, Milwaukee, WI 53202");
     expect(localText).not.toContain("(UTC)");
+  });
+
+  it("renders legacy terms without the snapshot exactly as accepted: raw UTC, no location", () => {
+    // Terms locked before the venueAddress/timeZone snapshot existed must not
+    // pick up live profile data — a venue profile edit would silently rewrite
+    // the accepted text (deterministic re-render, engineering-spec K7).
+    const legacyText = renderAgreement({ ...base, templateVersion: "v1" });
+    expect(legacyText).toContain("2026-07-01T02:00:00.000Z (UTC)");
+    expect(legacyText).not.toContain("Location:");
   });
   it("still carries the deal: parties, pay, times, provided, notes", () => {
     expect(text).toContain("Lakefront Taproom");

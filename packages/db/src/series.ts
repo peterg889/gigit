@@ -175,7 +175,17 @@ export async function materializeAllActiveSeries(actor = "worker"): Promise<numb
     .from(slotSeries)
     .where(eq(slotSeries.status, "active"));
   let total = 0;
-  for (const s of active) total += await materializeSeries(s.id, actor);
+  for (const s of active) {
+    // One broken series (bad pattern, transient insert failure) must not stop
+    // the sweep — every other venue's recurring nights still materialize.
+    try {
+      total += await materializeSeries(s.id, actor);
+    } catch (err) {
+      console.error(
+        JSON.stringify({ kind: "series.materialize_failed", seriesId: s.id, err: String(err) }),
+      );
+    }
+  }
   return total;
 }
 

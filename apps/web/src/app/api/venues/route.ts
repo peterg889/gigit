@@ -20,8 +20,11 @@ export async function POST(req: Request) {
       ...profile,
       // Approximate metro coordinates preserve radius-search behavior until
       // address geocoding is added. Owners never have to enter coordinates.
-      lat: lat ?? fallback.lat,
-      lng: lng ?? fallback.lng,
+      // Metros without a known centroid store null ("location unknown") —
+      // never a fabricated point, which would hide the venue from every
+      // radius search.
+      lat: lat ?? fallback?.lat ?? null,
+      lng: lng ?? fallback?.lng ?? null,
       capacity: parsed.data.capacity ?? null,
       noiseCurfew: parsed.data.noiseCurfew ?? null,
     });
@@ -37,11 +40,11 @@ export async function POST(req: Request) {
   }
 }
 
-function metroCentroid(metro: string): { lat: number; lng: number } {
+function metroCentroid(metro: string): { lat: number; lng: number } | undefined {
   const known: Record<string, { lat: number; lng: number }> = {
     milwaukee: { lat: 43.0389, lng: -87.9065 },
     chicago: { lat: 41.8781, lng: -87.6298 },
     madison: { lat: 43.0731, lng: -89.4012 },
   };
-  return known[metro.trim().toLowerCase()] ?? { lat: 0, lng: 0 };
+  return known[metro.trim().toLowerCase()];
 }

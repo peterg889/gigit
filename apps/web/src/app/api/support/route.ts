@@ -1,5 +1,5 @@
 import { createSupportRequest, db, schema, supportTriage } from "@gigit/db";
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, gte, isNotNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { respondError } from "@/lib/auth";
 import { clientIp } from "@/lib/client-ip";
@@ -40,24 +40,25 @@ export async function POST(req: Request) {
       const d = db();
       const hourAgo = new Date(Date.now() - 3_600_000);
       const ip = clientIp(req) || "unknown";
-      const base = and(
-        eq(schema.events.kind, "support.escalated"),
-        gte(schema.events.occurredAt, hourAgo),
-        sql`${schema.events.payload}->>'requestIp' is not null`,
-      );
-      const [globalCount, ipCount] = await Promise.all([
-        d
-          .select({ n: sql<number>`count(*)::int` })
-          .from(schema.events)
-          .where(base)
-          .then((rows) => rows[0]?.n ?? 0),
-        d
-          .select({ n: sql<number>`count(*)::int` })
-          .from(schema.events)
-          .where(and(base, sql`${schema.events.payload}->>'requestIp' = ${ip}`))
-          .then((rows) => rows[0]?.n ?? 0),
-      ]);
-      if (globalCount >= PUBLIC_GLOBAL_HOURLY_CAP || ipCount >= PUBLIC_IP_HOURLY_CAP)
+      // Public submissions carry request_ip (indexed, like auth_otps_ip_idx);
+      // counting them here keeps the unbounded events audit log out of the
+      // hot path of an unauthenticated endpoint.
+      const [counts] = await d
+        .select({
+          global: sql<number>`count(*)::int`,
+          fromIp: sql<number>`count(*) filter (where ${schema.supportRequests.requestIp} = ${ip})::int`,
+        })
+        .from(schema.supportRequests)
+        .where(
+          and(
+            isNotNull(schema.supportRequests.requestIp),
+            gte(schema.supportRequests.createdAt, hourAgo),
+          ),
+        );
+      if (
+        (counts?.global ?? 0) >= PUBLIC_GLOBAL_HOURLY_CAP ||
+        (counts?.fromIp ?? 0) >= PUBLIC_IP_HOURLY_CAP
+      )
         return fail("rate_limited", "too many support requests — try again later", 429);
 
       const requestId = await createSupportRequest({

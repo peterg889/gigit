@@ -67,6 +67,21 @@ const jobToEvent: Record<
 let stopping = false;
 
 async function main() {
+  // Escalation emails throw (and eventually dead-letter) until both are set,
+  // and the CDK-provisioned AppSecrets starts with them blank — say so at boot,
+  // loudly and on every restart, instead of leaving a silent alarm to find.
+  if (env().NODE_ENV === "production" && (!env().SUPPORT_EMAIL_TO || !env().EMAIL_FROM)) {
+    log("support.email_unconfigured", {
+      severity: "error",
+      missing: [
+        ...(!env().SUPPORT_EMAIL_TO ? ["SUPPORT_EMAIL_TO"] : []),
+        ...(!env().EMAIL_FROM ? ["EMAIL_FROM"] : []),
+      ],
+      consequence:
+        "support escalations will retry and dead-letter until these are set in AppSecrets",
+    });
+  }
+
   const boss = new PgBoss(env().DATABASE_URL);
   boss.on("error", (err) => log("pgboss.error", { err: String(err) }));
   await boss.start();

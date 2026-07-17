@@ -448,10 +448,8 @@ export default async function BookingPage({
         <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.85rem" }}>
           {renderAgreement({
             venueName: row.venueName,
-            venueAddress,
             performerName: row.performerName,
             terms: b.terms,
-            timeZone: dealTimeZone,
             paymentsEnabled: paymentsEnabled(),
             templateVersion: b.agreementTemplateVer,
           })}

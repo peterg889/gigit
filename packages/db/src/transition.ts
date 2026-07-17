@@ -211,7 +211,9 @@ export async function runBookingTransition(
         // The collapsing offer left this performer's application frozen in
         // 'offered' (createOffer set it). Venue withdrawal/expiry returns it
         // to submitted so the offer can be retried; a performer decline closes
-        // their own application as withdrawn.
+        // their own application as withdrawn — re-applying to the reopened
+        // slot revives it (the apply route flips withdrawn back to submitted),
+        // so the pairing is never permanently locked out.
         await tx
           .update(applications)
           .set({

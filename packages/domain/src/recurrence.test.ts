@@ -93,6 +93,26 @@ describe("venue-local recurrence through DST", () => {
     ]);
   });
 
+  it("resolves a nonexistent spring-forward time past the gap instead of throwing", () => {
+    // 2:30 AM does not exist on 2026-03-08 in Chicago (clocks jump 2→3 AM).
+    // A throw here once aborted materialization for every series platform-wide.
+    const occ = nextOccurrences(
+      {
+        freq: "weekly",
+        dayOfWeek: 0,
+        startTimeLocal: "02:30",
+        timeZone: "America/Chicago",
+        durationMinutes: 60,
+      },
+      new Date("2026-03-02T00:00:00Z"),
+      2,
+    );
+    expect(occ.map((d) => d.toISOString())).toEqual([
+      "2026-03-08T08:30:00.000Z", // the gap night lands at 3:30 AM CDT
+      "2026-03-15T07:30:00.000Z", // and the series returns to 2:30 AM after
+    ]);
+  });
+
   it("continues to materialize legacy UTC patterns", () => {
     const occ = nextOccurrences(
       { freq: "weekly", dayOfWeek: 5, startTimeUtc: "20:00", durationMinutes: 60 },

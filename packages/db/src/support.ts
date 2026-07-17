@@ -42,6 +42,7 @@ export async function createSupportRequest(
       category: input.category,
       escalationReason: input.escalationReason,
       message: input.message,
+      requestIp: input.requestIp ?? null,
     });
     await appendEvent(tx, {
       actor: input.requesterUserId ?? "anonymous",

@@ -1,6 +1,6 @@
 import { applicationCreateSchema, newId } from "@gigit/domain";
 import { appendEvent, db, pgErrorCode, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
@@ -22,7 +22,7 @@ export async function POST(req: Request, { params }: Params) {
     const parsed = await parseBody(req, applicationCreateSchema);
     if ("response" in parsed) return parsed.response;
 
-    const id = newId("application");
+    let id: string = newId("application");
     try {
       await d.insert(schema.applications).values({
         id,
@@ -32,9 +32,24 @@ export async function POST(req: Request, { params }: Params) {
       });
     } catch (err) {
       // constraint name is on the wrapped cause; match SQLSTATE 23505 instead
-      if (pgErrorCode(err) === "23505")
+      if (pgErrorCode(err) !== "23505") throw err;
+      // A withdrawn application (performer declined an offer, or withdrew)
+      // must not lock the pairing out of a reopened slot forever: re-applying
+      // revives it. Anything else on file is a real duplicate.
+      const revived = await d
+        .update(schema.applications)
+        .set({ status: "submitted", note: parsed.data.note ?? null })
+        .where(
+          and(
+            eq(schema.applications.slotId, slotId),
+            eq(schema.applications.performerId, performer.id),
+            eq(schema.applications.status, "withdrawn"),
+          ),
+        )
+        .returning({ id: schema.applications.id });
+      if (revived.length === 0)
         return fail("conflict", "you already applied to this slot", 409);
-      throw err;
+      id = revived[0]!.id;
     }
     await appendEvent(d, {
       actor: userId,

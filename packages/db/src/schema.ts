@@ -128,8 +128,10 @@ export const venues = pgTable("venues", {
   region: text("region").notNull().default(""),
   postalCode: text("postal_code").notNull().default(""),
   timeZone: text("time_zone").notNull().default("UTC"),
-  lat: doublePrecision("lat").notNull(),
-  lng: doublePrecision("lng").notNull(),
+  // Null when the metro has no known centroid and no geocoder has run yet;
+  // discovery must treat "location unknown" as visible, never as excluded.
+  lat: doublePrecision("lat"),
+  lng: doublePrecision("lng"),
   capacity: integer("capacity"),
   paInventory: jsonb("pa_inventory")
     .$type<{
@@ -415,6 +417,7 @@ export const supportRequests = pgTable(
     category: text("category").notNull().default("other"),
     escalationReason: text("escalation_reason").notNull(), // anonymous | explicit | triage | triage_error | legacy
     message: text("message").notNull(),
+    requestIp: text("request_ip"), // set for public (signed-out) submissions; drives their rate limit
     status: text("status").notNull().default("open"), // open | resolved
     claimedByUserId: text("claimed_by_user_id").references(() => users.id),
     claimedAt: ts("claimed_at"),
@@ -425,6 +428,8 @@ export const supportRequests = pgTable(
   (t) => [
     index("support_requests_queue_idx").on(t.status, t.createdAt),
     index("support_requests_requester_idx").on(t.requesterUserId, t.createdAt),
+    index("support_requests_ip_idx").on(t.requestIp, t.createdAt),
+    index("support_requests_created_idx").on(t.createdAt),
   ],
 );
 

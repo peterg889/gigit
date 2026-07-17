@@ -66,11 +66,15 @@ export async function GET(req: Request) {
   if (format) conditions.push(eq(schema.slots.format, format));
   if (metro) conditions.push(eq(schema.slots.metro, metro));
   if (minBudget > 0) conditions.push(gte(schema.slots.budgetCents, minBudget));
+  // Venues without coordinates (metro has no known centroid, no geocoder yet)
+  // stay visible under a radius filter — hiding them would blank the venue out
+  // of discovery entirely; the metro label lets the performer judge distance.
   if (Number.isFinite(lat) && Number.isFinite(lng) && radiusKm > 0)
     conditions.push(
-      sql`6371 * acos(least(1, cos(radians(${lat})) * cos(radians(${schema.venues.lat}))
+      sql`(${schema.venues.lat} is null or ${schema.venues.lng} is null
+          or 6371 * acos(least(1, cos(radians(${lat})) * cos(radians(${schema.venues.lat}))
           * cos(radians(${schema.venues.lng}) - radians(${lng}))
-          + sin(radians(${lat})) * sin(radians(${schema.venues.lat})))) <= ${radiusKm}`,
+          + sin(radians(${lat})) * sin(radians(${schema.venues.lat})))) <= ${radiusKm})`,
     );
 
   const rows = await db()

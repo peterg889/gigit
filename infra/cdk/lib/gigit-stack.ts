@@ -152,6 +152,11 @@ export class GigitStack extends cdk.Stack {
         DATABASE_URL: databaseUrl,
         SESSION_SECRET: sessionSecret.secretValue,
         EMAIL_FROM: emptySecretValue(),
+        // SUPPORT_EMAIL_TO is deliberately NOT seeded here: adding a key to
+        // secretObjectValue rewrites the deployed secret to template values on
+        // the next stack update, clobbering operator-set entries. Operators add
+        // it by hand (scripts/deploy.sh prints the instruction); the worker
+        // logs support.email_unconfigured at boot until both email vars exist.
         PAYMENTS_ENABLED: cdk.SecretValue.unsafePlainText("false"),
         STRIPE_SECRET_KEY: emptySecretValue(),
         STRIPE_WEBHOOK_SECRET: emptySecretValue(),
