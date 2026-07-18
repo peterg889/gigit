@@ -188,6 +188,9 @@ export class GigitStack extends cdk.Stack {
       S3_BUCKET: media.bucketName,
       AWS_REGION: this.region,
       MEDIA_CDN_URL: `https://${cdn.distributionDomainName}`,
+      // Presence tells the worker it is on AWS and doubles as the metric
+      // dimension, keeping staging and prod outbox metrics separate.
+      GIGIT_STAGE: props.stage,
     };
 
     // ── one EC2 host: web + worker containers (K11) ────────────────────────
@@ -203,6 +206,13 @@ export class GigitStack extends cdk.Stack {
     appSecrets.grantRead(hostRole);
     hostRole.addToPolicy(
       new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] }),
+    );
+    hostRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["cloudwatch:PutMetricData"],
+        resources: ["*"],
+        conditions: { StringEquals: { "cloudwatch:namespace": "Gigit" } },
+      }),
     );
 
     // ECR registry host is token-safe; deployment selects immutable image tags.
@@ -483,6 +493,29 @@ export class GigitStack extends cdk.Stack {
       { comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD },
     );
 
+
+    // Worker-emitted outbox health (reconcile loop, every 10 min). Missing
+    // data is NOT breaching: the metric stops flowing when the worker is down,
+    // and the host/ALB alarms already page for that.
+    const outboxMetric = (metricName: string) =>
+      new cloudwatch.Metric({
+        namespace: "Gigit",
+        metricName,
+        dimensionsMap: { Stage: props.stage },
+        statistic: "Maximum",
+        period: cdk.Duration.minutes(15),
+      });
+    alarm("OutboxDeadLetterAlarm", outboxMetric("DeadLetteredEvents"), 1, {
+      comparisonOperator:
+        cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+    alarm("OutboxLagAlarm", outboxMetric("OutboxLagMs"), 10 * 60_000, {
+      comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
 
     alarm(
       "AlbUnhealthyAlarm",

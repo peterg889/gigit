@@ -24,6 +24,7 @@ import {
 } from "@gigit/db";
 import type { BookingEvent, Effect } from "@gigit/domain";
 import PgBoss from "pg-boss";
+import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
 import * as Sentry from "@sentry/node";
 import {
   notifyBookingParties,
@@ -516,12 +517,43 @@ async function reconcileLoop(boss: PgBoss) {
         log("outbox.DEAD_LETTERS", { count: dead });
         Sentry.captureMessage(`outbox has ${dead} dead-lettered event(s)`, "error");
       }
+      await emitOutboxMetrics(lag, dead);
     } catch {
       /* health check must never kill the loop */
     }
     await sleep(10 * 60 * 1000);
   }
   void boss; // boss reserved for future reconcile-time re-arming of far-future timers
+}
+
+// On AWS (GIGIT_STAGE is set by the stack) the outbox health numbers become
+// CloudWatch metrics so the stack can PAGE on dead letters and sustained lag —
+// a parked support escalation must not depend on someone reading logs.
+let cloudwatch: CloudWatchClient | undefined;
+async function emitOutboxMetrics(lagMs: number, deadLettered: number): Promise<void> {
+  const stage = process.env.GIGIT_STAGE;
+  if (!stage) return;
+  cloudwatch ??= new CloudWatchClient({});
+  const dimensions = [{ Name: "Stage", Value: stage }];
+  await cloudwatch.send(
+    new PutMetricDataCommand({
+      Namespace: "Gigit",
+      MetricData: [
+        {
+          MetricName: "OutboxLagMs",
+          Value: lagMs,
+          Unit: "Milliseconds",
+          Dimensions: dimensions,
+        },
+        {
+          MetricName: "DeadLetteredEvents",
+          Value: deadLettered,
+          Unit: "Count",
+          Dimensions: dimensions,
+        },
+      ],
+    }),
+  );
 }
 
 function log(kind: string, data: Record<string, unknown>) {
