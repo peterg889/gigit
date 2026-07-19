@@ -41,6 +41,10 @@ export async function POST(req: Request) {
 
   const byField = phone ? schema.users.phone : schema.users.email;
   let [user] = await d.select().from(schema.users).where(eq(byField, destination));
+  // Suspended accounts keep their identifiers, so say it at the door instead
+  // of handing out a session that 403s on every route (requireUser gates too).
+  if (user?.status === "suspended")
+    return fail("suspended", "This account is suspended. Contact support.", 403);
   if (!user) {
     const id = newId("user");
     [user] = await d
