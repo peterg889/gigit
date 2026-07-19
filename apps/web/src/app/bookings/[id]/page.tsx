@@ -16,48 +16,14 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const BOOKING_STATE_LABELS: Record<string, string> = {
-  offered: "Offer awaiting response",
-  confirming: "Confirming booking",
-  confirmed: "Confirmed",
-  awaiting_confirmation: "Gig played — awaiting confirmation",
-  released: "Completed",
-  collapsed: "Offer closed",
-  disputed: "Under review",
-  cancelled_by_venue: "Cancelled by venue",
-  cancelled_by_performer: "Cancelled by act",
-  refunded: "Cancelled and refunded",
-  partially_released: "Resolved",
-};
-
-const SOUND_STATE_LABELS: Record<string, string> = {
-  open: "Open",
-  booked: "Tech booked",
-  released: "Completed",
-  cancelled_by_payer: "Cancelled",
-  cancelled_with_parent: "Cancelled with gig",
-};
-
-const SOUND_APPLICATION_LABELS: Record<string, string> = {
-  submitted: "Application received",
-  booked: "Booked",
-  declined: "Not selected",
-};
-
-const GEAR_LABELS: Record<string, string> = {
-  none: "Labor only",
-  partial: "Partial rig",
-  full_rig: "Full PA rig",
-};
-
-const PARTY_LABELS: Record<string, string> = {
-  venue: "venue",
-  performer: "act",
-};
-
-function friendlyLabel(labels: Record<string, string>, value: string) {
-  return labels[value] ?? value.replaceAll("_", " ");
-}
+import {
+  BOOKING_STATE_LABELS,
+  GEAR_LABELS,
+  PARTY_LABELS,
+  SOUND_APPLICATION_LABELS_REVIEW,
+  SOUND_STATE_LABELS,
+  friendlyLabel,
+} from "@/lib/labels";
 
 export default async function BookingPage({
   params,
@@ -347,7 +313,7 @@ export default async function BookingPage({
               <strong>{tech.name}</strong>{" "}
               <span className="badge">{friendlyLabel(GEAR_LABELS, tech.gear)}</span>{" "}
               <span className="badge">
-                {friendlyLabel(SOUND_APPLICATION_LABELS, application.status)}
+                {friendlyLabel(SOUND_APPLICATION_LABELS_REVIEW, application.status)}
               </span>
               {application.note && <span className="muted"> / “{application.note}”</span>}{" "}
               {amPayer && activeSubslot.state === "open" && application.status === "submitted" && (

@@ -14,37 +14,14 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const SLOT_STATUS_LABELS: Record<string, string> = {
-  draft: "Not yet open",
-  open: "Open gig",
-  filled: "Booked",
-  expired: "Date passed",
-  cancelled: "Cancelled",
-};
+import {
+  ACT_KIND_LABEL,
+  APPLICATION_STATUS_LABELS,
+  GIG_FORMAT_LABEL,
+  SLOT_STATUS_LABELS,
+  friendlyLabel,
+} from "@/lib/labels";
 
-const APPLICATION_STATUS_LABELS: Record<string, string> = {
-  submitted: "Pending",
-  withdrawn: "Withdrawn",
-  declined: "Not selected",
-  offered: "Offer sent",
-};
-
-const GIG_FORMAT_LABEL: Record<string, string> = {
-  music: "Live music",
-  comedy: "Comedy",
-  either: "Music or comedy",
-};
-
-const ACT_KIND_LABEL: Record<string, string> = {
-  band: "Band",
-  solo: "Solo act",
-  comedian: "Comedian",
-  other: "Other act",
-};
-
-function friendlyLabel(labels: Record<string, string>, value: string) {
-  return labels[value] ?? value.replaceAll("_", " ");
-}
 
 export default async function SlotPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;

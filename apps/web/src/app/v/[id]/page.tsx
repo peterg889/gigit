@@ -8,19 +8,7 @@ import { formatAddress, formatVenueDateTime, shortTimeZoneName } from "@/lib/dat
 
 export const dynamic = "force-dynamic";
 
-const VENUE_KIND_LABEL: Record<string, string> = {
-  bar: "Bar",
-  restaurant: "Restaurant",
-  coffee_shop: "Coffee shop",
-  brewery: "Brewery",
-  other: "Other venue",
-};
-
-const GIG_FORMAT_LABEL: Record<string, string> = {
-  music: "Live music",
-  comedy: "Comedy",
-  either: "Music or comedy",
-};
+import { GIG_FORMAT_LABEL, VENUE_KIND_LABEL } from "@/lib/labels";
 
 /** Public venue page: room, PA inventory, photos, open slots. */
 export default async function VenuePage({

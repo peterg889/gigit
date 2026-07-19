@@ -8,37 +8,12 @@ import { formatVenueDateTime, shortTimeZoneName } from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
 
-const BOOKING_STATE_LABELS: Record<string, string> = {
-  offered: "Offer awaiting response",
-  confirming: "Confirming booking",
-  confirmed: "Confirmed",
-  awaiting_confirmation: "Gig played — awaiting confirmation",
-  released: "Completed",
-  collapsed: "Offer closed",
-  disputed: "Under review",
-  cancelled_by_venue: "Cancelled by venue",
-  cancelled_by_performer: "Cancelled by act",
-  refunded: "Cancelled and refunded",
-  partially_released: "Resolved",
-};
-
-const SOUND_STATE_LABELS: Record<string, string> = {
-  open: "Open",
-  booked: "Tech booked",
-  released: "Completed",
-  cancelled_by_payer: "Cancelled",
-  cancelled_with_parent: "Cancelled with gig",
-};
-
-const SOUND_APPLICATION_LABELS: Record<string, string> = {
-  submitted: "Application sent",
-  booked: "Booked",
-  declined: "Not selected",
-};
-
-function friendlyLabel(labels: Record<string, string>, value: string) {
-  return labels[value] ?? value.replaceAll("_", " ");
-}
+import {
+  BOOKING_STATE_LABELS,
+  SOUND_APPLICATION_LABELS_OWN,
+  SOUND_STATE_LABELS,
+  friendlyLabel,
+} from "@/lib/labels";
 
 export default async function BookingsPage() {
   const userId = await sessionUserId();
@@ -165,7 +140,7 @@ export default async function BookingsPage() {
                 <span className="badge">
                   {subslot.techId === tech?.id
                     ? friendlyLabel(SOUND_STATE_LABELS, subslot.state)
-                    : friendlyLabel(SOUND_APPLICATION_LABELS, application.status)}
+                    : friendlyLabel(SOUND_APPLICATION_LABELS_OWN, application.status)}
                 </span>
               </div>
               <div className="muted">

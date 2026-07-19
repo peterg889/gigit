@@ -12,19 +12,7 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const GIG_FORMAT_LABEL: Record<string, string> = {
-  music: "Live music",
-  comedy: "Comedy",
-  either: "Music or comedy",
-};
-
-const VENUE_KIND_LABEL: Record<string, string> = {
-  bar: "Bar",
-  restaurant: "Restaurant",
-  coffee_shop: "Coffee shop",
-  brewery: "Brewery",
-  other: "Other venue",
-};
+import { GIG_FORMAT_LABEL, VENUE_KIND_LABEL } from "@/lib/labels";
 
 function formatAreaName(value: string) {
   return value.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase("en-US"));

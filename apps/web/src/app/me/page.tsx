@@ -21,13 +21,7 @@ const ACT_KIND_LABEL: Record<string, string> = {
   other: "Other",
 };
 
-const VENUE_KIND_LABEL: Record<string, string> = {
-  bar: "Bar",
-  restaurant: "Restaurant",
-  coffee_shop: "Coffee shop",
-  brewery: "Brewery",
-  other: "Other",
-};
+import { VENUE_KIND_LABEL } from "@/lib/labels";
 
 const GEAR_LABEL: Record<string, string> = {
   none: "Labor only — no rig",
