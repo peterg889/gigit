@@ -19,7 +19,7 @@ const verify = (body: Record<string, unknown>) =>
 
 async function seedOtp(destination: string, code = "123456", opts: Partial<{ attempts: number; expired: boolean }> = {}) {
   await db().insert(schema.authOtps).values({
-    id: newId("otp"),
+    id: `otp_${newId("user")}`,
     destination,
     code,
     attempts: opts.attempts ?? 0,
