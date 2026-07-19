@@ -89,15 +89,44 @@ export default async function BookingPage({
   const acceptConfirmation =
     `Accept this firm offer? ${row.performerName} at ${row.venueName} / ${offerDateTime} / ${venueAddress} / $${(b.terms.amountCents / 100).toFixed(0)}. This creates a binding booking.`;
 
-  // Recurring-series re-book (PRD F2.2): one-tap re-offer of this act into the
-  // next open series night, at the same pay — the residency anti-leakage hook.
-  const rebookTarget = asVenue ? await findRebookTarget(id) : null;
+  // Contact reveal at confirmation (PRD F5.1): day-of phones, not before.
+  const contactsRevealed = state === "confirmed" || state === "awaiting_confirmation";
 
-  // Tech sub-slots on this booking (PRD F6.2/F6.3)
-  const subslots = await d
-    .select()
-    .from(schema.techSubslots)
-    .where(eq(schema.techSubslots.bookingId, id));
+  // These reads are independent of one another — one round-trip of latency,
+  // not five, on the busiest page in the product.
+  const [rebookTarget, subslots, venueOwner, performerOwner, myReview] =
+    await Promise.all([
+      // Recurring-series re-book (PRD F2.2): one-tap re-offer of this act into
+      // the next open series night, at the same pay — the residency
+      // anti-leakage hook.
+      asVenue ? findRebookTarget(id) : Promise.resolve(null),
+      // Tech sub-slots on this booking (PRD F6.2/F6.3)
+      d.select().from(schema.techSubslots).where(eq(schema.techSubslots.bookingId, id)),
+      contactsRevealed
+        ? d
+            .select({ phone: schema.users.phone, email: schema.users.email })
+            .from(schema.venues)
+            .innerJoin(schema.users, eq(schema.venues.ownerUserId, schema.users.id))
+            .where(eq(schema.venues.id, b.venueId))
+            .then((r) => r[0])
+        : Promise.resolve(undefined),
+      contactsRevealed
+        ? d
+            .select({ phone: schema.users.phone, email: schema.users.email })
+            .from(schema.performers)
+            .innerJoin(schema.users, eq(schema.performers.ownerUserId, schema.users.id))
+            .where(eq(schema.performers.id, b.performerId))
+            .then((r) => r[0])
+        : Promise.resolve(undefined),
+      d
+        .select()
+        .from(schema.reviews)
+        .where(
+          and(eq(schema.reviews.bookingId, id), eq(schema.reviews.authorRole, myRole)),
+        )
+        .then((r) => r[0]),
+    ]);
+
   const activeSubslot = subslots.find((s) => s.state === "open" || s.state === "booked");
   const subslotApplicants = activeSubslot
     ? await d
@@ -116,20 +145,8 @@ export default async function BookingPage({
     activeSubslot &&
     (activeSubslot.payer === "venue" ? asVenue : asPerformer);
 
-  // Contact reveal at confirmation (PRD F5.1): day-of phones, not before.
-  const contactsRevealed = state === "confirmed" || state === "awaiting_confirmation";
   let contacts: { role: string; name: string; phone: string | null; email: string | null }[] = [];
   if (contactsRevealed) {
-    const [venueOwner] = await d
-      .select({ phone: schema.users.phone, email: schema.users.email })
-      .from(schema.venues)
-      .innerJoin(schema.users, eq(schema.venues.ownerUserId, schema.users.id))
-      .where(eq(schema.venues.id, b.venueId));
-    const [performerOwner] = await d
-      .select({ phone: schema.users.phone, email: schema.users.email })
-      .from(schema.performers)
-      .innerJoin(schema.users, eq(schema.performers.ownerUserId, schema.users.id))
-      .where(eq(schema.performers.id, b.performerId));
     contacts = [
       {
         role: "Venue",
@@ -145,13 +162,6 @@ export default async function BookingPage({
       },
     ];
   }
-  const [myReview] = await d
-    .select()
-    .from(schema.reviews)
-    .where(
-      and(eq(schema.reviews.bookingId, id), eq(schema.reviews.authorRole, myRole)),
-    );
-
   return (
     <div>
       <div className="card">
