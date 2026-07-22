@@ -369,7 +369,8 @@ export class GigitStack extends cdk.Stack {
         })
       : undefined;
 
-    const webCdn = new cloudfront.Distribution(this, "WebCdn", {
+    const webCdn = enableCdn
+      ? new cloudfront.Distribution(this, "WebCdn", {
       certificate: webCertificate,
       domainNames: props.domainName ? [props.domainName] : undefined,
       minimumProtocolVersion: webCertificate
@@ -387,26 +388,41 @@ export class GigitStack extends cdk.Stack {
         originRequestPolicy:
           cloudfront.OriginRequestPolicy.ALL_VIEWER_AND_CLOUDFRONT_2022,
         viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        compress: true,
-      },
-    });
+            compress: true,
+          },
+        })
+      : undefined;
+    if (!webCdn && webCertificate) {
+      // CDN-less mode (account verification pending): terminate TLS at the ALB
+      // with the same certificate and serve directly. When the CDN comes back,
+      // the alias flips to CloudFront and this listener simply goes unused.
+      alb.addListener("Https", {
+        port: 443,
+        open: true,
+        certificates: [webCertificate],
+        defaultAction: elbv2.ListenerAction.forward([webTargets]),
+      });
+    }
     if (props.domainName && webHostedZone) {
+      const aliasTarget = webCdn
+        ? route53.RecordTarget.fromAlias(new route53Targets.CloudFrontTarget(webCdn))
+        : route53.RecordTarget.fromAlias(new route53Targets.LoadBalancerTarget(alb));
       new route53.ARecord(this, "WebAliasIpv4", {
         zone: webHostedZone,
         recordName: props.domainName,
-        target: route53.RecordTarget.fromAlias(
-          new route53Targets.CloudFrontTarget(webCdn),
-        ),
+        target: aliasTarget,
       });
       new route53.AaaaRecord(this, "WebAliasIpv6", {
         zone: webHostedZone,
         recordName: props.domainName,
-        target: route53.RecordTarget.fromAlias(
-          new route53Targets.CloudFrontTarget(webCdn),
-        ),
+        target: aliasTarget,
       });
     }
-    const webUrl = publicAppUrl ?? `https://${webCdn.distributionDomainName}`;
+    const webUrl =
+      publicAppUrl ??
+      (webCdn
+        ? `https://${webCdn.distributionDomainName}`
+        : `https://${alb.loadBalancerDnsName}`);
 
     const imageTag = String(
       this.node.tryGetContext("imageTag") ?? "initial",
