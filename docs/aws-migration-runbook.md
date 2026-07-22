@@ -68,7 +68,9 @@ old `eightgig.com` zone (only after the NS flip). Explicitly NOT touched:
 
 ## Final configuration (new account)
 
-- [x] Staging AppSecrets: EMAIL_FROM/SUPPORT_EMAIL_TO/APP_URL injected automatically at stack creation (2026-07-22)
+- [ ] Staging AppSecrets: EMAIL_FROM/SUPPORT_EMAIL_TO/APP_URL — the injection
+  watcher worked on 2026-07-22 but that stack rolled back (EC2 block), taking
+  the secret with it; Claude re-arms the watcher on the next deploy
 - [ ] Prod AppSecrets: same keys with `APP_URL=https://eightgig.com` (Claude injects at prod stack creation)
 - [ ] Subscribe mythander889@gmail.com to the new account's OpsAlerts SNS topic (+ click the confirmation)
 - [ ] **Rotate the `claude-keys` access keys** (they passed through a chat session)
