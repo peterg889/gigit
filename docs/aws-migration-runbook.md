@@ -26,9 +26,18 @@ lands._
 - [ ] CloudFront account verification — **the redeploy blocker**. When the email arrives, tell Claude **"go"**.
 - [ ] SES production access — until granted, sign-in emails only reach verified addresses (pilot blocker, not deploy blocker).
 
+## Domain layout (decided 2026-07-22)
+
+- **eightgig.com (apex) = production** — the beta launch URL. `GigitProd` now
+  carries `domainName: eightgig.com`.
+- **staging.eightgig.com = internal testing only.**
+
 ## On "go" — Claude runs
 
 1. `AWS_PROFILE=eightgig ./scripts/deploy.sh staging` (~10 min: images already pushed, cert validates instantly)
+1b. `AWS_PROFILE=eightgig ./scripts/deploy.sh prod` — production at the apex
+    (needs `GigitBootstrap-prod` first, which the script deploys; prod
+    AppSecrets get `APP_URL=https://eightgig.com`)
 2. Mirror `staging.eightgig.com` → new ALB CNAME into the old zone (site works before the DNS flip)
 3. Rewire CI: `AWS_DEPLOY_ROLE_ARN` → `arn:aws:iam::200790771428:role/gigit-deploy-staging`, re-enable `DEPLOY_ENABLED`
 4. Verify health + alarms in the new account
@@ -59,7 +68,8 @@ old `eightgig.com` zone (only after the NS flip). Explicitly NOT touched:
 
 ## Final configuration (new account)
 
-- [ ] AppSecrets: `EMAIL_FROM=hello@eightgig.com`, `SUPPORT_EMAIL_TO=mythander889@gmail.com`, `APP_URL=https://staging.eightgig.com` (console — set AFTER the new stack exists; the worker logs `support.email_unconfigured` until then)
+- [x] Staging AppSecrets: EMAIL_FROM/SUPPORT_EMAIL_TO/APP_URL injected automatically at stack creation (2026-07-22)
+- [ ] Prod AppSecrets: same keys with `APP_URL=https://eightgig.com` (Claude injects at prod stack creation)
 - [ ] Subscribe mythander889@gmail.com to the new account's OpsAlerts SNS topic (+ click the confirmation)
 - [ ] **Rotate the `claude-keys` access keys** (they passed through a chat session)
 

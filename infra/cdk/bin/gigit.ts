@@ -44,10 +44,12 @@ new GigitStack(app, "GigitStaging", {
   domainName: process.env.STAGING_DOMAIN_NAME ?? "staging.eightgig.com",
   hostedZoneName: process.env.STAGING_HOSTED_ZONE ?? "eightgig.com",
 });
-// Production lives in a separate AWS account (engineering-spec K11):
-// CDK_ACCOUNT/CDK_REGION select it via the deploy role.
+// Production serves the apex: eightgig.com IS the product (the landing page
+// is the app's front door). staging.eightgig.com stays internal-only.
 new GigitStack(app, "GigitProd", {
   env,
   synthesizer: directSynthesizer(),
   stage: "prod",
+  domainName: process.env.PROD_DOMAIN_NAME ?? "eightgig.com",
+  hostedZoneName: process.env.PROD_HOSTED_ZONE ?? "eightgig.com",
 });
