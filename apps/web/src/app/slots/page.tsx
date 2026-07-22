@@ -70,45 +70,6 @@ export default async function FeedPage() {
           )}
         </div>
       )}
-      {performer && (
-        <div className="card">
-          <h2>Gig alerts</h2>
-          {searches.length === 0 ? (
-            <p className="muted">
-              Save a search and we&apos;ll notify you when a matching gig is posted.
-              Leave a field blank to match anything.
-            </p>
-          ) : (
-            searches.map((s) => (
-              <p key={s.id}>
-                <span className="badge">
-                  {s.format ? GIG_FORMAT_LABEL[s.format] ?? s.format : "Any format"}
-                </span>{" "}
-                <span className="badge">
-                  {s.metro ? formatAreaName(s.metro) : "Any city or area"}
-                </span>{" "}
-                {s.minBudgetCents != null && (
-                  <span className="money">${(s.minBudgetCents / 100).toFixed(0)}+</span>
-                )}{" "}
-                <ActionButton
-                  endpoint={`/api/saved-searches/${s.id}`}
-                  label="Remove"
-                  method="DELETE"
-                />
-              </p>
-            ))
-          )}
-          <ApiForm
-            endpoint="/api/saved-searches"
-            submitLabel="Save alert"
-            fields={[
-              { name: "format", label: "Format", type: "select", options: ["", "music", "comedy", "either"] },
-              { name: "metro", label: "City or metro area", placeholder: "e.g. Milwaukee" },
-              { name: "minBudgetCents", label: "Minimum pay (USD)", type: "number", placeholder: "200" },
-            ]}
-          />
-        </div>
-      )}
       {rows.map(({
         slot,
         venueName,
@@ -147,6 +108,45 @@ export default async function FeedPage() {
           {slot.notes && <div className="muted">{slot.notes}</div>}
         </div>
       ))}
+      {performer && (
+        <div className="card">
+          <h2>Gig alerts</h2>
+          {searches.length === 0 ? (
+            <p className="muted">
+              Save a search and we&apos;ll notify you when a matching gig is posted.
+              Leave a field blank to match anything.
+            </p>
+          ) : (
+            searches.map((s) => (
+              <p key={s.id}>
+                <span className="badge">
+                  {s.format ? GIG_FORMAT_LABEL[s.format] ?? s.format : "Any format"}
+                </span>{" "}
+                <span className="badge">
+                  {s.metro ? formatAreaName(s.metro) : "Any city or area"}
+                </span>{" "}
+                {s.minBudgetCents != null && (
+                  <span className="money">${(s.minBudgetCents / 100).toFixed(0)}+</span>
+                )}{" "}
+                <ActionButton
+                  endpoint={`/api/saved-searches/${s.id}`}
+                  label="Remove" variant="quiet"
+                  method="DELETE"
+                />
+              </p>
+            ))
+          )}
+          <ApiForm
+            endpoint="/api/saved-searches"
+            submitLabel="Save alert"
+            fields={[
+              { name: "format", label: "Format", type: "select", options: ["", "music", "comedy", "either"] },
+              { name: "metro", label: "City or metro area", placeholder: "e.g. Milwaukee" },
+              { name: "minBudgetCents", label: "Minimum pay (USD)", type: "number", placeholder: "200" },
+            ]}
+          />
+        </div>
+      )}
     </div>
   );
 }

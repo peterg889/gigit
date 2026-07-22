@@ -265,12 +265,15 @@ export function ActionButton({
   body,
   method = "POST",
   confirm,
+  variant,
 }: {
   endpoint: string;
   label: string;
   body?: Record<string, unknown>;
   method?: "POST" | "DELETE";
   confirm?: string; // when set, ask before firing (irreversible actions)
+  /** "quiet" for destructive/secondary actions so they don't read as the next step. */
+  variant?: "quiet";
 }) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -278,6 +281,7 @@ export function ActionButton({
   return (
     <span>
       <button
+        className={variant}
         disabled={busy}
         onClick={async () => {
           if (confirm && !window.confirm(confirm)) return;

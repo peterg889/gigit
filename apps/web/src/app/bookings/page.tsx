@@ -85,7 +85,6 @@ export default async function BookingsPage() {
       )}
       {rows.map(({ booking, performerName, venueName, venueTimeZone }) => {
         const mineAsPerformer = performer?.id === booking.performerId;
-        const cancellable = ["confirmed"].includes(booking.state);
         return (
           <div className="card" key={booking.id}>
             <div>
@@ -114,16 +113,17 @@ export default async function BookingsPage() {
                 </Link>
               </p>
             )}{" "}
-            {cancellable && (
-              <ActionButton
-                endpoint={`/api/bookings/${booking.id}/cancel`}
-                label="Cancel booking"
-                confirm={
-                  mineAsPerformer
-                    ? "Cancel this booking? The venue will reopen the date, and this cancellation counts against your reliability."
-                    : "Cancel this booking? The date will reopen. Settle anything already arranged with the act directly."
-                }
-              />
+            {/* The list's job is getting people INTO the booking — the deal,
+                contacts, and day-of details. Cancellation lives on the booking
+                page where the full picture (and the warning copy) is. */}
+            {booking.state !== "offered" && (
+              <p>
+                <Link href={`/bookings/${booking.id}`}>
+                  {booking.state === "confirmed"
+                    ? "View booking — the deal, contacts, and day-of details"
+                    : "View booking"}
+                </Link>
+              </p>
             )}
           </div>
         );

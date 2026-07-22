@@ -200,7 +200,7 @@ export default async function BookingPage({
           {state === "offered" && asVenue && (
             <ActionButton
               endpoint={`/api/bookings/${id}/cancel`}
-              label="Withdraw firm offer"
+              label="Withdraw firm offer" variant="quiet"
               confirm="Withdraw this firm offer? The act will be notified and you can then offer the date to someone else."
             />
           )}{" "}
@@ -208,7 +208,7 @@ export default async function BookingPage({
             <>
               <ActionButton
                 endpoint={`/api/bookings/${id}/cancel`}
-                label="Cancel booking"
+                label="Cancel booking" variant="quiet"
                 confirm={
                   asVenue
                     ? "Cancel this booking? The date reopens. " +
@@ -349,7 +349,7 @@ export default async function BookingPage({
           {amPayer && (
             <ActionButton
               endpoint={`/api/tech-subslots/${activeSubslot.id}/cancel`}
-              label="Cancel sound job"
+              label="Cancel sound job" variant="quiet"
               confirm="Cancel this sound job? Any booked tech will be notified and the listing will close."
             />
           )}
@@ -451,7 +451,7 @@ export default async function BookingPage({
             />{" "}
             <ActionButton
               endpoint={`/api/bookings/${id}/cancel`}
-              label="Decline this offer"
+              label="Decline this offer" variant="quiet"
               confirm="Decline this firm offer? The venue will be notified and can offer the date to another act."
             />
           </div>

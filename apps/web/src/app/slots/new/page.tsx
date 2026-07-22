@@ -44,7 +44,7 @@ export default async function NewSlotPage() {
         dateTimeZone={venue.timeZone}
         fields={[
           { name: "startsAt", label: "Date & start time", type: "datetime-local", required: true },
-          { name: "durationMinutes", label: "Duration (minutes)", type: "number", required: true },
+          { name: "durationMinutes", label: "Duration (minutes)", type: "number", required: true, placeholder: "120" },
           { name: "format", label: "Format", type: "select", options: ["music", "comedy", "either"], required: true },
           { name: "budgetCents", label: "Budget (USD)", type: "number", required: true, placeholder: "500" },
           { name: "notes", label: "About the night (vibe, load-in, parking)", type: "textarea" },
@@ -67,7 +67,7 @@ export default async function NewSlotPage() {
         fields={[
           { name: "startsAt", label: "First night — date & start time", type: "datetime-local", required: true },
           { name: "freq", label: "Repeats", type: "select", options: ["weekly", "monthly_dow"], required: true },
-          { name: "durationMinutes", label: "Duration (minutes)", type: "number", required: true },
+          { name: "durationMinutes", label: "Duration (minutes)", type: "number", required: true, placeholder: "120" },
           { name: "format", label: "Format", type: "select", options: ["music", "comedy", "either"], required: true },
           { name: "budgetCents", label: "Budget per night (USD)", type: "number", required: true, placeholder: "400" },
           { name: "notes", label: "About the night", type: "textarea" },

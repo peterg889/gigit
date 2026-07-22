@@ -150,7 +150,7 @@ export default async function SoundBookingPage({
               : "This sound job was filled by another tech."}</p>
           {myApplication.status === "submitted" && (
             <ActionButton endpoint={"/api/tech-subslots/" + id + "/applications"}
-              method="DELETE" label="Withdraw application"
+              method="DELETE" label="Withdraw application" variant="quiet"
               confirm="Withdraw from this sound gig?" />
           )}
         </div>
@@ -161,7 +161,7 @@ export default async function SoundBookingPage({
           <h2>You are booked</h2>
           <p>Keep this page for load-in details and day-of contacts.</p>
           <ActionButton endpoint={"/api/tech-subslots/" + id + "/cancel"}
-            label="Cancel sound booking"
+            label="Cancel sound booking" variant="quiet"
             confirm="Cancel this sound booking? The gig will reopen for another tech." />
         </div>
       )}

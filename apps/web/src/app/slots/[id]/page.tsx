@@ -118,7 +118,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               <span className="badge">Application sent</span>{" "}
               <ActionButton
                 endpoint={`/api/applications/${myApplication.id}/status`}
-                label="Withdraw application"
+                label="Withdraw application" variant="quiet"
                 body={{ action: "withdraw" }}
                 confirm="Withdraw your application from this gig?"
               />
@@ -197,7 +197,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
           <p style={{ marginTop: 8 }}>
             <ActionButton
               endpoint={`/api/slots/${slot.id}`}
-              label="Close this listing"
+              label="Close this listing" variant="quiet"
               method="DELETE"
               confirm="Close this listing? It will no longer appear with open gigs. You can post a new date later."
             />{" "}
@@ -304,7 +304,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               {application.status === "submitted" && (
                 <ActionButton
                   endpoint={`/api/applications/${application.id}/status`}
-                  label="Decline"
+                  label="Decline" variant="quiet"
                   body={{ action: "decline" }}
                   confirm={`Decline ${p.name}'s application? This cannot be undone.`}
                 />
