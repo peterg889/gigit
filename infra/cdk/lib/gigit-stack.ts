@@ -100,13 +100,21 @@ export class GigitStack extends cdk.Stack {
       ],
       lifecycleRules: [{ abortIncompleteMultipartUploadAfter: cdk.Duration.days(2) }],
     });
-    const cdn = new cloudfront.Distribution(this, "MediaCdn", {
-      defaultBehavior: {
-        origin: origins.S3BucketOrigin.withOriginAccessControl(media),
-        viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-      },
-    });
+    // Fresh AWS accounts cannot create CloudFront distributions until AWS
+    // Support verifies the account. `-c enableCdn=false` deploys everything
+    // else meanwhile — the app serves media via presigned S3 GETs when
+    // MEDIA_CDN_URL is absent (apps/web/src/lib/storage.ts) — and a later
+    // deploy without the flag turns the CDN on in place.
+    const enableCdn = this.node.tryGetContext("enableCdn") !== "false";
+    const cdn = enableCdn
+      ? new cloudfront.Distribution(this, "MediaCdn", {
+          defaultBehavior: {
+            origin: origins.S3BucketOrigin.withOriginAccessControl(media),
+            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+            cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          },
+        })
+      : undefined;
 
     // ── container registries (created by the bootstrap stack, imported here) ─
     // Imported by name so immutable release images can be pushed before the
@@ -187,7 +195,7 @@ export class GigitStack extends cdk.Stack {
       STORAGE_DRIVER: "s3",
       S3_BUCKET: media.bucketName,
       AWS_REGION: this.region,
-      MEDIA_CDN_URL: `https://${cdn.distributionDomainName}`,
+      ...(cdn ? { MEDIA_CDN_URL: `https://${cdn.distributionDomainName}` } : {}),
       // Presence tells the worker it is on AWS and doubles as the metric
       // dimension, keeping staging and prod outbox metrics separate.
       GIGIT_STAGE: props.stage,
@@ -531,7 +539,8 @@ export class GigitStack extends cdk.Stack {
       },
     );
     new cdk.CfnOutput(this, "OpsAlertsTopic", { value: alerts.topicArn });
-    new cdk.CfnOutput(this, "MediaCdnDomain", { value: cdn.distributionDomainName });
+    if (cdn)
+      new cdk.CfnOutput(this, "MediaCdnDomain", { value: cdn.distributionDomainName });
     new cdk.CfnOutput(this, "DbEndpoint", { value: database.instanceEndpoint.hostname });
     new cdk.CfnOutput(this, "WebUrl", { value: webUrl });
     new cdk.CfnOutput(this, "HostInstanceId", { value: host.instanceId });
