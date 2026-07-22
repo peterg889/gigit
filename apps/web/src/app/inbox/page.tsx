@@ -41,8 +41,15 @@ export default async function InboxPage() {
       <h1>Inbox</h1>
       {threads.length === 0 && (
         <div className="card">
-          No messages yet. Conversations appear here when you contact an act or
-          sound tech, or discuss a booking.
+          <p>
+            No messages yet. Conversations appear here when you contact an act or
+            sound tech, or discuss a booking.
+          </p>
+          <p className="muted">
+            Start something: <Link href="/slots">browse open gigs</Link>,{" "}
+            <Link href="/performers">find an act</Link>, or{" "}
+            <Link href="/techs">find a sound tech</Link>.
+          </p>
         </div>
       )}
       {threads.map((t) => (

@@ -223,6 +223,47 @@ button.quiet, .btn.quiet {
 button.quiet:hover, .btn.quiet:hover { background: rgba(255, 176, 46, 0.08); }
 button.quiet[disabled]:hover { background: transparent; }
 
+/* ── Feed filters: chips + a small inline metro form ── */
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 4px;
+}
+.filter-chip {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 6px 12px 5px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--ink-dim, var(--ink));
+  text-decoration: none;
+}
+.filter-chip.on {
+  background: var(--amber);
+  color: var(--room);
+  border-color: var(--amber);
+}
+.filter-form {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.filter-form input[type="text"] {
+  width: 180px;
+  margin: 0;
+  padding: 6px 10px;
+}
+.filter-form button { padding: 7px 12px 6px; }
+@media (max-width: 720px) {
+  .filter-form { margin-left: 0; width: 100%; }
+  .filter-form input[type="text"] { flex: 1; width: auto; }
+}
+
 /* ── Forms: a clipboard backstage ── */
 input, select, textarea {
   width: 100%;

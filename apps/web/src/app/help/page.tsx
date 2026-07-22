@@ -55,7 +55,7 @@ export default async function HelpPage() {
         <p>
           Use the booking’s cancel or dispute controls when you can. If someone
           did not show, the venue was unavailable, or safety is involved, send
-          us the booking and a short factual account.
+          us the booking link and a short factual account of what happened.
         </p>
         <p className="muted">
           If anyone is in immediate danger, contact local emergency services

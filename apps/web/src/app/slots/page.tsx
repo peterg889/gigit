@@ -1,5 +1,5 @@
 import { db, schema } from "@gigit/db";
-import { and, asc, eq, gte } from "drizzle-orm";
+import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { performerOwnedBy, venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
@@ -18,7 +18,17 @@ function formatAreaName(value: string) {
   return value.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase("en-US"));
 }
 
-export default async function FeedPage() {
+export default async function FeedPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ format?: string; metro?: string }>;
+}) {
+  const query = await searchParams;
+  // "Live music" includes either-format nights (a band can play them); same
+  // for comedy. The chips filter what an act can actually take.
+  const formatFilter =
+    query.format === "music" || query.format === "comedy" ? query.format : null;
+  const metroFilter = query.metro?.trim().toLocaleLowerCase("en-US") || null;
   const userId = await sessionUserId();
   const [performer, venue] = userId
     ? await Promise.all([performerOwnedBy(userId), venueOwnedBy(userId)])
@@ -43,9 +53,24 @@ export default async function FeedPage() {
     })
     .from(schema.slots)
     .innerJoin(schema.venues, eq(schema.slots.venueId, schema.venues.id))
-    .where(and(eq(schema.slots.status, "open"), gte(schema.slots.startsAt, new Date())))
+    .where(
+      and(
+        eq(schema.slots.status, "open"),
+        gte(schema.slots.startsAt, new Date()),
+        ...(formatFilter ? [inArray(schema.slots.format, [formatFilter, "either"])] : []),
+        ...(metroFilter ? [eq(schema.slots.metro, metroFilter)] : []),
+      ),
+    )
     .orderBy(asc(schema.slots.startsAt))
     .limit(50);
+
+  const chipHref = (format: string | null) => {
+    const params = new URLSearchParams();
+    if (format) params.set("format", format);
+    if (metroFilter) params.set("metro", metroFilter);
+    const qs = params.toString();
+    return qs ? `/slots?${qs}` : "/slots";
+  };
 
   return (
     <div>
@@ -54,7 +79,41 @@ export default async function FeedPage() {
         Every gig shows its pay up front. Your act profile is your application,
         so applying takes one click.
       </p>
-      {rows.length === 0 && (
+      <div className="filter-row">
+        {(
+          [
+            [null, "All gigs"],
+            ["music", "Live music"],
+            ["comedy", "Comedy"],
+          ] as const
+        ).map(([value, label]) => (
+          <Link
+            key={label}
+            className={`filter-chip${formatFilter === value ? " on" : ""}`}
+            href={chipHref(value)}
+          >
+            {label}
+          </Link>
+        ))}
+        <form method="get" action="/slots" className="filter-form">
+          {formatFilter && <input type="hidden" name="format" value={formatFilter} />}
+          <input
+            type="text"
+            name="metro"
+            defaultValue={query.metro ?? ""}
+            placeholder="City or metro area"
+            aria-label="Filter by city or metro area"
+          />
+          <button className="quiet" type="submit">Filter</button>
+        </form>
+      </div>
+      {rows.length === 0 && (formatFilter || metroFilter) && (
+        <div className="card">
+          No open gigs match these filters. <Link href="/slots">Clear filters</Link>{" "}
+          or save an alert below and we&apos;ll email you when one fits.
+        </div>
+      )}
+      {rows.length === 0 && !formatFilter && !metroFilter && (
         <div className="card">
           {venue ? (
             <>

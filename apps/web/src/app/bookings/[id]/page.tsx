@@ -356,6 +356,37 @@ export default async function BookingPage({
         </div>
       )}
 
+      {state === "confirmed" && (
+        <div className="card">
+          <h2>What happens next</h2>
+          <ol className="steps">
+            <li>
+              <strong>Day-of contacts are unlocked below</strong> — phone and
+              email for both sides, for load-in and anything last-minute.
+            </li>
+            <li>
+              <strong>We remind everyone the day before.</strong> No action
+              needed unless plans change.
+            </li>
+            {asPerformer ? (
+              <li>
+                <strong>After you play, mark the gig played</strong> right here —
+                that starts the wrap-up.
+              </li>
+            ) : (
+              <li>
+                <strong>After the night, confirm it happened</strong> right here —
+                that wraps the booking.
+              </li>
+            )}
+            <li>
+              <strong>Then you can review each other.</strong> Reviews come only
+              from real bookings like this one.
+            </li>
+          </ol>
+        </div>
+      )}
+
       {contactsRevealed && (
         <div className="card">
           <h2>Day-of contacts</h2>

@@ -53,12 +53,16 @@ export default async function NewSlotPage() {
     </div>
 
     <div className="card">
-      <h2>Make it a series</h2>
-      <p className="muted">
-        Weekly music night, first-Tuesday comedy — recurring nights help a room
-        become a scene. We&apos;ll keep the next four dates posted. You can end
-        the series anytime; existing bookings stay confirmed.
-      </p>
+      <details>
+        <summary style={{ cursor: "pointer" }}>
+          <strong>Make it a series</strong>{" "}
+          <span className="muted">— weekly music night, first-Tuesday comedy</span>
+        </summary>
+        <p className="muted">
+          Recurring nights help a room become a scene. We&apos;ll keep the next
+          four dates posted. You can end the series anytime; existing bookings
+          stay confirmed.
+        </p>
       <ApiForm
         endpoint="/api/series"
         submitLabel="Start the series"
@@ -73,6 +77,7 @@ export default async function NewSlotPage() {
           { name: "notes", label: "About the night", type: "textarea" },
         ]}
       />
+      </details>
     </div>
     </div>
   );
