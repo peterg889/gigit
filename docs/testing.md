@@ -12,7 +12,7 @@ At the discovery-first launch Gigit processes no gig money (`NullGateway`, `PAYM
 | 2. Property/model | invariants on paths nobody enumerated | `machine.property.test.ts` (fast-check, 1,500 random sequences) | every `pnpm test`, CI |
 | 3. DB integration | transactions, locking, ledger, SQL | `packages/db/src/*.test.ts` against real Postgres | every `pnpm test`, CI (the **ledger** integration is *deferred-path* — exercises dormant money code; runs when `PAYMENTS_ENABLED`) |
 | 4. Route/unit | web logic outside the happy path | `apps/web/src/**/*.test.ts`, `apps/worker/src/*.test.ts` | every `pnpm test`, CI |
-| 5. E2E | the journeys, through the real stack | `e2e/*.spec.ts` (Playwright) | `pnpm e2e`; CI `e2e` job (web+worker+pg) |
+| 5. E2E | the journeys, through production builds of the real stack | `e2e/*.spec.ts` (Playwright) | `pnpm e2e`; CI `e2e` job (web+worker+pg) |
 | 6. AI golden set | task output properties + injection corpus | `ai.eval.test.ts` | CI **only when `GEMINI_API_KEY` secret is set** |
 | 7. Production | the tests we can't write: external drift | nightly `reconcileMoney` (*deferred-path — runs when `PAYMENTS_ENABLED`; dormant at launch*) + outbox-lag paging | outbox-lag every night; `reconcileMoney` once payments are on; pages on failure |
 
@@ -50,11 +50,32 @@ At the discovery-first launch Gigit processes no gig money (`NullGateway`, `PAYM
 
 ```bash
 pnpm test          # layers 1–4 (domain, property, db-integration, route/unit)
-pnpm e2e           # layer 5 — needs the dev stack up (pnpm dev) and seeded db
+pnpm db:migrate    # layer 5 prerequisite: migrate the local E2E database
+pnpm db:seed       # layer 5 prerequisite: seed the browser-test identities
+pnpm e2e           # layer 5 — builds, starts, waits for, and stops web + worker
 GEMINI_API_KEY=… pnpm --filter @gigit/db test   # layer 6 evals locally
 ```
 
-CI runs layers 1–4 in `build-test`, layer 5 in the `e2e` job (own Postgres + web + worker), and layer 6 automatically once the `GEMINI_API_KEY` secret is added to the repo.
+`pnpm e2e` owns the local application lifecycle. Playwright starts the managed
+E2E server, which builds the production web and worker artifacts, waits for the
+worker startup marker and the database-aware web health endpoint, and then
+gracefully stops the complete process tree after the run. A migrated, seeded
+Postgres instance must already be available; no separately started `pnpm dev`
+process is needed.
+
+To run the same browser journeys against an already-running environment, set an
+external base URL. Leading and trailing whitespace and trailing slashes are
+normalized by the Playwright config:
+
+```bash
+E2E_BASE_URL="https://staging.example.com/" pnpm e2e
+```
+
+When `E2E_BASE_URL` is set, Playwright does not build, start, or stop a local
+stack. CI leaves that variable unset, gives the E2E job its own Postgres
+service, and lets Playwright supervise the production-build web and worker
+processes. Layers 1–4 run in `build-test`; layer 6 runs automatically once the
+`GEMINI_API_KEY` secret is added to the repo.
 
 ## Known gaps — open and owned
 

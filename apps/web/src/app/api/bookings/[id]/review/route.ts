@@ -1,4 +1,8 @@
-import { TERMINAL_STATES, newId, reviewCreateSchema } from "@gigit/domain";
+import {
+  isReviewableBookingState,
+  newId,
+  reviewCreateSchema,
+} from "@gigit/domain";
 import type { BookingState } from "@gigit/domain";
 import { appendEvent, db, pgErrorCode, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
@@ -8,8 +12,8 @@ import { fail, ok, parseBody } from "@/lib/respond";
 type Params = { params: Promise<{ id: string }> };
 
 /**
- * Double-blind reviews (PRD F7.1/F7.2): parties only, terminal bookings only,
- * one per side. Visibility rule (read side): both submitted OR 7 days elapsed.
+ * Double-blind reviews (PRD F7.1/F7.2): parties only, completed gigs only, one
+ * per side. Visibility rule (read side): both submitted OR 7 days elapsed.
  */
 export async function POST(req: Request, { params }: Params) {
   try {
@@ -20,8 +24,8 @@ export async function POST(req: Request, { params }: Params) {
       .from(schema.bookings)
       .where(eq(schema.bookings.id, bookingId));
     if (!booking) return fail("not_found", "booking not found", 404);
-    if (!TERMINAL_STATES.has(booking.state as BookingState))
-      return fail("conflict", "booking is not complete yet", 409);
+    if (!isReviewableBookingState(booking.state as BookingState))
+      return fail("conflict", "reviews open after a completed gig", 409);
 
     const [performer, venue] = await Promise.all([
       performerOwnedBy(userId),

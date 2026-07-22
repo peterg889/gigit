@@ -9,21 +9,9 @@ import {
   formatVenueDateTime,
   shortTimeZoneName,
 } from "@/lib/date-time";
+import { GEAR_LABELS, SOUND_APPLICATION_LABELS_OWN } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
-
-const GEAR_LABEL: Record<string, string> = {
-  none: "Labor only",
-  partial: "Partial rig",
-  full_rig: "Full PA rig",
-};
-
-const APPLICATION_STATUS_LABEL: Record<string, string> = {
-  submitted: "Application sent",
-  booked: "Booked",
-  declined: "Not selected",
-  withdrawn: "Withdrawn",
-};
 
 /** Sound tech directory — venues and performers can hire sound (PRD F6). */
 export default async function TechsPage() {
@@ -141,7 +129,7 @@ export default async function TechsPage() {
               myApplicationBySubslot.has(subslot.id) ? (
                 <p>
                   <span className="badge">
-                    {APPLICATION_STATUS_LABEL[myApplicationBySubslot.get(subslot.id)!.status] ??
+                    {SOUND_APPLICATION_LABELS_OWN[myApplicationBySubslot.get(subslot.id)!.status] ??
                       "Application updated"}
                   </span>{" "}
                   <Link href={"/sound/" + subslot.id}>View your application</Link>
@@ -174,7 +162,7 @@ export default async function TechsPage() {
           <strong>
             <Link href={`/t/${t.id}`}>{t.name}</Link>
           </strong>{" "}
-          <span className="badge">{GEAR_LABEL[t.gear] ?? "Equipment not listed"}</span>{" "}
+          <span className="badge">{GEAR_LABELS[t.gear] ?? "Equipment not listed"}</span>{" "}
           {t.reliabilityStrikes > 0 && (
             <span className="badge">{t.reliabilityStrikes} cancellation{t.reliabilityStrikes === 1 ? "" : "s"}</span>
           )}

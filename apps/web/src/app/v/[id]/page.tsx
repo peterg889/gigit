@@ -1,6 +1,6 @@
 import { visibleReviews } from "@gigit/domain";
-import { db, schema } from "@gigit/db";
-import { and, asc, desc, eq, gte, inArray } from "drizzle-orm";
+import { db, reviewableProfileReviews, schema } from "@gigit/db";
+import { and, asc, eq, gte } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
@@ -52,16 +52,7 @@ export default async function VenuePage({
 
   // Reviews of this venue (authored by performers), same double-blind rule as
   // the performer page with the role flipped (PRD F7.1 — reviews cut both ways).
-  const bookingsOfVenue = d
-    .select({ id: schema.bookings.id })
-    .from(schema.bookings)
-    .where(eq(schema.bookings.venueId, id));
-  const allReviews = await d
-    .select()
-    .from(schema.reviews)
-    .where(inArray(schema.reviews.bookingId, bookingsOfVenue))
-    .orderBy(desc(schema.reviews.createdAt))
-    .limit(50);
+  const allReviews = await reviewableProfileReviews({ kind: "venue", id });
   const visible = visibleReviews(allReviews, "performer");
   const avg =
     visible.length > 0

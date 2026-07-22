@@ -3,14 +3,9 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
+import { GEAR_LABELS } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
-
-const GEAR_LABEL: Record<string, string> = {
-  none: "Labor only — no rig",
-  partial: "Partial rig",
-  full_rig: "Full PA rig",
-};
 
 /** Public sound-tech page (PRD F1.4): gear, rates, travel. */
 export default async function TechPage({
@@ -66,7 +61,7 @@ export default async function TechPage({
       <div className="card">
         <h1>
           {t.name}{" "}
-          <span className="badge">{GEAR_LABEL[t.gear] ?? "Equipment not listed"}</span>
+          <span className="badge">{GEAR_LABELS[t.gear] ?? "Equipment not listed"}</span>
           {average !== null && (
             <> <span className="badge">★ {average.toFixed(1)} ({visibleReviews.length})</span></>
           )}

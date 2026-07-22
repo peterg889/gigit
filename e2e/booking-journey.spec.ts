@@ -1,4 +1,5 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { signIn } from "./helpers";
 
 /**
  * The critical journey (engineering-spec §13 E2E #2): post open date → apply →
@@ -7,16 +8,6 @@ import { expect, test, type Page } from "@playwright/test";
  *
  * Requires the dev stack: `pnpm dev` + seeded users (dev OTP 000000).
  */
-
-async function signIn(page: Page, email: string) {
-  await page.goto("/login");
-  await page.getByLabel("Email").fill(email);
-  await page.getByRole("checkbox").check();
-  await page.getByRole("button", { name: "Send code" }).click();
-  await page.getByLabel(/Enter the code/).fill("000000");
-  await page.getByRole("button", { name: "Verify code" }).click();
-  await page.waitForURL("**/onboarding");
-}
 
 test("venue posts an open date; performer applies; offer; accept; booking confirms", async ({
   browser,
@@ -70,6 +61,7 @@ test("venue posts an open date; performer applies; offer; accept; booking confir
   await expect(
     pp.getByRole("heading", { name: "The deal, in writing" }),
   ).toBeVisible();
+  const bookingUrl = pp.url();
   await expect(pp.getByText(/\$350/).first()).toBeVisible();
   const accepted = pp.waitForResponse((response) =>
     response.request().method() === "POST" &&
@@ -95,6 +87,41 @@ test("venue posts an open date; performer applies; offer; accept; booking confir
       { timeout: 20_000, message: "booking should reach confirmed via the worker" },
     )
     .toBeGreaterThan(0);
+
+  // A future cancellation is not a completed gig. Neither party should see a
+  // review form, and calling the endpoint directly must also be rejected.
+  await pp.goto(bookingUrl);
+  const cancelled = pp.waitForResponse((response) =>
+    response.request().method() === "POST" &&
+    response.url().endsWith("/cancel"),
+  );
+  pp.once("dialog", (dialog) => dialog.accept());
+  await pp.getByRole("button", { name: "Cancel booking" }).click();
+  expect((await cancelled).status()).toBe(200);
+  await expect(
+    pp.locator(".badge", { hasText: "Cancelled by act" }).first(),
+  ).toBeVisible();
+  await expect(
+    pp.getByRole("heading", { name: "Leave a review" }),
+  ).toHaveCount(0);
+
+  const bookingId = new URL(bookingUrl).pathname.split("/").at(-1)!;
+  const blockedReview = await pp.request.post(
+    new URL(`/api/bookings/${bookingId}/review`, bookingUrl).toString(),
+    { data: { ratings: { overall: 5 } } },
+  );
+  expect(blockedReview.status()).toBe(409);
+  expect(await blockedReview.json()).toMatchObject({
+    error: { code: "conflict", message: "reviews open after a completed gig" },
+  });
+
+  await vp.goto(bookingUrl);
+  await expect(
+    vp.locator(".badge", { hasText: "Cancelled by act" }).first(),
+  ).toBeVisible();
+  await expect(
+    vp.getByRole("heading", { name: "Leave a review" }),
+  ).toHaveCount(0);
 
   await venue.close();
   await performer.close();

@@ -31,6 +31,7 @@ export const SOUND_APPLICATION_LABELS_OWN: Record<string, string> = {
   submitted: "Application sent",
   booked: "Booked",
   declined: "Not selected",
+  withdrawn: "Withdrawn",
 };
 
 /** The payer's view of an applicant on their sub-slot. */

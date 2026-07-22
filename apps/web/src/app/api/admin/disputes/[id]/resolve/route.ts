@@ -19,8 +19,8 @@ const bodySchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("refund_full"), fault: faultSchema }),
   z.object({
     kind: z.literal("partial"),
-    releaseCents: z.number().int().min(0),
-    refundCents: z.number().int().min(0),
+    releaseCents: z.number().int().positive(),
+    refundCents: z.number().int().positive(),
     fault: faultSchema,
   }),
 ]);

@@ -1,18 +1,17 @@
 import { performerReliability, visibleReviews } from "@gigit/domain";
-import { db, performerReliabilityStats, schema } from "@gigit/db";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import {
+  db,
+  performerReliabilityStats,
+  reviewableProfileReviews,
+  schema,
+} from "@gigit/db";
+import { and, asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
+import { ACT_KIND_LABEL } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
-
-const ACT_KIND_LABEL: Record<string, string> = {
-  band: "Band",
-  solo: "Solo act",
-  comedian: "Comedian",
-  other: "Other act",
-};
 
 const MEDIA_PROVIDER_LABEL: Record<string, string> = {
   youtube: "YouTube",
@@ -50,16 +49,7 @@ export default async function PerformerPage({
 
   // Reviews of this performer (authored by venues), double-blind rule:
   // visible once both sides reviewed or 7 days after submission (PRD F7.1).
-  const bookingsOfPerformer = d
-    .select({ id: schema.bookings.id })
-    .from(schema.bookings)
-    .where(eq(schema.bookings.performerId, id));
-  const allReviews = await d
-    .select()
-    .from(schema.reviews)
-    .where(inArray(schema.reviews.bookingId, bookingsOfPerformer))
-    .orderBy(desc(schema.reviews.createdAt))
-    .limit(50);
+  const allReviews = await reviewableProfileReviews({ kind: "performer", id });
   const visible = visibleReviews(allReviews, "venue");
   const avg =
     visible.length > 0

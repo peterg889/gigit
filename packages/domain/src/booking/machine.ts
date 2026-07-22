@@ -208,12 +208,12 @@ export function decide(
         if (
           !Number.isInteger(r.releaseCents) ||
           !Number.isInteger(r.refundCents) ||
-          r.releaseCents < 0 ||
-          r.refundCents < 0 ||
+          r.releaseCents <= 0 ||
+          r.refundCents <= 0 ||
           r.releaseCents + r.refundCents !== terms.amountCents
         )
           throw new InvalidResolutionError(
-            `partial resolution must split exactly ${terms.amountCents} cents ` +
+            `partial resolution must use positive amounts that split exactly ${terms.amountCents} cents ` +
               `(got release ${r.releaseCents} + refund ${r.refundCents})`,
           );
         return {

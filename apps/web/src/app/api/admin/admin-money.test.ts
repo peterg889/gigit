@@ -147,6 +147,22 @@ describe("admin money routes", () => {
       expect(res.status).toBe(422);
     });
 
+    it.each([
+      [0, AMOUNT],
+      [AMOUNT, 0],
+    ])(
+      "zero-leg partial resolution (%i release / %i refund) → 422",
+      async (releaseCents, refundCents) => {
+        as(uAdmin);
+        const res = await post(resolvePost, await disputedBooking(), {
+          kind: "partial",
+          releaseCents,
+          refundCents,
+        });
+        expect(res.status).toBe(422);
+      },
+    );
+
     it("resolving a booking that isn't disputed → 409", async () => {
       as(uAdmin);
       const res = await post(resolvePost, await confirmedBooking(), { kind: "release_full" });

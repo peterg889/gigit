@@ -10,23 +10,9 @@ import {
   formatVenueDateTime,
   shortTimeZoneName,
 } from "@/lib/date-time";
+import { SOUND_APPLICATION_LABELS_OWN, SOUND_STATE_LABELS } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
-
-const SOUND_STATE_LABEL: Record<string, string> = {
-  open: "Open",
-  booked: "Tech booked",
-  released: "Completed",
-  cancelled_by_payer: "Cancelled",
-  cancelled_with_parent: "Cancelled with gig",
-};
-
-const APPLICATION_STATUS_LABEL: Record<string, string> = {
-  submitted: "Application sent",
-  booked: "Booked",
-  declined: "Not selected",
-  withdrawn: "Withdrawn",
-};
 
 export default async function SoundBookingPage({
   params,
@@ -119,7 +105,7 @@ export default async function SoundBookingPage({
         <h1>
           Sound for {row.performer.name} at {row.venue.name}{" "}
           <span className="badge">
-            {SOUND_STATE_LABEL[row.subslot.state] ?? "Sound job updated"}
+            {SOUND_STATE_LABELS[row.subslot.state] ?? "Sound job updated"}
           </span>
         </h1>
         <p>
@@ -157,7 +143,7 @@ export default async function SoundBookingPage({
         <div className="card">
           <h2>Your application</h2>
           <p><span className="badge">
-            {APPLICATION_STATUS_LABEL[myApplication.status] ?? "Application updated"}
+            {SOUND_APPLICATION_LABELS_OWN[myApplication.status] ?? "Application updated"}
           </span>{" "}
             {myApplication.status === "submitted"
               ? "The paying side has your application and will respond here."
@@ -187,7 +173,7 @@ export default async function SoundBookingPage({
             <p key={application.id}>
               <Link href={"/t/" + tech.id}><strong>{tech.name}</strong></Link>{" "}
               <span className="badge">
-                {APPLICATION_STATUS_LABEL[application.status] ?? "Application updated"}
+                {SOUND_APPLICATION_LABELS_OWN[application.status] ?? "Application updated"}
               </span>{" "}
               {row.subslot.state === "open" && application.status === "submitted" && (
                 <ActionButton endpoint={"/api/tech-subslots/" + id + "/book"}

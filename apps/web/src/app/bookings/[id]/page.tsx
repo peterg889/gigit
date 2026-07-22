@@ -1,4 +1,8 @@
-import { TERMINAL_STATES, renderAgreement, soundPlan } from "@gigit/domain";
+import {
+  isReviewableBookingState,
+  renderAgreement,
+  soundPlan,
+} from "@gigit/domain";
 import type { BookingState } from "@gigit/domain";
 import { db, findRebookTarget, paymentsEnabled, schema } from "@gigit/db";
 import { and, eq, inArray } from "drizzle-orm";
@@ -69,7 +73,7 @@ export default async function BookingPage({
   if (!asPerformer && !asVenue) notFound();
 
   const state = b.state as BookingState;
-  const terminal = TERMINAL_STATES.has(state);
+  const reviewable = isReviewableBookingState(state);
   const myRole = asVenue ? "venue" : "performer";
   const dealTimeZone = b.terms.timeZone ?? row.venueTimeZone;
   const venueAddress =
@@ -118,13 +122,15 @@ export default async function BookingPage({
             .where(eq(schema.performers.id, b.performerId))
             .then((r) => r[0])
         : Promise.resolve(undefined),
-      d
-        .select()
-        .from(schema.reviews)
-        .where(
-          and(eq(schema.reviews.bookingId, id), eq(schema.reviews.authorRole, myRole)),
-        )
-        .then((r) => r[0]),
+      reviewable
+        ? d
+            .select()
+            .from(schema.reviews)
+            .where(
+              and(eq(schema.reviews.bookingId, id), eq(schema.reviews.authorRole, myRole)),
+            )
+            .then((r) => r[0])
+        : Promise.resolve(undefined),
     ]);
 
   const activeSubslot = subslots.find((s) => s.state === "open" || s.state === "booked");
@@ -366,7 +372,7 @@ export default async function BookingPage({
         </div>
       )}
 
-      {terminal && !myReview && (
+      {reviewable && !myReview && (
         <div className="card">
           <h2>Leave a review</h2>
           <p className="muted">

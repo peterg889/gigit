@@ -123,11 +123,13 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
                 confirm="Withdraw your application from this gig?"
               />
             </p>
-          ) : myApplication ? (
+          ) : myApplication && myApplication.status !== "withdrawn" ? (
             <p className="muted">
               Your application is {friendlyLabel(APPLICATION_STATUS_LABELS, myApplication.status).toLowerCase()}.
             </p>
           ) : (
+            // No application yet — or a withdrawn one, which re-applying
+            // revives (declining an offer must never dead-end the pairing).
             <div>
               <p className="muted">
                 Your profile carries the essentials. Add a short note if there

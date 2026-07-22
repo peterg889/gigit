@@ -263,6 +263,25 @@ describe("dispute resolutions", () => {
       ),
     ).toThrow(InvalidResolutionError);
   });
+  it.each([
+    [0, 50_000],
+    [50_000, 0],
+  ])(
+    "rejects a partial split with a zero leg (%i release / %i refund)",
+    (releaseCents, refundCents) => {
+      expect(() =>
+        decide(
+          booking("disputed"),
+          {
+            kind: "DISPUTE_RESOLVED",
+            resolution: { kind: "partial", releaseCents, refundCents },
+          },
+          now,
+        ),
+      ).toThrow(InvalidResolutionError);
+    },
+  );
+
   it("rejects a partial split with a non-integer leg (even when it sums to the total)", () => {
     expect(() =>
       decide(
