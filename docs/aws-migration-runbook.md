@@ -1,14 +1,13 @@
 # AWS account migration runbook — pxnllc → EightGig account
 
-_Last updated: 2026-07-23. Status: **MIGRATED AND LIVE.** eightgig.com (prod)
-and staging.eightgig.com both serve from account 200790771428. Remaining:
-Peter's registrar commands, then teardown; CDN re-enable when CloudFront
-verification clears; key rotation._
-
-**CRITICAL ORDER**: do NOT tear down the old `GigitStaging` stack before the
-NS flip — its CloudFormation still owns the staging DNS record names in the
-old zone and deleting it would take the live records down. NS flip first,
-then teardown.
+_Last updated: 2026-07-23 (evening). Status: **MIGRATION COMPLETE.**
+eightgig.com (prod) and staging.eightgig.com serve from 200790771428; NS
+delegation flipped; pxnllc teardown done (all five scoped items); keys
+rotated. Remaining: CloudFront re-enable when AWS's verification email
+arrives (drop `-c enableCdn=false`, one stack update per env); domain
+REGISTRATION transfer retry ~2026-09-14 (blocked while the registration is
+<60 days old — DNS control has already moved); Peter's two OpsAlerts email
+confirmations._
 
 ## Accounts
 
@@ -78,7 +77,7 @@ old `eightgig.com` zone (only after the NS flip). Explicitly NOT touched:
 - [x] Staging AppSecrets injected pre-boot (2026-07-23)
 - [x] Prod AppSecrets injected pre-boot with APP_URL=https://eightgig.com (2026-07-23)
 - [ ] OpsAlerts subscriptions created for BOTH new stacks — Peter clicks the two confirmation emails
-- [ ] **Rotate the `claude-keys` access keys** (they passed through a chat session)
+- [x] `claude-keys` rotated 2026-07-23; chat-exposed key deleted
 
 ## Known gotchas (learned the hard way)
 
