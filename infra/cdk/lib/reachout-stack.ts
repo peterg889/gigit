@@ -11,6 +11,9 @@
  * /eightgig/reachout/* (written by the operator/session, never baked into
  * user-data). Sending remains halted until `reachout resume` on the host —
  * this stack ships a research/discovery instance, not a mailer.
+ *
+ * SSM env note: OR_API_TOKENS scopes must be the suffixed names
+ * (events:write|conversions:write), not bare (events|conversions).
  */
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
@@ -62,10 +65,13 @@ export class ReachoutStack extends cdk.Stack {
       "set -euo pipefail",
       "dnf install -y docker git",
       "systemctl enable --now docker",
-      // compose v2 plugin
+      // compose v2 plugin + buildx (compose build needs buildx >= 0.17; the
+      // distro's plugin set ships neither)
       "mkdir -p /usr/local/lib/docker/cli-plugins",
       "curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose",
       "chmod +x /usr/local/lib/docker/cli-plugins/docker-compose",
+      "curl -fsSL https://github.com/docker/buildx/releases/download/v0.17.1/buildx-v0.17.1.linux-amd64 -o /usr/local/lib/docker/cli-plugins/docker-buildx",
+      "chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx",
       "mkdir -p /opt/reachout/src && cd /opt/reachout",
       // the framework repo is private: source ships as a tarball via the same
       // S3 bucket as the tenant config (refresh = re-upload + re-run these steps)
