@@ -1,6 +1,7 @@
 import * as cdk from "aws-cdk-lib";
 import { BootstrapStack } from "../lib/bootstrap-stack.js";
 import { GigitStack } from "../lib/gigit-stack.js";
+import { ReachoutStack } from "../lib/reachout-stack.js";
 
 const app = new cdk.App();
 const region = process.env.CDK_REGION ?? "us-east-1";
@@ -52,4 +53,12 @@ new GigitStack(app, "GigitProd", {
   stage: "prod",
   domainName: process.env.PROD_DOMAIN_NAME ?? "eightgig.com",
   hostedZoneName: process.env.PROD_HOSTED_ZONE ?? "eightgig.com",
+});
+
+// Open Reachout instance (outbound seeding) — its own small host beside prod.
+new ReachoutStack(app, "GigitReachout", {
+  env,
+  synthesizer: directSynthesizer(),
+  domainName: process.env.REACHOUT_DOMAIN_NAME ?? "reachout.eightgig.com",
+  hostedZoneName: process.env.REACHOUT_HOSTED_ZONE ?? "eightgig.com",
 });
