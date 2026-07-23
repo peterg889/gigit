@@ -1,8 +1,14 @@
 # AWS account migration runbook — pxnllc → EightGig account
 
-_Last updated: 2026-07-19. Status: **waiting on AWS Support** to verify the new
-account. Everything below that isn't marked DONE fires in order once that
-lands._
+_Last updated: 2026-07-23. Status: **MIGRATED AND LIVE.** eightgig.com (prod)
+and staging.eightgig.com both serve from account 200790771428. Remaining:
+Peter's registrar commands, then teardown; CDN re-enable when CloudFront
+verification clears; key rotation._
+
+**CRITICAL ORDER**: do NOT tear down the old `GigitStaging` stack before the
+NS flip — its CloudFormation still owns the staging DNS record names in the
+old zone and deleting it would take the live records down. NS flip first,
+then teardown.
 
 ## Accounts
 
@@ -23,8 +29,9 @@ lands._
 
 ## Waiting on AWS (Peter gets the emails)
 
-- [ ] CloudFront account verification — **the redeploy blocker**. When the email arrives, tell Claude **"go"**.
-- [ ] SES production access — until granted, sign-in emails only reach verified addresses (pilot blocker, not deploy blocker).
+- [x] EC2/account verification cleared 2026-07-23 — both stacks deployed CDN-less
+- [ ] CloudFront: still unverified at deploy time; when its email arrives, one stack update per environment re-enables the CDN (drop `-c enableCdn=false`)
+- [x] SES production access GRANTED (2026-07-22)
 
 ## Domain layout (decided 2026-07-22)
 
@@ -68,11 +75,9 @@ old `eightgig.com` zone (only after the NS flip). Explicitly NOT touched:
 
 ## Final configuration (new account)
 
-- [ ] Staging AppSecrets: EMAIL_FROM/SUPPORT_EMAIL_TO/APP_URL — the injection
-  watcher worked on 2026-07-22 but that stack rolled back (EC2 block), taking
-  the secret with it; Claude re-arms the watcher on the next deploy
-- [ ] Prod AppSecrets: same keys with `APP_URL=https://eightgig.com` (Claude injects at prod stack creation)
-- [ ] Subscribe mythander889@gmail.com to the new account's OpsAlerts SNS topic (+ click the confirmation)
+- [x] Staging AppSecrets injected pre-boot (2026-07-23)
+- [x] Prod AppSecrets injected pre-boot with APP_URL=https://eightgig.com (2026-07-23)
+- [ ] OpsAlerts subscriptions created for BOTH new stacks — Peter clicks the two confirmation emails
 - [ ] **Rotate the `claude-keys` access keys** (they passed through a chat session)
 
 ## Known gotchas (learned the hard way)
