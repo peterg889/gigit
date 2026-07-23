@@ -66,8 +66,11 @@ export class ReachoutStack extends cdk.Stack {
       "mkdir -p /usr/local/lib/docker/cli-plugins",
       "curl -fsSL https://github.com/docker/compose/releases/latest/download/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose",
       "chmod +x /usr/local/lib/docker/cli-plugins/docker-compose",
-      "mkdir -p /opt/reachout && cd /opt/reachout",
-      "git clone --depth 1 https://github.com/peterg889/open-reachout src || (cd src && git pull)",
+      "mkdir -p /opt/reachout/src && cd /opt/reachout",
+      // the framework repo is private: source ships as a tarball via the same
+      // S3 bucket as the tenant config (refresh = re-upload + re-run these steps)
+      `aws s3 cp s3://eightgig-reachout-config-${this.account}/src/open-reachout.tar.gz /opt/reachout/open-reachout.tar.gz --region ${this.region}`,
+      "tar -xzf open-reachout.tar.gz -C /opt/reachout/src",
       "cd /opt/reachout/src",
       // config + env from SSM (SecureString) — operator-writable, never in this template
       `aws ssm get-parameter --with-decryption --name /eightgig/reachout/env --query Parameter.Value --output text --region ${this.region} > .env`,
