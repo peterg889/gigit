@@ -87,3 +87,15 @@ old `eightgig.com` zone (only after the NS flip). Explicitly NOT touched:
   rewrites the deployed secret and clobbers operator-set values.
 - SES reputation is account-scoped — the move exists precisely so EightGig's
   sending doesn't share a pool with the other pxnllc projects.
+
+
+## Sister deployment — Open Reachout (reachout.eightgig.com)
+
+Outbound seeding runs on its own stack in the same account (`GigitReachout`,
+infra/cdk/lib/reachout-stack.ts): a t3.small running the private
+open-reachout compose stack behind Caddy TLS. Source + tenant config ship via
+the private S3 bucket `eightgig-reachout-config-<account>`; secrets via SSM
+`/eightgig/reachout/env`. Refresh after code changes: rebuild the tarball,
+`aws s3 cp` to the bucket's `src/` key, then SSM `docker compose up -d --build`
+on the host. Sending stays halted until eightgig.com has a warmed mailbox.
+See the `reachout-instance` memory for full operating notes.
