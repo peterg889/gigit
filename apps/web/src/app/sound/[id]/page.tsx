@@ -116,8 +116,7 @@ export default async function SoundBookingPage({
         <p className="muted">{formatAddress(row.venue)}</p>
         <p className="muted">
           The {row.subslot.payer === "venue" ? "venue" : "act"} pays the tech
-          directly. EightGig records the commitment but does not process the gig
-          payment.
+          directly.
         </p>
         <p>{row.subslot.needs.inputs} inputs
           {row.subslot.needs.gaps.length > 0 && <> · sound gaps: {row.subslot.needs.gaps.join("; ")}</>}

@@ -34,8 +34,7 @@ export default function LoginPage() {
     <div className="card">
       <h1>Sign in or join EightGig</h1>
       <p className="muted">
-        Enter your email and we’ll send a six-digit sign-in code. No password
-        needed.
+        Enter your email and we’ll send you a code to sign in.
       </p>
       {stage === "request" ? (
         <form

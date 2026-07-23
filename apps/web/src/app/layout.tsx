@@ -77,10 +77,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <footer className="site">
           <div>
             <span className="footer-mark">EightGig</span> — where independent venues and
-            local acts book gigs. Free during beta. The first 500 eligible act
-            profiles and first 500 eligible venue profiles we confirm as onboarded
-            receive a Founding Membership with no recurring standard-membership
-            fee for as long as EightGig operates.
+            local acts book gigs. Free during beta, and the first 500 acts and
+            venues to join become Founding Members.
           </div>
           <nav aria-label="Footer navigation">
             <Link href="/about">About</Link>

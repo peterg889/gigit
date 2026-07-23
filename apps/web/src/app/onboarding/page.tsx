@@ -62,8 +62,7 @@ export default async function OnboardingPage({
         <div className="card">
           <h2>First, sign in</h2>
           <p>
-            EightGig uses a six-digit email code—no password to remember. EightGig is
-            free to use during beta.
+            It takes about a minute, and EightGig is free during beta.
           </p>
           <Link className="btn" href={"/login?" + loginParams.toString()}>
             Sign in to continue
@@ -71,10 +70,9 @@ export default async function OnboardingPage({
         </div>
         {role !== "tech" && (
           <div className="notice">
-            The first 500 eligible act profiles and first 500 eligible venue
-            profiles we confirm as onboarded receive a Founding Membership with
-            no recurring standard-membership fee for as long as EightGig operates.{" "}
-            <Link href="/help">See offer details.</Link>
+            Join during beta and you could be a Founding Member — the first 500
+            acts and first 500 venues we welcome never pay a membership fee.{" "}
+            <Link href="/help">See the details.</Link>
           </div>
         )}
         <p>
@@ -147,10 +145,9 @@ export default async function OnboardingPage({
       <p className="lede">{roleCopy[role].detail}</p>
       {role !== "tech" && (
         <div className="notice">
-          Founding offer: the first 500 eligible act profiles and first 500
-          eligible venue profiles we confirm as onboarded receive a Founding
-          Membership with no recurring standard-membership fee for as long as
-          EightGig operates. <Link href="/help">See offer details.</Link>
+          Get here early and you could be a Founding Member — the first 500 acts
+          and first 500 venues we welcome never pay a membership fee.{" "}
+          <Link href="/help">See the details.</Link>
         </div>
       )}
       <p>

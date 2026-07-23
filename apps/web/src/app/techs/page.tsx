@@ -122,8 +122,7 @@ export default async function TechsPage() {
               })}
             </p>
             <p className="muted">
-              The {subslot.payer === "venue" ? "venue" : "act"} pays you directly;
-              EightGig does not process the gig payment.
+              The {subslot.payer === "venue" ? "venue" : "act"} pays you directly.
             </p>
             {myTech ? (
               myApplicationBySubslot.has(subslot.id) ? (

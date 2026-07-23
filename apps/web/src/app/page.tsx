@@ -40,16 +40,15 @@ export default async function HomePage() {
         <span className="badge">EightGig beta</span>
         <h2>Become a Founding Member</h2>
         <p>
-          EightGig is free during beta. The first 500 eligible act profiles—including
-          bands, solo artists, comedians, and other live acts—and the first 500
-          eligible venue profiles we confirm as onboarded receive a Founding
-          Membership.
+          EightGig is free during beta. The first 500 acts and the first 500
+          venues we welcome become Founding Members — bands, solo artists,
+          comedians, whoever gets here early.
         </p>
         <p className="muted">
-          Founding Membership has no recurring standard-membership fee for as
-          long as EightGig operates. No card needed. Pricing for later members has
-          not been set, and we’ll explain it before asking anyone to pay.{" "}
-          <Link href="/help">See offer details.</Link>
+          Founding Members never pay a membership fee. No card needed. We
+          haven’t set pricing for anyone else yet, and we’ll always explain it
+          before asking anyone to pay.{" "}
+          <Link href="/help">See the details.</Link>
         </p>
         <div className="button-row">
           <Link className="btn" href="/onboarding?role=performer">
