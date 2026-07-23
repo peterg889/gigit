@@ -29,7 +29,7 @@ confirmations._
 ## Waiting on AWS (Peter gets the emails)
 
 - [x] EC2/account verification cleared 2026-07-23 — both stacks deployed CDN-less
-- [ ] CloudFront: still unverified at deploy time; when its email arrives, one stack update per environment re-enables the CDN (drop `-c enableCdn=false`)
+- [x] CloudFront: account verified 2026-07-23; both staging + prod redeployed WITH CloudFront (no enableCdn flag). CDN is the normal deploy path now.
 - [x] SES production access GRANTED (2026-07-22)
 
 ## Domain layout (decided 2026-07-22)
