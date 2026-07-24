@@ -24,8 +24,18 @@ export async function POST(req: Request) {
   const params = new URLSearchParams(raw);
 
   // Signature verification (Twilio: HMAC-SHA1 over URL + sorted form params).
+  // FAIL CLOSED: this endpoint is publicly reachable whether or not Twilio is
+  // configured, and its body decides opt-outs and support requests attributed
+  // to whatever phone number the caller claims. Without a token to verify
+  // against we cannot tell Twilio from anyone else, so in production we refuse
+  // rather than trust it. (Deployed AppSecrets ships TWILIO_AUTH_TOKEN empty
+  // until SMS is switched on — exactly the window this closes.)
   const token = env().TWILIO_AUTH_TOKEN;
-  if (token) {
+  if (!token) {
+    if (env().NODE_ENV === "production")
+      return new Response("sms not configured", { status: 503 });
+    // dev/test only: no token to verify against, accept unsigned.
+  } else {
     const sig = req.headers.get("x-twilio-signature") ?? "";
     const url = `${env().APP_URL}/api/webhooks/twilio`;
     const sorted = [...params.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
@@ -36,7 +46,6 @@ export async function POST(req: Request) {
       crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected));
     if (!ok) return new Response("bad signature", { status: 403 });
   }
-  // No token configured = dev only; the route is unreachable in prod without it.
 
   const from = params.get("From") ?? "";
   const body = (params.get("Body") ?? "").trim();
