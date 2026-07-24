@@ -1,5 +1,5 @@
 import { newId, venueCreateSchema } from "@gigit/domain";
-import { appendEvent, db, schema } from "@gigit/db";
+import { appendEvent, assignFounding, db, schema } from "@gigit/db";
 import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
@@ -11,30 +11,36 @@ export async function POST(req: Request) {
     const parsed = await parseBody(req, venueCreateSchema);
     if ("response" in parsed) return parsed.response;
     const id = newId("venue");
-    const d = db();
     const { lat, lng, ...profile } = parsed.data;
     const fallback = metroCentroid(parsed.data.metro);
-    await d.insert(schema.venues).values({
-      id,
-      ownerUserId: userId,
-      ...profile,
-      // Approximate metro coordinates preserve radius-search behavior until
-      // address geocoding is added. Owners never have to enter coordinates.
-      // Metros without a known centroid store null ("location unknown") —
-      // never a fabricated point, which would hide the venue from every
-      // radius search.
-      lat: lat ?? fallback?.lat ?? null,
-      lng: lng ?? fallback?.lng ?? null,
-      capacity: parsed.data.capacity ?? null,
-      noiseCurfew: parsed.data.noiseCurfew ?? null,
+    const founding = await db().transaction(async (tx) => {
+      const rank = await assignFounding(tx, "venue");
+      await tx.insert(schema.venues).values({
+        id,
+        ownerUserId: userId,
+        ...profile,
+        // Approximate metro coordinates preserve radius-search behavior until
+        // address geocoding is added. Owners never have to enter coordinates.
+        // Metros without a known centroid store null ("location unknown") —
+        // never a fabricated point, which would hide the venue from every
+        // radius search.
+        lat: lat ?? fallback?.lat ?? null,
+        lng: lng ?? fallback?.lng ?? null,
+        capacity: parsed.data.capacity ?? null,
+        noiseCurfew: parsed.data.noiseCurfew ?? null,
+        foundingNumber: rank.foundingNumber,
+        foundingMember: rank.foundingMember,
+      });
+      await appendEvent(tx, {
+        actor: userId,
+        kind: "venue.created",
+        subjectType: "venue",
+        subjectId: id,
+        payload: { foundingNumber: rank.foundingNumber, foundingMember: rank.foundingMember },
+      });
+      return rank;
     });
-    await appendEvent(d, {
-      actor: userId,
-      kind: "venue.created",
-      subjectType: "venue",
-      subjectId: id,
-    });
-    return ok({ id }, 201);
+    return ok({ id, ...founding }, 201);
   } catch (e) {
     return respondError(e);
   }

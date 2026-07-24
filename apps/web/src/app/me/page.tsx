@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { db, paymentsEnabled, seriesForVenue } from "@gigit/db";
+import { db, isFoundingMember, paymentsEnabled, seriesForVenue } from "@gigit/db";
 import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm, RedirectButton } from "@/components/ApiForm";
@@ -72,6 +72,13 @@ export default async function MePage() {
             <span className="badge">
               {ACT_KIND_LABEL[performer.kind] ?? performer.kind}
             </span>{" "}
+            {isFoundingMember(performer.foundingNumber) && (
+              <>
+                <span className="badge">
+                  Founding Member #{performer.foundingNumber}
+                </span>{" "}
+              </>
+            )}
             <Link href={`/p/${performer.id}`}>view public page</Link>
             <br />
             <span className="muted">{performer.bio}</span>
@@ -163,6 +170,13 @@ export default async function MePage() {
             <span className="badge">
               {VENUE_KIND_LABEL[venue.kind] ?? venue.kind}
             </span>{" "}
+            {isFoundingMember(venue.foundingNumber) && (
+              <>
+                <span className="badge">
+                  Founding Member #{venue.foundingNumber}
+                </span>{" "}
+              </>
+            )}
             <Link href={`/v/${venue.id}`}>view public page</Link>
             <br />
             <span className="muted">{venue.bio}</span>

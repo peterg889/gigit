@@ -90,6 +90,11 @@ export const performers = pgTable("performers", {
   reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
   status: text("status").notNull().default("live"), // draft | pending_review | live
   stripeAccountId: text("stripe_account_id"), // Connect Express (payout destination)
+  // Founding-Member offer: signup rank on the act side, assigned at creation.
+  // foundingMember = number <= FOUNDING_LIMIT. Durable record of the promise so
+  // it survives to billing time; see packages/db/src/founding.ts.
+  foundingNumber: integer("founding_number"),
+  foundingMember: boolean("founding_member").notNull().default(false),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 
@@ -147,6 +152,9 @@ export const venues = pgTable("venues", {
   reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
   stripeCustomerId: text("stripe_customer_id"), // saved payment method holder
   defaultPaymentMethodId: text("default_payment_method_id"), // pm_… captured via setup-mode Checkout
+  // Founding-Member offer: signup rank on the venue side (see performers).
+  foundingNumber: integer("founding_number"),
+  foundingMember: boolean("founding_member").notNull().default(false),
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 

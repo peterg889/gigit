@@ -148,6 +148,13 @@
       "when": 1784125000000,
       "tag": "0020_launch_repairs",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1784200000000,
+      "tag": "0021_founding_members",
+      "breakpoints": true
     }
   ]
 }

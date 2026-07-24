@@ -526,8 +526,9 @@ ${cancellation}
   authentic, and non-duplicate, with one Founding Membership per real-world act
   or venue. Pricing for later members has not been set; EightGig explains it before
   asking anyone to pay and never starts a paid plan without agreement.
-- Founding-status questions: automated support cannot determine whether a
-  particular profile qualifies or is among the first 500. Escalate to a person.
+- Founding-status questions: a member's Founding status and number are shown on
+  their own profile page (the "Founding Member #N" badge on /me and their public
+  page). Point them there. Escalate only disputes about eligibility.
 - Applying: an act profile is the application, so applying to an open gig takes
   one click. Every listing shows the pay up front.
 ${disputes}
