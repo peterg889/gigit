@@ -86,14 +86,15 @@ export class ReachoutStack extends cdk.Stack {
       // Compose override: Caddy TLS front + a discovery-only worker. The
       // upstream worker command is `--provider smtp`, which crash-loops with no
       // OR_SMTP_MAILBOXES set. Until eightgig.com has a warmed mailbox this is a
-      // research/discovery instance, so the worker runs `--provider fake`: it
-      // discovers, enriches, and qualifies but sends nothing. Flip to
-      // `--provider smtp` (and add OR_SMTP_MAILBOXES to the SSM env) when the
-      // mailbox is ready.
+      // research/discovery instance: the worker runs an explicit queue
+      // allowlist that EXCLUDES `deliver`, so the sending stage is never even
+      // loaded — it discovers, enriches, qualifies, and drafts (all real),
+      // sends nothing. When the mailbox is ready, add `deliver` back (and
+      // OR_SMTP_MAILBOXES + `--provider smtp`) and `reachout resume`.
       `cat > docker-compose.override.yml <<'EOF'
 services:
   worker:
-    command: ["reachout", "run", "/app/config", "--provider", "fake", "--llm", "gemini"]
+    command: ["reachout", "run", "/app/config", "--llm", "gemini", "--queues", "discover,enrich,qualify,compose,control,ideate,synthesize"]
   caddy:
     image: caddy:2
     restart: unless-stopped
