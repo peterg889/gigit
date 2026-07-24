@@ -83,9 +83,17 @@ export class ReachoutStack extends cdk.Stack {
       "mkdir -p config/eightgig-mke",
       // tenant config from S3 (too large for SSM; contains no secrets)
       `aws s3 cp s3://eightgig-reachout-config-${this.account}/config/eightgig-mke/tenant.yaml config/eightgig-mke/tenant.yaml --region ${this.region}`,
-      // Caddy TLS front as a compose override joining the app network
+      // Compose override: Caddy TLS front + a discovery-only worker. The
+      // upstream worker command is `--provider smtp`, which crash-loops with no
+      // OR_SMTP_MAILBOXES set. Until eightgig.com has a warmed mailbox this is a
+      // research/discovery instance, so the worker runs `--provider fake`: it
+      // discovers, enriches, and qualifies but sends nothing. Flip to
+      // `--provider smtp` (and add OR_SMTP_MAILBOXES to the SSM env) when the
+      // mailbox is ready.
       `cat > docker-compose.override.yml <<'EOF'
 services:
+  worker:
+    command: ["reachout", "run", "/app/config", "--provider", "fake", "--llm", "gemini"]
   caddy:
     image: caddy:2
     restart: unless-stopped
