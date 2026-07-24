@@ -12,6 +12,12 @@
  * MAX(founding_number)+1 over committed rows — so a rolled-back creation leaves
  * no gap (unlike a raw sequence). Techs are deliberately excluded: the offer is
  * acts + venues only.
+ *
+ * IMPORTANT: `foundingMember` is a STORED boolean, frozen at grant time. Reads
+ * must use the stored column (performer.foundingMember), never recompute from
+ * the number — so changing FOUNDING_LIMIT later only affects NEW signups and
+ * never revokes an existing member. `isFoundingMember(number)` below is the
+ * grant-time predicate ONLY (what assignFounding writes into the column).
  */
 import { sql } from "drizzle-orm";
 import type { PgTransaction } from "drizzle-orm/pg-core";
@@ -45,10 +51,15 @@ export async function assignFounding(
     .select({ next: sql<number>`coalesce(max(${table.foundingNumber}), 0) + 1` })
     .from(table);
   const foundingNumber = Number(row?.next ?? 1);
-  return { foundingNumber, foundingMember: foundingNumber <= FOUNDING_LIMIT };
+  return { foundingNumber, foundingMember: isFoundingMember(foundingNumber) };
 }
 
-/** Is this stored rank a Founding Member? (null rank = legacy/unknown = no.) */
+/**
+ * Grant-time predicate: would a profile at this rank be a Founding Member under
+ * the CURRENT limit? Used only when assigning the stored boolean. Do NOT call
+ * this to decide an existing member's status — read the stored `foundingMember`
+ * column, which is frozen and immune to a later limit change.
+ */
 export function isFoundingMember(foundingNumber: number | null | undefined): boolean {
   return foundingNumber != null && foundingNumber <= FOUNDING_LIMIT;
 }

@@ -34,7 +34,7 @@ const roleCopy: Record<Role, { label: string; headline: string; detail: string }
 export default async function OnboardingPage({
   searchParams,
 }: {
-  searchParams: Promise<{ role?: string; source?: string; campaign?: string }>;
+  searchParams: Promise<{ role?: string; source?: string; campaign?: string; welcome?: string }>;
 }) {
   const query = await searchParams;
   const requested = query.role;
@@ -122,13 +122,32 @@ export default async function OnboardingPage({
   const existing = role === "venue" ? venue : role === "performer" ? performer : tech;
   if (existing) {
     const nextHref = role === "venue" ? "/slots/new" : role === "performer" ? "/slots" : "/bookings";
+    const justJoined = query.welcome === "1";
+    // Read the STORED boolean — never recompute from the number, so a future
+    // change to the founding limit never revokes an existing member. Only acts
+    // and venues carry it (techs don't).
+    const founding =
+      role !== "tech" && "foundingMember" in existing
+        ? (existing as { foundingMember: boolean }).foundingMember
+        : false;
     return (
       <div>
-        <span className="eyebrow">You’re set up</span>
+        <span className="eyebrow">{justJoined ? "You’re in" : "You’re set up"}</span>
         <h1>{roleCopy[role].headline}</h1>
+        {justJoined && founding && (
+          <div className="notice">
+            🎉 You’re a <strong>Founding Member</strong> — one of the first
+            {role === "venue" ? " venues" : " acts"} on EightGig, and you’ll
+            never pay a membership fee. Welcome aboard.
+          </div>
+        )}
         <div className="card">
           <h2>{existing.name}</h2>
-          <p>Your {roleName[role].toLowerCase()} profile is ready.</p>
+          <p>
+            {justJoined
+              ? `Your ${roleName[role].toLowerCase()} profile is live.`
+              : `Your ${roleName[role].toLowerCase()} profile is ready.`}
+          </p>
           <Link className="btn" href={nextHref}>
             {role === "venue" ? "Post an open date" : role === "performer" ? "Find a gig" : "View sound work"}
           </Link>{" "}
@@ -161,7 +180,7 @@ export default async function OnboardingPage({
             <ApiForm
               endpoint="/api/performers"
               submitLabel="Create profile and find gigs"
-              redirectTo="/slots"
+              redirectTo="/onboarding?role=performer&welcome=1"
               transform="performerProfile"
               fields={[
                 { name: "name", label: "Act name", required: true },
@@ -193,7 +212,7 @@ export default async function OnboardingPage({
             <ApiForm
               endpoint="/api/venues"
               submitLabel="Create venue and post an open date"
-              redirectTo="/slots/new"
+              redirectTo="/onboarding?role=venue&welcome=1"
               fields={[
                 { name: "name", label: "Venue name", required: true },
                 { name: "kind", label: "Type", type: "select", options: ["bar", "restaurant", "coffee_shop", "brewery", "other"], required: true },

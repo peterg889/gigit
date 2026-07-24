@@ -65,7 +65,12 @@ export default async function VenuePage({
       <div className="card">
         <h1>
           {v.name}{" "}
-          <span className="badge">{VENUE_KIND_LABEL[v.kind] ?? "Venue"}</span>
+          <span className="badge">{VENUE_KIND_LABEL[v.kind] ?? "Venue"}</span>{" "}
+          {v.foundingMember && (
+            <span className="badge" title="One of the first venues on EightGig">
+              Founding Member
+            </span>
+          )}
           {v.reliabilityStrikes > 0 && (
             <> <span className="badge">{v.reliabilityStrikes} cancellation{v.reliabilityStrikes === 1 ? "" : "s"}</span></>
           )}

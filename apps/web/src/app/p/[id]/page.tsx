@@ -81,6 +81,11 @@ export default async function PerformerPage({
         <h1>
           {p.name}{" "}
           <span className="badge">{ACT_KIND_LABEL[p.kind] ?? "Act"}</span>{" "}
+          {p.foundingMember && (
+            <span className="badge" title="One of the first acts on EightGig">
+              Founding Member
+            </span>
+          )}{" "}
           <span className="badge" title="show-up history">{rel.label}</span>
           {avg !== null && (
             <span className="badge">
