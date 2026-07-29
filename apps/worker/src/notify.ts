@@ -42,6 +42,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "How'd the night go?",
     body: "Mark the gig played and the pay heads your way. It releases on its own 24 hours after the set ends: {url}/bookings",
   },
+  review_prompt: {
+    subject: "How was the night?",
+    body: "Leave a review of your gig — it stays private until the other side reviews too, or for {days} days: {url}/bookings/{bookingId}",
+  },
   payment_released: {
     subject: "You've been paid",
     body: "The pay for your gig is on its way to your account: {url}/bookings",
@@ -160,6 +164,7 @@ export async function notifyBookingParties(
   bookingId: string,
   template: string,
   to: "venue" | "performer" | "both",
+  vars: Record<string, string> = {},
 ): Promise<void> {
   const d = db();
   const [row] = await d
@@ -181,7 +186,31 @@ export async function notifyBookingParties(
       : to === "venue"
         ? [row.venueOwner]
         : [row.performerOwner];
-  for (const userId of userIds) await notifyUser(userId, template);
+  for (const userId of userIds) await notifyUser(userId, template, vars);
+}
+
+/**
+ * Which sides of a booking still owe a review — null when both have written
+ * one, so a queued prompt for a fully-reviewed gig quietly drops instead of
+ * nagging. `reviews_booking_author_uq` makes at most one row per side.
+ */
+export async function pendingReviewAudience(
+  bookingId: string,
+): Promise<"venue" | "performer" | "both" | null> {
+  const written = new Set(
+    (
+      await db()
+        .select({ role: schema.reviews.authorRole })
+        .from(schema.reviews)
+        .where(eq(schema.reviews.bookingId, bookingId))
+    ).map((r) => r.role),
+  );
+  const venueOwes = !written.has("venue");
+  const performerOwes = !written.has("performer");
+  if (venueOwes && performerOwes) return "both";
+  if (venueOwes) return "venue";
+  if (performerOwes) return "performer";
+  return null;
 }
 
 /** Sub-slot parties: payer = whichever side funds it; tech if assigned. */

@@ -22,13 +22,15 @@ import {
   SlotUnavailableError,
   ConcurrentUpdateError,
 } from "@gigit/db";
-import type { BookingEvent, Effect } from "@gigit/domain";
+import type { BookingEvent, BookingState, Effect } from "@gigit/domain";
+import { REVIEW_VISIBILITY_DAYS, isReviewableBookingState } from "@gigit/domain";
 import PgBoss from "pg-boss";
 import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
 import * as Sentry from "@sentry/node";
 import {
   notifyBookingParties,
   notifyOtp,
+  pendingReviewAudience,
   notifyApplicationPerformer,
   notifySlotVenue,
   notifySubslotParties,
@@ -50,12 +52,14 @@ if (process.env.SENTRY_DSN) Sentry.init({ dsn: process.env.SENTRY_DSN });
 
 const TIMER_QUEUE = "booking-timers";
 const REMINDER_QUEUE = "booking-reminders";
+const REVIEW_QUEUE = "review-prompts";
 const NIGHT_FACTS_QUEUE = "venue-night-facts";
 type TimerJob = {
   bookingId: string;
   fire: "OFFER_EXPIRED" | "GIG_ENDED" | "AUTO_CONFIRM_ELAPSED";
 };
 type ReminderJob = { bookingId: string };
+type ReviewPromptJob = { bookingId: string };
 
 const jobToEvent: Record<
   "offer_expiry" | "gig_ended" | "auto_confirm",
@@ -108,6 +112,25 @@ async function main() {
     }
     await notifyBookingParties(job.data.bookingId, "day_before", "both");
     log("reminder.sent", { bookingId: job.data.bookingId });
+  });
+
+  // Post-gig review prompt (PRD F7.1). Reviews are the trust flywheel and the
+  // form has always existed, but nothing ever asked — so almost nobody wrote
+  // one. Delayed a day past release so it doesn't stack on the wrap-up notice,
+  // and it only ever nags the side that hasn't written one yet.
+  await boss.createQueue(REVIEW_QUEUE);
+  await boss.work<ReviewPromptJob>(REVIEW_QUEUE, async ([job]) => {
+    if (!job) return;
+    const audience = await pendingReviewAudience(job.data.bookingId);
+    if (!audience) {
+      log("review_prompt.skipped", { bookingId: job.data.bookingId });
+      return;
+    }
+    await notifyBookingParties(job.data.bookingId, "review_prompt", audience, {
+      bookingId: job.data.bookingId,
+      days: String(REVIEW_VISIBILITY_DAYS),
+    });
+    log("review_prompt.sent", { bookingId: job.data.bookingId, to: audience });
   });
 
   // Nightly venue-night-facts snapshot (PRD F8.5-P0): baseline data the Phase 2
@@ -445,6 +468,22 @@ async function dispatchEvent(
       await cascadeParentToSubslots(row.subject_id, "released", "worker");
     else if (to === "cancelled_by_venue" || to === "cancelled_by_performer")
       await cascadeParentToSubslots(row.subject_id, "cancelled", "worker");
+  }
+
+  // Entering a reviewable state arms the review prompt a day later.
+  if (row.kind === "booking.transition") {
+    const to = (row.payload as { to?: string }).to as BookingState | undefined;
+    if (to && isReviewableBookingState(to))
+      await boss.send(
+        REVIEW_QUEUE,
+        { bookingId: row.subject_id },
+        {
+          startAfter: new Date(Date.now() + 86_400_000),
+          singletonKey: `${row.subject_id}:review_prompt`,
+          retryLimit: 5,
+          retryBackoff: true,
+        },
+      );
   }
 
   // Entering `confirmed` arms the day-before reminder (not a state transition,
