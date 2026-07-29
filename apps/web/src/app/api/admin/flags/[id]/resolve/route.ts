@@ -27,7 +27,7 @@ export async function POST(req: Request, { params }: Params) {
       .from(schema.fraudFlags)
       .where(eq(schema.fraudFlags.id, id));
     if (!flagRow) return fail("not_found", "We couldn't find that flag.", 404);
-    if (flagRow.state !== "open") return fail("conflict", `flag is ${flagRow.state}`, 409);
+    if (flagRow.state !== "open") return fail("conflict", "Someone already resolved this flag.", 409);
 
     await d
       .update(schema.fraudFlags)

@@ -29,7 +29,7 @@ async function ownedOpenSlot(id: string, userId: string): Promise<Guard> {
   if (slot.venueId !== venue.id)
     return { ok: false, response: fail("forbidden", "That date isn't yours.", 403) };
   if (slot.status !== "open")
-    return { ok: false, response: fail("conflict", `slot is ${slot.status}`, 409) };
+    return { ok: false, response: fail("conflict", "This date has already been filled or taken down.", 409) };
   return { ok: true, slot };
 }
 

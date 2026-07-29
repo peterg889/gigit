@@ -19,7 +19,7 @@ export async function PUT(req: Request, { params }: Params) {
     if (!asset || asset.ownerUserId !== userId)
       return fail("not_found", "We couldn't find that photo or clip.", 404);
     if (asset.status !== "uploaded")
-      return fail("conflict", `asset is ${asset.status}`, 409);
+      return fail("conflict", "That upload has already been handled.", 409);
 
     const buf = Buffer.from(await req.arrayBuffer());
     const max = asset.kind === "audio" ? AUDIO_MAX_BYTES : IMAGE_MAX_BYTES;

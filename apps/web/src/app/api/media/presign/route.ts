@@ -37,7 +37,7 @@ export async function POST(req: Request) {
         422,
       );
     const maxBytes = kind === "image" ? IMAGE_MAX_BYTES : AUDIO_MAX_BYTES;
-    if (bytes > maxBytes) return fail("too_large", `max ${maxBytes} bytes`, 422);
+    if (bytes > maxBytes) return fail("too_large", `That file is too big — the limit is ${Math.floor(maxBytes / 1_000_000)} MB.`, 422);
 
     const owner =
       subjectType === "performer"
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
         : subjectType === "venue"
           ? await venueOwnedBy(userId)
           : await techOwnedBy(userId);
-    if (!owner) return fail("forbidden", `no ${subjectType} profile`, 403);
+    if (!owner) return fail("forbidden", `Create a ${subjectType === "performer" ? "act" : subjectType === "venue" ? "venue" : "sound tech"} profile first.`, 403);
 
     const d = db();
     const existing = await d
@@ -60,10 +60,10 @@ export async function POST(req: Request) {
       );
     const quota = kind === "image" ? PER_PROFILE_IMAGE_QUOTA : PER_PROFILE_AUDIO_QUOTA;
     if (existing.length >= quota)
-      return fail("quota", `max ${quota} ${kind} files per profile`, 422);
+      return fail("quota", `You can have ${quota} ${kind === "image" ? "photos" : "audio clips"} on a profile. Remove one to add another.`, 422);
 
     const id = newId("media");
-    const target = await uploadTargetFor(id, contentType);
+    const target = await uploadTargetFor(id, contentType, bytes);
     await d.insert(schema.mediaAssets).values({
       id,
       ownerUserId: userId,

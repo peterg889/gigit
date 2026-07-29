@@ -158,6 +158,20 @@ export async function screenMedia(assetId: string): Promise<void> {
     );
   }
 
+  // Audio was stored with whatever Content-Type the client claimed. That header
+  // isn't signable on a presigned PUT, so it's attacker-controlled, and unlike
+  // images nothing re-encoded audio — so an ID3-prefixed payload that sniffs as
+  // audio could sit in the bucket as text/html and be served as a document from
+  // the media CDN. Rewrite the type from what the bytes actually are.
+  if (asset.kind === "audio") {
+    const ext = path.extname(asset.storageKey!).toLowerCase();
+    await writeAsset(
+      asset.storageKey!,
+      bytes,
+      ext === ".m4a" || ext === ".mp4" ? "audio/mp4" : "audio/mpeg",
+    );
+  }
+
   const risk = await mediaFraudScreen(
     { kind: asset.kind, bytes: asset.bytes, contentSniff: sniffed },
     asset.ownerUserId,

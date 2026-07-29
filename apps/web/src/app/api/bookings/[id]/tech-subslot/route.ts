@@ -25,7 +25,7 @@ export async function POST(req: Request, { params }: Params) {
       performer?.id === booking.performerId || venue?.id === booking.venueId;
     if (!isParty) return fail("forbidden", "That booking isn't yours.", 403);
     if (booking.state !== "confirmed")
-      return fail("conflict", `booking is ${booking.state}; sound attaches to confirmed bookings`, 409);
+      return fail("conflict", "Sound can be added once the booking is confirmed.", 409);
 
     const parsed = await parseBody(req, techSubslotCreateSchema);
     if ("response" in parsed) return parsed.response;

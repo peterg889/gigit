@@ -31,7 +31,7 @@ export async function POST(req: Request, { params }: Params) {
     if (row.slot.venueId !== venue.id)
       return fail("forbidden", "That date isn't yours.", 403);
     if (row.application.status !== "submitted")
-      return fail("conflict", `application is ${row.application.status}`, 409);
+      return fail("conflict", "This application is no longer open, so it can't be offered the night.", 409);
     if (row.slot.status !== "open") return fail("conflict", "This date is no longer open.", 409);
 
     // Charge gate (F4.1): the card that gets charged at confirmation must

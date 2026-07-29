@@ -34,7 +34,7 @@ export async function POST(req: Request) {
         ),
       );
     if (existing.length >= PER_PROFILE_EMBED_QUOTA)
-      return fail("quota", `max ${PER_PROFILE_EMBED_QUOTA} video embeds`, 422);
+      return fail("quota", `You can have ${PER_PROFILE_EMBED_QUOTA} videos on a profile. Remove one to add another.`, 422);
 
     const meta = await fetchEmbedMeta(parsed.data.url);
     const id = newId("media");

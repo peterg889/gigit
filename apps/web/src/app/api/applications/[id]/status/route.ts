@@ -24,7 +24,7 @@ export async function POST(req: Request, { params }: Params) {
       .where(eq(schema.applications.id, id));
     if (!row) return fail("not_found", "We couldn't find that application.", 404);
     if (row.application.status !== "submitted")
-      return fail("conflict", `application is ${row.application.status}`, 409);
+      return fail("conflict", "This application already has an answer.", 409);
 
     if (parsed.data.action === "decline") {
       const venue = await venueOwnedBy(userId);

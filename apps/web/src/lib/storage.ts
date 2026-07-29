@@ -28,19 +28,41 @@ export interface UploadTarget {
   uploadUrl: string;
   method: "PUT";
   storageKey: string;
-  /** headers the client must send (s3 driver: content-type) */
+  /** headers the client must send (s3 driver: content-type + content-length) */
   headers?: Record<string, string>;
 }
 
 let s3: S3Client | undefined;
 function s3Client(): S3Client {
-  s3 ??= new S3Client({ region: env().AWS_REGION });
+  // WHEN_SUPPORTED (the SDK default) hoists a CRC32 of the empty body into the
+  // signed query string, where a client can't correct it. S3 tolerates it, but
+  // there's nothing to gain from signing a checksum of a body we don't have.
+  s3 ??= new S3Client({
+    region: env().AWS_REGION,
+    requestChecksumCalculation: "WHEN_REQUIRED",
+  });
   return s3;
 }
 
+/**
+ * A presigned upload target.
+ *
+ * `bytes` is signed into the grant, not merely echoed back. Without it the
+ * signature covered only bucket + key + expiry, so the size the client declared
+ * at presign time was advisory: it could declare 1 byte and PUT 5 GiB, and
+ * nothing downstream ever reconciled the two (the row kept the declared size,
+ * and the worker read the object fully into memory). Signing content-length
+ * makes S3 itself reject a body of any other length — verified against the real
+ * bucket: an oversize PUT against a length-signed grant returns 403.
+ *
+ * Note content-type is NOT signable for a presigned PUT (the presigner adds it
+ * to unsignableHeaders), so the stored type is still client-chosen and the
+ * worker has to be the authority on that.
+ */
 export async function uploadTargetFor(
   mediaId: string,
   contentType: string,
+  bytes: number,
 ): Promise<UploadTarget> {
   const ext = extFor(contentType);
   if (env().STORAGE_DRIVER === "s3") {
@@ -51,10 +73,16 @@ export async function uploadTargetFor(
         Bucket: env().S3_BUCKET!,
         Key: storageKey,
         ContentType: contentType,
+        ContentLength: bytes,
       }),
-      { expiresIn: 600 },
+      { expiresIn: 600, signableHeaders: new Set(["content-length"]) },
     );
-    return { uploadUrl, method: "PUT", storageKey, headers: { "content-type": contentType } };
+    return {
+      uploadUrl,
+      method: "PUT",
+      storageKey,
+      headers: { "content-type": contentType, "content-length": String(bytes) },
+    };
   }
   return {
     uploadUrl: `/api/media/${mediaId}/upload`,
