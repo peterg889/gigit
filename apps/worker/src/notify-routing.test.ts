@@ -21,6 +21,7 @@ describe("worker notification routing", () => {
   const slotId = newId("slot");
   const threadId = newId("thread");
   const otpId = newId("user");
+  const applicationId = newId("application");
   const otpDest = "login@routing.test";
 
   beforeAll(async () => {
@@ -53,6 +54,7 @@ describe("worker notification routing", () => {
       format: "music",
       budgetCents: 30_000,
     });
+    await d.insert(schema.applications).values({ id: applicationId, slotId, performerId });
     await d.insert(schema.threads).values({ id: threadId, scope: "inquiry" });
     await d.insert(schema.threadParticipants).values([
       { threadId, userId: venueOwner },
@@ -100,6 +102,24 @@ describe("worker notification routing", () => {
   const notify = (template: string, to: string, extra: Record<string, unknown> = {}) => ({
     ...extra,
     effects: [{ kind: "notify", template, to }],
+  });
+
+  it("sends an application decline to the act, not the venue that declined it", async () => {
+    const sinks = await drainAndCaptureSinks([
+      {
+        kind: "application.declined",
+        subjectType: "slot",
+        subjectId: slotId,
+        actor: venueOwner,
+        payload: notify("application_declined", "performer", { applicationId }),
+      },
+    ]);
+    // Every slot-subject notify used to resolve to the venue owner, so the one
+    // party who needed the news — the act — was the one who never got it.
+    expect(sinks).toContainEqual(
+      expect.objectContaining({ userId: bandOwner, template: "application_declined" }),
+    );
+    expect(sinks.some((s) => s.userId === venueOwner)).toBe(false);
   });
 
   it("routes OTP, application, and message notifications to the right recipients", async () => {

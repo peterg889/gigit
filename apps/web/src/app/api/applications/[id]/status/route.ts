@@ -46,7 +46,17 @@ export async function POST(req: Request, { params }: Params) {
       kind: `application.${status}`,
       subjectType: "slot",
       subjectId: row.slot.id,
-      payload: { applicationId: id },
+      payload: {
+        applicationId: id,
+        // a decline is news for the ACT; a withdrawal is the act's own doing
+        ...(status === "declined"
+          ? {
+              effects: [
+                { kind: "notify", template: "application_declined", to: "performer" },
+              ],
+            }
+          : {}),
+      },
     });
     return ok({ status });
   } catch (e) {

@@ -29,6 +29,7 @@ import * as Sentry from "@sentry/node";
 import {
   notifyBookingParties,
   notifyOtp,
+  notifyApplicationPerformer,
   notifySlotVenue,
   notifySubslotParties,
   notifySupportOperator,
@@ -358,8 +359,15 @@ async function dispatchEvent(
           // login code: subjectId is the destination, code lives on the otp row
           await notifyOtp((row.payload as { otpId?: string }).otpId ?? "");
         else if (row.subject_type === "slot")
-          // a performer applied → the slot's venue owner hears about it
-          await notifySlotVenue(row.subject_id, fx.template);
+          // slot-subject events cut both ways: an application arriving is news
+          // for the venue, an application outcome is news for the ACT. Routing
+          // everything to the venue is why declines were silent.
+          fx.to === "performer"
+            ? await notifyApplicationPerformer(
+                (row.payload as { applicationId?: string }).applicationId ?? "",
+                fx.template,
+              )
+            : await notifySlotVenue(row.subject_id, fx.template);
         else if (row.subject_type === "thread")
           // a message/inquiry → every participant except the sender
           await notifyThreadCounterparties(row.subject_id, row.actor, fx.template);

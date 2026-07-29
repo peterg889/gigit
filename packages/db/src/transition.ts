@@ -248,7 +248,10 @@ export async function runBookingTransition(
         .update(slots)
         .set({ status: "filled" })
         .where(eq(slots.id, row.slotId));
-      await tx
+      // The losing applicants: decline them AND tell them. This bulk path is
+      // the high-volume way an application ends, and it used to emit no event
+      // at all — so most acts never heard anything back.
+      const declined = await tx
         .update(applications)
         .set({ status: "declined" })
         .where(
@@ -257,7 +260,23 @@ export async function runBookingTransition(
             ne(applications.performerId, row.performerId),
             eq(applications.status, "submitted"),
           ),
-        );
+        )
+        .returning({ id: applications.id });
+      for (const app of declined) {
+        await appendEvent(tx, {
+          actor,
+          kind: "application.declined",
+          subjectType: "slot",
+          subjectId: row.slotId,
+          payload: {
+            applicationId: app.id,
+            reason: "slot_filled",
+            effects: [
+              { kind: "notify", template: "application_declined", to: "performer" },
+            ],
+          },
+        });
+      }
     }
 
     await appendEvent(tx, {

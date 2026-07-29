@@ -9,6 +9,7 @@ import { formatVenueDateTime, shortTimeZoneName } from "@/lib/date-time";
 export const dynamic = "force-dynamic";
 
 import {
+  APPLICATION_STATUS_LABELS,
   BOOKING_STATE_LABELS,
   SOUND_APPLICATION_LABELS_OWN,
   SOUND_STATE_LABELS,
@@ -53,6 +54,25 @@ export default async function BookingsPage() {
         .where(or(...conditions))
         .orderBy(desc(schema.bookings.createdAt))
     : [];
+  // An act's own applications (PRD F2.5). Without this the only way to learn
+  // where an application stands was to revisit each slot URL one at a time —
+  // and a decline was completely silent.
+  const applicationRows = performer
+    ? await d
+        .select({
+          application: schema.applications,
+          slot: schema.slots,
+          venueName: schema.venues.name,
+          venueTimeZone: schema.venues.timeZone,
+        })
+        .from(schema.applications)
+        .innerJoin(schema.slots, eq(schema.applications.slotId, schema.slots.id))
+        .innerJoin(schema.venues, eq(schema.slots.venueId, schema.venues.id))
+        .where(eq(schema.applications.performerId, performer.id))
+        .orderBy(desc(schema.applications.createdAt))
+        .limit(50)
+    : [];
+
   const soundRows = tech
     ? await d
         .select({
@@ -75,7 +95,7 @@ export default async function BookingsPage() {
   return (
     <div>
       <h1>Bookings</h1>
-      {rows.length === 0 && soundRows.length === 0 && (
+      {rows.length === 0 && soundRows.length === 0 && applicationRows.length === 0 && (
         <div className="card">
           <p>Nothing on your calendar yet.</p>
           {venue && <p><Link href="/slots/new">Post an open date</Link> to start hearing from acts.</p>}
@@ -128,6 +148,39 @@ export default async function BookingsPage() {
           </div>
         );
       })}
+      {applicationRows.length > 0 && (
+        <>
+          <h2>Your applications</h2>
+          <p className="muted">
+            Every gig you have applied to and where it stands. Offers show up in
+            Bookings above.
+          </p>
+          {applicationRows.map(({ application, slot, venueName, venueTimeZone }) => (
+            <div className="card" key={application.id}>
+              <div>
+                <strong>
+                  <Link href={`/slots/${slot.id}`}>{venueName}</Link>
+                </strong>{" "}
+                <span className="badge">
+                  {friendlyLabel(APPLICATION_STATUS_LABELS, application.status)}
+                </span>
+              </div>
+              <div className="muted">
+                {formatVenueDateTime(slot.startsAt, venueTimeZone)}{" "}
+                {shortTimeZoneName(slot.startsAt, venueTimeZone)} ·{" "}
+                <span className="money">${(slot.budgetCents / 100).toFixed(0)}</span>
+              </div>
+              {application.status === "declined" && (
+                <p className="muted">
+                  This one went to another act.{" "}
+                  <Link href="/slots">Find another gig</Link>.
+                </p>
+              )}
+            </div>
+          ))}
+        </>
+      )}
+
       {soundRows.length > 0 && (
         <>
           <h2>Sound work</h2>

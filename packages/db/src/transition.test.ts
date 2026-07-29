@@ -156,6 +156,35 @@ describe("booking transition runner (integration)", () => {
     expect(story[2]!.payload).toMatchObject({ from: "confirming", to: "confirmed" });
   });
 
+  it("tells each losing applicant the night went elsewhere", async () => {
+    const d = db();
+    const { slotId, appId, rivalAppId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker");
+
+    // The bulk decline used to update rows and emit nothing, so an act that
+    // lost a slot never heard back — the single most common way an application
+    // ends was silent. Each loser now gets its own addressed event.
+    const declines = await d
+      .select({ kind: events.kind, payload: events.payload })
+      .from(events)
+      .where(eq(events.subjectId, slotId))
+      .orderBy(asc(events.id));
+    expect(declines.map((e) => e.kind)).toEqual(["application.declined"]);
+    expect(declines[0]!.payload).toMatchObject({
+      applicationId: rivalAppId,
+      reason: "slot_filled",
+      effects: [{ kind: "notify", template: "application_declined", to: "performer" }],
+    });
+    // the winner is never told they lost
+    expect(
+      declines.some(
+        (e) => (e.payload as { applicationId?: string }).applicationId === appId,
+      ),
+    ).toBe(false);
+  });
+
   it("venue cancellation inside 48h records a 100% fee", async () => {
     const d = db();
     const slotId = newId("slot");

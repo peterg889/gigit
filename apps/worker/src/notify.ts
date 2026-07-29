@@ -62,6 +62,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "Dispute resolved",
     body: "A person reviewed your dispute and made the call. The outcome and the money are here: {url}/bookings",
   },
+  application_declined: {
+    subject: "That one went to another act",
+    body: "The venue booked someone else for this night. Your profile stays ready — here are other open gigs near you: {url}/slots",
+  },
   new_application: {
     subject: "An act applied to your slot",
     body: "New applicant — profile, media, and reviews are all there: {url}",
@@ -329,6 +333,21 @@ export async function notifySlotVenue(slotId: string, template: string): Promise
     .innerJoin(schema.venues, eq(schema.slots.venueId, schema.venues.id))
     .where(eq(schema.slots.id, slotId));
   if (row) await notifyUser(row.owner, template, { slotId });
+}
+
+/** An application outcome → the ACT that applied (not the venue). */
+export async function notifyApplicationPerformer(
+  applicationId: string,
+  template: string,
+  vars: Record<string, string> = {},
+): Promise<void> {
+  if (!applicationId) return;
+  const [row] = await db()
+    .select({ owner: schema.performers.ownerUserId, slotId: schema.applications.slotId })
+    .from(schema.applications)
+    .innerJoin(schema.performers, eq(schema.applications.performerId, schema.performers.id))
+    .where(eq(schema.applications.id, applicationId));
+  if (row) await notifyUser(row.owner, template, { slotId: row.slotId, ...vars });
 }
 
 /** A message/inquiry on a thread → notify every participant except the sender. */
