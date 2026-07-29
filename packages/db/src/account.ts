@@ -10,6 +10,7 @@
  */
 import { and, eq, inArray } from "drizzle-orm";
 import type { BookingEvent } from "@gigit/domain";
+import type { Db } from "./client.js";
 import { db } from "./client.js";
 import { appendEvent } from "./events.js";
 import { cancelSeries } from "./series.js";
@@ -25,9 +26,29 @@ import {
   performers,
   slots,
   slotSeries,
+  techs,
   users,
   venues,
 } from "./schema.js";
+
+/**
+ * Take a person's public presence down (or put it back). Profiles are the
+ * public face of an account: a venue publishes a full street address, an act
+ * publishes an EPK. When the account stops being active — the person left, or
+ * an admin suspended them — those pages and every directory must stop serving
+ * them. Shared by deactivation and admin suspend/reinstate so the two can
+ * never drift apart.
+ */
+export async function setProfileVisibility(
+  userId: string,
+  status: "live" | "hidden",
+  tx?: { update: Db["update"] },
+): Promise<void> {
+  const d = (tx ?? db()) as Db;
+  await d.update(performers).set({ status }).where(eq(performers.ownerUserId, userId));
+  await d.update(venues).set({ status }).where(eq(venues.ownerUserId, userId));
+  await d.update(techs).set({ status }).where(eq(techs.ownerUserId, userId));
+}
 
 /** Cancel one booking, tolerating races: a state that moved on is fine. */
 async function tryTransition(
@@ -146,6 +167,9 @@ export async function deactivateAccount(userId: string): Promise<void> {
         smsOptedOutAt: new Date(),
       })
       .where(eq(users.id, userId));
+    // Unpublish in the same transaction as the account change — otherwise a
+    // deactivated venue's street address stays public indefinitely.
+    await setProfileVisibility(userId, "hidden", tx);
     await appendEvent(tx, {
       actor: userId,
       kind: "user.deactivated",

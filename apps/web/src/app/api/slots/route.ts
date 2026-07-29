@@ -62,6 +62,7 @@ export async function GET(req: Request) {
   const conditions = [
     eq(schema.slots.status, "open"),
     gte(schema.slots.startsAt, new Date()),
+    eq(schema.venues.status, "live"), // hidden venue = not in the feed
   ];
   if (format) conditions.push(eq(schema.slots.format, format));
   if (metro) conditions.push(eq(schema.slots.metro, metro));

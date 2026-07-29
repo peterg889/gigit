@@ -19,7 +19,9 @@ export default async function VenuePage({
   const { id } = await params;
   const d = db();
   const [v] = await d.select().from(schema.venues).where(eq(schema.venues.id, id));
-  if (!v) notFound();
+  // A hidden profile (owner deactivated or suspended) must not be served —
+  // these pages publish an EPK and, for venues, a full street address.
+  if (!v || v.status !== "live") notFound();
 
   const photos = await d
     .select()

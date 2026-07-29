@@ -1,4 +1,4 @@
-import { appendEvent, db, schema } from "@gigit/db";
+import { appendEvent, db, schema, setProfileVisibility } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { isAdmin, requireUser, respondError } from "@/lib/auth";
@@ -24,6 +24,10 @@ export async function POST(req: Request, { params }: Params) {
       .where(eq(schema.users.id, id))
       .returning({ id: schema.users.id });
     if (updated.length === 0) return fail("not_found", "user not found", 404);
+
+    // Suspension has to unlist the person too: otherwise a suspended act stays
+    // in the directory collecting inquiries and firm offers it can never answer.
+    await setProfileVisibility(id, parsed.data.status === "suspended" ? "hidden" : "live");
 
     await appendEvent(d, {
       actor: adminId,

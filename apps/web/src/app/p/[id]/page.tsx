@@ -33,7 +33,9 @@ export default async function PerformerPage({
   const { id } = await params;
   const d = db();
   const [p] = await d.select().from(schema.performers).where(eq(schema.performers.id, id));
-  if (!p) notFound();
+  // A hidden profile (owner deactivated or suspended) must not be served —
+  // these pages publish an EPK and, for venues, a full street address.
+  if (!p || p.status !== "live") notFound();
 
   const media = await d
     .select()

@@ -1,5 +1,5 @@
 import { db, schema } from "@gigit/db";
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { ok } from "@/lib/respond";
 
 /** Public sound-tech directory (the third side; PRD F6). */
@@ -16,6 +16,7 @@ export async function GET() {
       travelRadiusKm: schema.techs.travelRadiusKm,
     })
     .from(schema.techs)
+    .where(eq(schema.techs.status, "live"))
     .orderBy(asc(schema.techs.createdAt))
     .limit(100);
   return ok({ techs: rows });

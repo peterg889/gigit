@@ -152,6 +152,10 @@ export const venues = pgTable("venues", {
   reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
   stripeCustomerId: text("stripe_customer_id"), // saved payment method holder
   defaultPaymentMethodId: text("default_payment_method_id"), // pm_… captured via setup-mode Checkout
+  // live | hidden — hidden when the owner deactivates or is suspended, so the
+  // public page and every directory stop serving it (venues publish a street
+  // address; leaving that up after deactivation is the privacy problem).
+  status: text("status").notNull().default("live"),
   // Founding-Member offer: signup rank on the venue side (see performers).
   foundingNumber: integer("founding_number"),
   foundingMember: boolean("founding_member").notNull().default(false),
@@ -170,6 +174,7 @@ export const techs = pgTable("techs", {
   rateWithRigCents: integer("rate_with_rig_cents"),
   travelRadiusKm: integer("travel_radius_km").notNull().default(50),
   reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
+  status: text("status").notNull().default("live"), // live | hidden (see venues.status)
   createdAt: ts("created_at").notNull().defaultNow(),
 });
 

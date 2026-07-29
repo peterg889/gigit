@@ -57,6 +57,9 @@ export default async function FeedPage({
       and(
         eq(schema.slots.status, "open"),
         gte(schema.slots.startsAt, new Date()),
+        // a hidden venue (deactivated/suspended owner) must not keep collecting
+        // applications through its still-listed open nights
+        eq(schema.venues.status, "live"),
         ...(formatFilter ? [inArray(schema.slots.format, [formatFilter, "either"])] : []),
         ...(metroFilter ? [eq(schema.slots.metro, metroFilter)] : []),
       ),

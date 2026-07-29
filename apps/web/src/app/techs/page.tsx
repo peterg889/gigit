@@ -18,6 +18,7 @@ export default async function TechsPage() {
   const techs = await db()
     .select()
     .from(schema.techs)
+    .where(eq(schema.techs.status, "live"))
     .orderBy(asc(schema.techs.createdAt))
     .limit(100);
 

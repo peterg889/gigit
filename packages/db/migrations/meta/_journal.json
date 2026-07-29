@@ -155,6 +155,13 @@
       "when": 1784200000000,
       "tag": "0021_founding_members",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1785000000000,
+      "tag": "0022_profile_visibility",
+      "breakpoints": true
     }
   ]
 }
