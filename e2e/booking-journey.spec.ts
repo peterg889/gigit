@@ -112,7 +112,7 @@ test("venue posts an open date; performer applies; offer; accept; booking confir
   );
   expect(blockedReview.status()).toBe(409);
   expect(await blockedReview.json()).toMatchObject({
-    error: { code: "conflict", message: "reviews open after a completed gig" },
+    error: { code: "conflict", message: "Reviews open once the gig is done." },
   });
 
   await vp.goto(bookingUrl);
