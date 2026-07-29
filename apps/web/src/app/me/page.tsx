@@ -21,7 +21,8 @@ const ACT_KIND_LABEL: Record<string, string> = {
   other: "Other",
 };
 
-import { VENUE_KIND_LABEL } from "@/lib/labels";
+import {
+  GIG_FORMAT_LABEL, VENUE_KIND_LABEL } from "@/lib/labels";
 
 const GEAR_LABEL: Record<string, string> = {
   none: "Labor only — no rig",
@@ -209,7 +210,7 @@ export default async function MePage() {
               <h3>Recurring nights</h3>
               {series.map((s) => (
                 <p key={s.id}>
-                  <span className="badge">{s.defaults.format}</span>{" "}
+                  <span className="badge">{GIG_FORMAT_LABEL[s.defaults.format] ?? "Open format"}</span>{" "}
                   {s.pattern.freq === "weekly"
                     ? `every ${DOW[s.pattern.dayOfWeek]}`
                     : `${WEEK[s.pattern.week ?? 1]} ${DOW[s.pattern.dayOfWeek]} monthly`}{" "}

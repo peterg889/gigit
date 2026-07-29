@@ -1,6 +1,6 @@
 import { performerUpdateSchema } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { and, eq  } from "drizzle-orm";
 import { requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
@@ -28,7 +28,10 @@ export async function GET(_req: Request, { params }: Params) {
       createdAt: schema.performers.createdAt,
     })
     .from(schema.performers)
-    .where(eq(schema.performers.id, id));
+    .where(and(eq(schema.performers.id, id), eq(schema.performers.status, "live")));
+  // The public pages gate on status; these APIs did not, so a deactivated or
+  // suspended profile kept serving over the API what the page 404s — for a
+  // venue that means a full street address.
   if (!p) return fail("not_found", "We couldn't find that act.", 404);
   return ok({ performer: p });
 }

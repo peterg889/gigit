@@ -70,6 +70,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "Dispute resolved",
     body: "A person reviewed your dispute and made the call. The outcome and the money are here: {url}/bookings",
   },
+  slot_reopened: {
+    subject: "That night is open again",
+    body: "The gig you applied for at this date fell through and it's back on the board — your application is live again, no need to re-apply: {url}/slots/{slotId}",
+  },
   application_declined: {
     subject: "That one went to another act",
     body: "The venue booked someone else for this night. Your profile stays ready — here are other open gigs near you: {url}/slots",
@@ -134,6 +138,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
 const DISCOVERY_OVERRIDES: Record<string, { subject?: string; body: string }> = {
   booking_confirmed: {
     body: "Confirmed and on the books. Set times, contacts, and terms are here — sort the pay with the room directly: {url}/bookings",
+  },
+  payment_failed: {
+    subject: "That booking didn't get confirmed",
+    body: "The booking never finished confirming, so it isn't on. The date is back on the board: {url}/bookings",
   },
   mark_played_prompt: {
     body: "How'd the night go? Mark the gig played and we'll ask the venue to confirm — and square up with the room if you haven't: {url}/bookings/{bookingId}",

@@ -49,6 +49,7 @@ export default function LoginPage() {
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
             required
           />
           <label className="check-row">
@@ -95,6 +96,8 @@ export default function LoginPage() {
             value={code}
             onChange={(e) => setCode(e.target.value)}
             pattern="[0-9]{6}"
+            inputMode="numeric"
+            autoComplete="one-time-code"
             required
           />
           <div className="button-row">

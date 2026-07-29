@@ -263,6 +263,44 @@ describe("booking transition runner (integration)", () => {
     expect(still!.status).toBe("declined");
   });
 
+  it("never lets an offer outlive the gig it is for", async () => {
+    const d = db();
+    // A venue posting Wednesday for Friday: the default 72h TTL would have put
+    // expiry at Saturday — 48h AFTER the set — and a live offer holds the slot
+    // exclusively, so one unresponsive act killed the night.
+    const startsAt = new Date(Date.now() + 40 * 3_600_000);
+    const slotId = newId("slot");
+    const appId = newId("application");
+    await d.insert(slots).values({
+      id: slotId, venueId, metro: "testville", startsAt,
+      durationMinutes: 120, format: "music", budgetCents: 50_000,
+    });
+    await d.insert(applications).values({ id: appId, slotId, performerId });
+    const bookingId = await offerFor(slotId, appId, startsAt);
+
+    const [b] = await d
+      .select({ expires: bookings.offerExpiresAt })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    expect(b!.expires.getTime()).toBeLessThan(startsAt.getTime());
+    // and it leaves a real window before downbeat, not a photo finish
+    expect(b!.expires.getTime()).toBeLessThanOrEqual(
+      startsAt.getTime() - 12 * 3_600_000,
+    );
+  });
+
+  it("still gives the act a full window when the gig is far out", async () => {
+    const d = db();
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    const [b] = await d
+      .select({ expires: bookings.offerExpiresAt })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    // the clamp must not shorten offers that were never at risk
+    expect(b!.expires.getTime()).toBeGreaterThan(Date.now() + 71 * 3_600_000);
+  });
+
   it("venue cancellation inside 48h records a 100% fee", async () => {
     const d = db();
     const slotId = newId("slot");

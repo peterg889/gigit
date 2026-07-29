@@ -115,7 +115,7 @@ export default async function BookingsPage() {
                 {friendlyLabel(BOOKING_STATE_LABELS, booking.state)}
               </span>
             </div>
-            <div className="muted">
+            <div className="gig-line">
               {formatVenueDateTime(booking.terms.startsAt, booking.terms.timeZone ?? venueTimeZone)}{" "}
               {shortTimeZoneName(booking.terms.startsAt, booking.terms.timeZone ?? venueTimeZone)}{" "}
               ·{" "}
@@ -165,7 +165,7 @@ export default async function BookingsPage() {
                   {friendlyLabel(APPLICATION_STATUS_LABELS, application.status)}
                 </span>
               </div>
-              <div className="muted">
+              <div className="gig-line">
                 {formatVenueDateTime(slot.startsAt, venueTimeZone)}{" "}
                 {shortTimeZoneName(slot.startsAt, venueTimeZone)} ·{" "}
                 <span className="money">${(slot.budgetCents / 100).toFixed(0)}</span>
@@ -196,7 +196,7 @@ export default async function BookingsPage() {
                     : friendlyLabel(SOUND_APPLICATION_LABELS_OWN, application.status)}
                 </span>
               </div>
-              <div className="muted">
+              <div className="gig-line">
                 {formatVenueDateTime(terms.startsAt, venueTimeZone)}{" "}
                 {shortTimeZoneName(terms.startsAt, venueTimeZone)}{" "}
                 · <span className="money">{"$"}{(subslot.budgetCents / 100).toFixed(0)}</span>

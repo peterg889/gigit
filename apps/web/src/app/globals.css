@@ -186,6 +186,8 @@ p { margin: 0.5em 0; }
   color: var(--amber);
   letter-spacing: 0.02em;
   white-space: nowrap;
+  /* Pay is the identity: never let it inherit a muted container's size. */
+  font-size: 1.15em;
 }
 
 /* ── Buttons: stamped in amber ink ── */
@@ -476,4 +478,12 @@ button.danger[disabled]:hover { background: #8f2f24; }
   .role-grid { grid-template-columns: 1fr; }
   .hero { padding-top: 20px; }
   header.site { align-items: flex-start; }
+}
+
+/* The date-and-pay line on a gig card. It used to be `.muted`, which made the
+   two facts a booking is actually about the dimmest text on the card. */
+.gig-line {
+  color: var(--ink);
+  font-size: 0.94rem;
+  letter-spacing: 0.01em;
 }

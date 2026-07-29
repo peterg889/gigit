@@ -1,6 +1,6 @@
 import { techUpdateSchema } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { and, eq  } from "drizzle-orm";
 import { requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
@@ -23,7 +23,10 @@ export async function GET(_req: Request, { params }: Params) {
       createdAt: schema.techs.createdAt,
     })
     .from(schema.techs)
-    .where(eq(schema.techs.id, id));
+    .where(and(eq(schema.techs.id, id), eq(schema.techs.status, "live")));
+  // The public pages gate on status; these APIs did not, so a deactivated or
+  // suspended profile kept serving over the API what the page 404s — for a
+  // venue that means a full street address.
   if (!t) return fail("not_found", "We couldn't find that sound tech.", 404);
   return ok({ tech: t });
 }

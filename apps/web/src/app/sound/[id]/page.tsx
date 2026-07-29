@@ -10,7 +10,12 @@ import {
   formatVenueDateTime,
   shortTimeZoneName,
 } from "@/lib/date-time";
-import { SOUND_APPLICATION_LABELS_OWN, SOUND_STATE_LABELS } from "@/lib/labels";
+import {
+  SOUND_APPLICATION_LABELS_OWN,
+  SOUND_APPLICATION_LABELS_REVIEW,
+  SOUND_STATE_LABELS,
+  friendlyLabel,
+} from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -172,7 +177,7 @@ export default async function SoundBookingPage({
             <p key={application.id}>
               <Link href={"/t/" + tech.id}><strong>{tech.name}</strong></Link>{" "}
               <span className="badge">
-                {SOUND_APPLICATION_LABELS_OWN[application.status] ?? "Application updated"}
+                {friendlyLabel(SOUND_APPLICATION_LABELS_REVIEW, application.status)}
               </span>{" "}
               {row.subslot.state === "open" && application.status === "submitted" && (
                 <ActionButton endpoint={"/api/tech-subslots/" + id + "/book"}

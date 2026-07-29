@@ -370,8 +370,18 @@ export async function createOffer(input: CreateOfferInput): Promise<string> {
   if (!Number.isFinite(offerTtlHours) || offerTtlHours <= 0)
     throw new InvalidOfferTermsError("offer TTL must be positive");
   const bookingId = newId("booking");
+  // A live offer holds the slot exclusively, so an unclamped 72h TTL meant a
+  // venue posting Wednesday for Friday and offering that night was locked out
+  // of every other act until Saturday — 48h AFTER the gig — unless they
+  // remembered to withdraw by hand. One unresponsive act killed the night.
+  // Never let an offer outlive its own gig: give the act until 12h before
+  // downbeat, and at least an hour to answer at all.
+  const gigStart = new Date(input.terms.startsAt).getTime();
   const offerExpiresAt = new Date(
-    Date.now() + offerTtlHours * 3_600_000,
+    Math.max(
+      Date.now() + 3_600_000,
+      Math.min(Date.now() + offerTtlHours * 3_600_000, gigStart - 12 * 3_600_000),
+    ),
   );
   try {
     await db().transaction(async (tx) => {

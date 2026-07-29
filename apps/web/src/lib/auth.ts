@@ -20,10 +20,16 @@ export function respondError(e: unknown): NextResponse {
   throw e;
 }
 
-export async function requireUser(): Promise<string> {
-  const userId = await sessionUserId();
-  if (!userId) throw new AuthError(401, "sign in required");
-  // Suspension (F9.1) bites here so every mutation route inherits it.
+/**
+ * Suspension and deactivation (F9.1) bite here, so every caller inherits it.
+ *
+ * Split out from requireUser because not every authenticated surface arrives by
+ * session cookie: the iCal feed authenticates a 365-day signed token, and it
+ * used to go straight from token to profile lookup — so a suspended or
+ * deactivated account kept serving confirmed bookings, with venue street
+ * addresses and pay, until SESSION_SECRET was rotated.
+ */
+export async function assertAccountActive(userId: string): Promise<string> {
   const [user] = await db()
     .select({ status: schema.users.status })
     .from(schema.users)
@@ -34,6 +40,12 @@ export async function requireUser(): Promise<string> {
     throw new AuthError(403, "This account has been deactivated.");
   if (!user) throw new AuthError(401, "sign in required");
   return userId;
+}
+
+export async function requireUser(): Promise<string> {
+  const userId = await sessionUserId();
+  if (!userId) throw new AuthError(401, "sign in required");
+  return assertAccountActive(userId);
 }
 
 export async function performerOwnedBy(userId: string) {

@@ -135,8 +135,7 @@ export default async function OnboardingPage({
         <span className="eyebrow">{justJoined ? "You’re in" : "You’re set up"}</span>
         <h1>{roleCopy[role].headline}</h1>
         {justJoined && founding && (
-          <div className="notice">
-            🎉 You’re a <strong>Founding Member</strong> — one of the first
+          <div className="notice"> You’re a <strong>Founding Member</strong> — one of the first
             {role === "venue" ? " venues" : " acts"} on EightGig, and you’ll
             never pay a membership fee. Welcome aboard.
           </div>

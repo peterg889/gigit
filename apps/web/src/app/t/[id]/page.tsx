@@ -1,3 +1,4 @@
+import { visibleReviews } from "@gigit/domain";
 import { db, schema } from "@gigit/db";
 import { and, asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
@@ -16,7 +17,11 @@ export default async function TechPage({
   const { id } = await params;
   const d = db();
   const [t] = await d.select().from(schema.techs).where(eq(schema.techs.id, id));
-  if (!t) notFound();
+  // A hidden profile (owner deactivated or suspended) must not be served. The
+  // act and venue pages have always had this gate; the tech page was a
+  // copy-paste that predated it, so setProfileVisibility wrote techs.status and
+  // nothing ever read it — a suspended tech's name, rates, and photos stayed up.
+  if (!t || t.status !== "live") notFound();
   const media = await d
     .select()
     .from(schema.mediaAssets)
@@ -40,20 +45,25 @@ export default async function TechPage({
     )
     .where(eq(schema.techSubslots.techId, id))
     .orderBy(desc(schema.techSubslotReviews.createdAt));
-  const reviewCutoff = Date.now() - 7 * 86_400_000;
-  const visibleReviews = allReviews
-    .map((row) => row.review)
-    .filter((review) =>
-      review.authorRole === "payer" &&
-      (review.createdAt.getTime() < reviewCutoff ||
-        allReviews.some((other) =>
-          other.review.subslotId === review.subslotId &&
-          other.review.authorRole === "tech",
-        )),
-    );
-  const average = visibleReviews.length > 0
-    ? visibleReviews.reduce((sum, review) => sum + (review.ratings.overall ?? 0), 0) /
-      visibleReviews.length
+  // This reimplemented the double-blind rule in a local const that SHADOWED the
+  // domain export, hardcoding the 7-day window — so changing
+  // REVIEW_VISIBILITY_DAYS would have taken tech reviews public early while act
+  // and venue reviews held. Same rule, one implementation, keyed on the
+  // sub-slot's own author roles.
+  const visible = visibleReviews(
+    allReviews.map((row) => ({
+      bookingId: row.review.subslotId,
+      authorRole: row.review.authorRole,
+      createdAt: row.review.createdAt,
+      ratings: row.review.ratings,
+      body: row.review.body,
+      id: row.review.id,
+    })),
+    "payer",
+  );
+  const average = visible.length > 0
+    ? visible.reduce((sum, review) => sum + (review.ratings.overall ?? 0), 0) /
+      visible.length
     : null;
 
   return (
@@ -63,7 +73,7 @@ export default async function TechPage({
           {t.name}{" "}
           <span className="badge">{GEAR_LABELS[t.gear] ?? "Equipment not listed"}</span>
           {average !== null && (
-            <> <span className="badge">★ {average.toFixed(1)} ({visibleReviews.length})</span></>
+            <> <span className="badge">★ {average.toFixed(1)} ({visible.length})</span></>
           )}
           {t.reliabilityStrikes > 0 && (
             <> <span className="badge">{t.reliabilityStrikes} cancellation{t.reliabilityStrikes === 1 ? "" : "s"}</span></>
@@ -104,10 +114,10 @@ export default async function TechPage({
           )}
         </div>
       )}
-      {visibleReviews.length > 0 && (
+      {visible.length > 0 && (
         <div className="card">
           <h2>Reviews from sound bookings</h2>
-          {visibleReviews.map((review) => (
+          {visible.map((review) => (
             <p key={review.id}>
               ★ {review.ratings.overall} —{" "}
               {review.body || <span className="muted">No written comment.</span>}

@@ -1,7 +1,13 @@
 import { db, env, schema } from "@gigit/db";
 import { jwtVerify, SignJWT } from "jose";
 import { eq, or } from "drizzle-orm";
-import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
+import {
+  assertAccountActive,
+  performerOwnedBy,
+  requireUser,
+  respondError,
+  venueOwnedBy,
+} from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 const key = () => new TextEncoder().encode(env().SESSION_SECRET);
@@ -32,6 +38,14 @@ export async function GET(req: Request) {
     userId = payload.sub;
   } catch {
     return fail("auth", "That link isn't valid anymore. Sign in and try again.", 401);
+  }
+
+  // The token long outlives any account change (365d), so the account has to be
+  // re-checked on every fetch — a calendar app polls this for a year.
+  try {
+    await assertAccountActive(userId);
+  } catch (e) {
+    return respondError(e);
   }
 
   const d = db();

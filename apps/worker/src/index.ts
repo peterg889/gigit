@@ -431,12 +431,25 @@ async function dispatchEvent(
   // Saved-search alerts (PRD F2.3): a new open slot fans out to every
   // performer whose standing filter it matches. At-least-once like the rest
   // of the outbox; a duplicate notification beats a missed gig.
-  if (row.kind === "slot.created") {
+  // A reopened slot is news too. A cancellation is the venue's worst night and
+  // the acts who wanted that date are exactly who can save it — but alerts only
+  // ever fired on slot.created, so a reopened night reached nobody.
+  if (row.kind === "slot.created" || row.kind === "slot.applicants_revived") {
     const userIds = await matchSavedSearches(row.subject_id);
     for (const userId of userIds)
       await notifyUser(userId, "slot_match", { slotId: row.subject_id });
     if (userIds.length > 0)
       log("alerts.slot_match", { slot: row.subject_id, notified: userIds.length });
+  }
+
+  // ...and tell the applicants who were passed over and just got revived: they
+  // already said yes to this date once.
+  if (row.kind === "slot.applicants_revived") {
+    const ids = (row.payload as { applicationIds?: string[] }).applicationIds ?? [];
+    for (const applicationId of ids)
+      await notifyApplicationPerformer(applicationId, "slot_reopened");
+    if (ids.length > 0)
+      log("alerts.slot_reopened", { slot: row.subject_id, notified: ids.length });
   }
 
   // New-act alerts (PRD F2.4, anti-leakage): a new performer fans out to every
