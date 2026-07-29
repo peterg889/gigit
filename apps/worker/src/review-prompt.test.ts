@@ -119,7 +119,7 @@ describe("post-gig review prompt", () => {
     expect(await pendingReviewAudience(bookingId)).toBe("both");
 
     await db().insert(schema.reviews).values({
-      id: newId("review"),
+      id: newId("message"), // reviews reuse the ULID generator
       bookingId,
       authorRole: "performer",
       ratings: { overall: 5 },
@@ -127,7 +127,7 @@ describe("post-gig review prompt", () => {
     expect(await pendingReviewAudience(bookingId)).toBe("venue");
 
     await db().insert(schema.reviews).values({
-      id: newId("review"),
+      id: newId("message"), // reviews reuse the ULID generator
       bookingId,
       authorRole: "venue",
       ratings: { overall: 4 },

@@ -5,7 +5,7 @@ export const metadata = { title: "Terms — EightGig" };
 export default function TermsPage() {
   return (
     <article className="legal-copy">
-      <span className="eyebrow">Beta · Effective July 14, 2026</span>
+      <span className="eyebrow">Beta · Effective July 29, 2026</span>
       <h1>Terms of Use</h1>
       <p className="lede">
         These terms are the ground rules for using EightGig while the service is
@@ -19,6 +19,17 @@ export default function TermsPage() {
         employer, agent, insurer, payment processor, or event producer. We do
         not guarantee that an open date will fill, a gig will happen, or either party
         will perform or pay.
+      </p>
+      <p>
+        <strong>
+          We do not run background checks, verify identity, confirm licenses or
+          insurance, or vet the people and rooms listed here.
+        </strong>{" "}
+        Profiles and listings are written by the people using EightGig, and
+        reviews reflect their opinions. Booking a gig means meeting people and
+        going places on your own judgment — check who you are dealing with,
+        tell someone where you will be, and trust your instincts. Report anything
+        unsafe through <Link href="/help">Help &amp; Support</Link>.
       </p>
 
       <h2>Who may use it</h2>
@@ -90,14 +101,89 @@ export default function TermsPage() {
         security. You may ask for review through support.
       </p>
 
+      <h2>Text messages</h2>
+      <p>
+        If you give us a phone number, we may text you about the things you
+        asked for: sign-in codes, offers, confirmations, day-before reminders,
+        and messages from the other side of a booking. How often depends on
+        your own booking activity. Message and data rates may apply, and we
+        cannot promise every message arrives on time — carriers are not always
+        reliable.
+      </p>
+      <p>
+        Reply <strong>STOP</strong> to any message to stop texts, or{" "}
+        <strong>HELP</strong> for help. Agreeing to texts is not a condition of
+        using EightGig; keep an email address on your account and you can leave
+        SMS off entirely. Deactivating texts does not delete your account.
+      </p>
+
+      <h2>Copyright</h2>
+      <p>
+        If you believe something posted here infringes your copyright, tell us
+        through <Link href="/help">Help &amp; Support</Link> and include: what
+        work was infringed, where the material is on EightGig, your contact
+        information, a statement that you believe in good faith the use is not
+        authorized, a statement that the information is accurate and you are
+        the owner or authorized to act for them, and your signature.
+      </p>
+      <p>
+        We remove material that is properly reported and tell whoever posted
+        it. If you think your material was removed by mistake, send a counter
+        notice the same way and we may restore it. Repeat infringement ends an
+        account.
+      </p>
+
       <h2>Service limits</h2>
       <p>
         EightGig is currently in beta. Features may change, and the service may
-        experience interruptions. To the extent the law allows, EightGig is not liable for
+        experience interruptions.{" "}
+        <strong>
+          EightGig is provided as is and as available, without warranties of any
+          kind — we do not warrant that it will be uninterrupted, error-free, or
+          secure, and we disclaim implied warranties of merchantability, fitness
+          for a particular purpose, and non-infringement.
+        </strong>
+      </p>
+      <p>
+        To the extent the law allows, EightGig is not liable for
         indirect, incidental, special, consequential, or lost-profit damages,
         or for acts, omissions, injury, property damage, payment disputes, or
-        content from other participants. Rights that cannot legally be
-        waived remain in effect.
+        content from other participants. Where liability cannot be excluded,
+        our total liability for any claim is limited to the greater of the
+        amount you paid EightGig in the twelve months before the claim or one
+        hundred U.S. dollars. Rights that cannot legally be waived remain in
+        effect, and some states do not allow these limits — in that case they
+        apply only as far as that state permits.
+      </p>
+
+      <h2>If you cause a problem for someone else</h2>
+      <p>
+        You agree to cover EightGig&rsquo;s losses, including reasonable legal
+        fees, from claims arising out of your listings, content, conduct, gigs,
+        or failure to meet obligations you took on here — including a
+        participant&rsquo;s claim about a gig you booked or played. We will tell
+        you about any such claim and let you participate in the defense.
+      </p>
+
+      <h2>Governing law and disputes</h2>
+      <p>
+        These terms are governed by the laws of the State of Wisconsin, without
+        regard to its conflict-of-laws rules. Disputes with EightGig belong in
+        the state or federal courts in Milwaukee County, Wisconsin, and both
+        sides consent to that jurisdiction.
+      </p>
+      <p>
+        Before filing anything, contact us through{" "}
+        <Link href="/help">Help &amp; Support</Link> and give us 30 days to sort
+        it out — most problems are a misunderstanding and end there. Nothing
+        here stops either side from seeking relief in small-claims court, or a
+        court order to stop misuse of the service or of intellectual property.
+      </p>
+      <p>
+        Disputes <em>between</em> a venue, act, or sound professional are theirs
+        to resolve. EightGig may record what happened and apply product
+        consequences, but we are not a party to your booking and cannot decide
+        your claim against each other.
       </p>
 
       <h2>Ending use and changes</h2>
