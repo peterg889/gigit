@@ -7,6 +7,7 @@ const createSession = vi.fn(async (_userId: string) => {});
 vi.mock("@/lib/session", () => ({ createSession: (id: string) => createSession(id) }));
 
 import { POST } from "./route";
+import { PRIVACY_VERSION, TERMS_VERSION } from "@/lib/legal";
 
 const verify = (body: Record<string, unknown>) =>
   POST(
@@ -49,6 +50,30 @@ describe("auth verify route", () => {
     // OTP is consumed: replaying the same code fails
     const replay = await verify({ email, code: "123456", termsAccepted: true });
     expect(replay.status).toBe(401);
+  });
+
+  it("records consent against the versions the pages actually publish", async () => {
+    const email = `${newId("user")}@verify.test`;
+    await seedOtp(email);
+    const res = await verify({ email, code: "123456", termsAccepted: true });
+    const { userId } = await res.json();
+
+    // This event is the artifact you'd produce if someone disputed what they
+    // agreed to. It was hardcoded to a date the documents had already moved
+    // past, so every consent on record pointed at a superseded version.
+    const [ev] = await db()
+      .select({ payload: schema.events.payload })
+      .from(schema.events)
+      .where(
+        and(
+          eq(schema.events.subjectId, userId),
+          eq(schema.events.kind, "user.terms_accepted"),
+        ),
+      );
+    expect(ev!.payload).toEqual({
+      termsVersion: TERMS_VERSION,
+      privacyVersion: PRIVACY_VERSION,
+    });
   });
 
   it("rejects a wrong code and counts the attempt", async () => {

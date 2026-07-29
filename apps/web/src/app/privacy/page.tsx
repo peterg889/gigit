@@ -1,11 +1,13 @@
 import Link from "next/link";
 
+import { PRIVACY_VERSION, effectiveLabel } from "@/lib/legal";
+
 export const metadata = { title: "Privacy Notice — EightGig" };
 
 export default function PrivacyPage() {
   return (
     <article className="legal-copy">
-      <span className="eyebrow">Beta · Effective July 14, 2026</span>
+      <span className="eyebrow">Beta · Effective {effectiveLabel(PRIVACY_VERSION)}</span>
       <h1>Privacy Notice</h1>
       <p className="lede">
         This notice explains what EightGig collects, how we use it, and the

@@ -159,6 +159,24 @@ describe("night facts + saved-search matching (integration)", () => {
     });
     const eitherMatched = await matchSavedSearches(eitherSlot);
     expect(eitherMatched).toContain(userNo); // music search matches `either`
+
+    // ...and the mirror case, which is the one the form actually offers as
+    // "Music or comedy". Only the slot side was handled, so this subscription
+    // matched nothing but `either` slots — the inverse of what it promises.
+    const userEither = newId("user");
+    const performerEither = newId("performer");
+    await d.insert(users).values({ id: userEither, email: `${userEither}@t.test` });
+    await d.insert(performers).values({
+      id: performerEither,
+      ownerUserId: userEither,
+      kind: "band",
+      name: "Analytics Either Act",
+      homeMetro: "analytics-testville",
+      techNeeds: { inputs: 1 },
+    });
+    await mkSearch(performerEither, { format: "either", metro: "analytics-testville" });
+    expect(await matchSavedSearches(gigSlotId)).toContain(userEither); // comedy slot
+    expect(await matchSavedSearches(eitherSlot)).toContain(userEither); // either slot
   });
 
   it("matchOpenSlotsForPerformer: a new act fans out to venues with a fitting open slot", async () => {

@@ -37,7 +37,10 @@ export async function snapshotNightFacts(nightDate?: string): Promise<number> {
 
 /**
  * Saved-search matching (PRD F2.3): which users should hear about this slot.
- * `either`-format slots match any format preference.
+ * `either` is a wildcard on BOTH sides: an `either` slot matches any format
+ * preference, and an `either` preference matches any slot format. The predicate
+ * only handled the slot side, so the "Music or comedy" option the form offers
+ * matched nothing but the rarest slot type — the exact inverse of its label.
  */
 export async function matchSavedSearches(slotId: string): Promise<string[]> {
   const { rows } = await getPool().query(
@@ -45,7 +48,8 @@ export async function matchSavedSearches(slotId: string): Promise<string[]> {
        from saved_searches ss
        join performers p on p.id = ss.performer_id
        join slots s on s.id = $1
-      where (ss.format is null or ss.format = s.format or s.format = 'either')
+      where (ss.format is null or ss.format = 'either'
+             or s.format = 'either' or ss.format = s.format)
         and (ss.metro is null or ss.metro = s.metro)
         and (ss.min_budget_cents is null or s.budget_cents >= ss.min_budget_cents)`,
     [slotId],

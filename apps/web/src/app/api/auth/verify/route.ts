@@ -2,6 +2,7 @@ import { authVerifySchema, newId } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
 import { and, desc, eq, gt, isNull } from "drizzle-orm";
 import { createSession } from "@/lib/session";
+import { consentVersions } from "@/lib/legal";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 export async function POST(req: Request) {
@@ -68,7 +69,7 @@ export async function POST(req: Request) {
     kind: "user.terms_accepted",
     subjectType: "user",
     subjectId: user!.id,
-    payload: { version: "2026-07-13" },
+    payload: consentVersions(),
   });
   await createSession(user!.id);
   return ok({ userId: user!.id });

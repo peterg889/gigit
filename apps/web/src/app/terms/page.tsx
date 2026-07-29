@@ -1,11 +1,13 @@
 import Link from "next/link";
 
+import { TERMS_VERSION, effectiveLabel } from "@/lib/legal";
+
 export const metadata = { title: "Terms — EightGig" };
 
 export default function TermsPage() {
   return (
     <article className="legal-copy">
-      <span className="eyebrow">Beta · Effective July 29, 2026</span>
+      <span className="eyebrow">Beta · Effective {effectiveLabel(TERMS_VERSION)}</span>
       <h1>Terms of Use</h1>
       <p className="lede">
         These terms are the ground rules for using EightGig while the service is
