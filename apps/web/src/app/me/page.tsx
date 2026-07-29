@@ -110,7 +110,7 @@ export default async function MePage() {
                 { name: "genreTags", label: "Genres (comma-separated)", defaultValue: (performer.genreTags ?? []).join(", ") },
                 { name: "rateMinCents", label: "Typical rate from ($)", type: "number", defaultValue: performer.rateMinCents != null ? performer.rateMinCents / 100 : undefined },
                 { name: "rateMaxCents", label: "Typical rate to ($)", type: "number", defaultValue: performer.rateMaxCents != null ? performer.rateMaxCents / 100 : undefined },
-                { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: performer.travelRadiusKm },
+                { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: performer.travelRadiusMiles },
                 { name: "setLengthsMinutes", label: "Set lengths in minutes (comma-separated)", defaultValue: (performer.setLengthsMinutes ?? []).join(", ") },
                 { name: "inputs", label: "Audio inputs needed", type: "number", defaultValue: performer.techNeeds.inputs },
                 { name: "micsNeeded", label: "Microphones needed", type: "number", defaultValue: performer.techNeeds.micsNeeded ?? 0 },
@@ -136,7 +136,7 @@ export default async function MePage() {
               { name: "genreTags", label: "Genres (comma-separated)" },
               { name: "rateMinCents", label: "Typical rate from ($)", type: "number" },
               { name: "rateMaxCents", label: "Typical rate to ($)", type: "number" },
-              { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: 50 },
+              { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: 30 },
               { name: "setLengthsMinutes", label: "Set lengths in minutes (comma-separated)", placeholder: "45, 60, 120" },
               { name: "inputs", label: "Audio inputs needed", type: "number", defaultValue: 0 },
               { name: "micsNeeded", label: "Microphones needed", type: "number", defaultValue: 0 },
@@ -332,7 +332,7 @@ export default async function MePage() {
                 { name: "bio", label: "Experience", type: "textarea", defaultValue: tech.bio ?? "" },
                 { name: "rateLaborCents", label: "Labor rate ($)", type: "number", defaultValue: tech.rateLaborCents != null ? tech.rateLaborCents / 100 : undefined },
                 { name: "rateWithRigCents", label: "Rate with rig ($)", type: "number", defaultValue: tech.rateWithRigCents != null ? tech.rateWithRigCents / 100 : undefined },
-                { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: tech.travelRadiusKm },
+                { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: tech.travelRadiusMiles },
               ]}
             />
           </details>
@@ -348,7 +348,7 @@ export default async function MePage() {
               { name: "bio", label: "Experience", type: "textarea" },
               { name: "rateLaborCents", label: "Labor rate ($)", type: "number" },
               { name: "rateWithRigCents", label: "Rate with rig ($)", type: "number" },
-              { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: 50 },
+              { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: 30 },
             ]}
           />
         )}

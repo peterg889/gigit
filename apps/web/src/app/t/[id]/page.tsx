@@ -79,7 +79,7 @@ export default async function TechPage({
             <> <span className="badge">{t.reliabilityStrikes} cancellation{t.reliabilityStrikes === 1 ? "" : "s"}</span></>
           )}
         </h1>
-        <p className="muted">Travels {t.travelRadiusKm} km</p>
+        <p className="muted">Travels {t.travelRadiusMiles} miles</p>
         <p>{t.bio || <span className="muted">No experience summary yet.</span>}</p>
         <p className="muted">
           {t.rateLaborCents != null && (

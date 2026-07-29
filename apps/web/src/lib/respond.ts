@@ -51,7 +51,7 @@ const FIELD_LABELS: Record<string, string> = {
   metro: "City",
   genreTags: "Genres",
   genrePrefs: "Genres you book",
-  travelRadiusKm: "Travel range",
+  travelRadiusMiles: "Travel range",
   hasPA: "House PA",
   hasOperator: "House sound tech",
   micsAvailable: "Microphones available",

@@ -1,5 +1,5 @@
 import { newId, slotCreateSchema } from "@gigit/domain";
-import { appendEvent, db, schema } from "@gigit/db";
+import { appendEvent, db, openSlotFeed, schema } from "@gigit/db";
 import { and, asc, eq, gte, sql } from "drizzle-orm";
 import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
@@ -58,42 +58,14 @@ export async function GET(req: Request) {
   const minBudget = Number(url.searchParams.get("min_budget_cents")) || 0;
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
-  const radiusKm = Number(url.searchParams.get("radius_km"));
-  const conditions = [
-    eq(schema.slots.status, "open"),
-    gte(schema.slots.startsAt, new Date()),
-    eq(schema.venues.status, "live"), // hidden venue = not in the feed
-  ];
-  if (format) conditions.push(eq(schema.slots.format, format));
-  if (metro) conditions.push(eq(schema.slots.metro, metro));
-  if (minBudget > 0) conditions.push(gte(schema.slots.budgetCents, minBudget));
-  // Venues without coordinates (metro has no known centroid, no geocoder yet)
-  // stay visible under a radius filter — hiding them would blank the venue out
-  // of discovery entirely; the metro label lets the performer judge distance.
-  if (Number.isFinite(lat) && Number.isFinite(lng) && radiusKm > 0)
-    conditions.push(
-      sql`(${schema.venues.lat} is null or ${schema.venues.lng} is null
-          or 6371 * acos(least(1, cos(radians(${lat})) * cos(radians(${schema.venues.lat}))
-          * cos(radians(${schema.venues.lng}) - radians(${lng}))
-          + sin(radians(${lat})) * sin(radians(${schema.venues.lat})))) <= ${radiusKm})`,
-    );
-
-  const rows = await db()
-    .select({
-      slot: schema.slots,
-      venueName: schema.venues.name,
-      venueKind: schema.venues.kind,
-      venueAddressLine1: schema.venues.addressLine1,
-      venueAddressLine2: schema.venues.addressLine2,
-      venueCity: schema.venues.city,
-      venueRegion: schema.venues.region,
-      venuePostalCode: schema.venues.postalCode,
-      venueTimeZone: schema.venues.timeZone,
-    })
-    .from(schema.slots)
-    .innerJoin(schema.venues, eq(schema.slots.venueId, schema.venues.id))
-    .where(and(...conditions))
-    .orderBy(asc(schema.slots.startsAt))
-    .limit(100);
+  // miles, to match every other distance the product states
+  const radiusMiles = Number(url.searchParams.get("radius_miles"));
+  const rows = await openSlotFeed({
+    format,
+    metro,
+    minBudgetCents: minBudget,
+    near: { lat, lng, radiusMiles },
+    limit: 100,
+  });
   return ok({ slots: rows });
 }

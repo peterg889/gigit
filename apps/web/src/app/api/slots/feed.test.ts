@@ -19,6 +19,7 @@ describe("open slot feed filters", () => {
   const vNoCoords = newId("venue");
   const sMusic = newId("slot");
   const sComedy = newId("slot");
+  const sEither = newId("slot");
   const sCheap = newId("slot");
   const sNoCoords = newId("slot");
   const sPast = newId("slot");
@@ -57,6 +58,7 @@ describe("open slot feed filters", () => {
     await d.insert(schema.slots).values([
       { id: sMusic, venueId: vMke, format: "music", budgetCents: 40_000, ...base },
       { id: sComedy, venueId: vMke, format: "comedy", budgetCents: 20_000, ...base },
+      { id: sEither, venueId: vMke, format: "either", budgetCents: 30_000, ...base },
       { id: sCheap, venueId: vMke, format: "music", budgetCents: 5_000, ...base },
       { id: sNoCoords, venueId: vNoCoords, format: "music", budgetCents: 30_000, ...base },
       {
@@ -83,7 +85,31 @@ describe("open slot feed filters", () => {
 
   it("filters by format", async () => {
     const got = await ids(await feed(`metro=${metro}&format=comedy`));
-    expect(got).toEqual([sComedy]);
+    // `either` nights fit a comedy search too — see the wildcard case below.
+    expect(got).toEqual(expect.arrayContaining([sComedy, sEither]));
+    expect(got).not.toContain(sMusic);
+  });
+
+  it("treats `either` as a wildcard in both directions", async () => {
+    // This query is written once and consumed by the page and this route. They
+    // used to be two copies, and this predicate is where they drifted: the API
+    // compared format for equality, so it hid every music-or-comedy night the
+    // page showed — the same wildcard bug already fixed once in saved-search
+    // matching, in the copy that never got the fix.
+    const asMusic = await ids(await feed(`metro=${metro}&format=music`));
+    expect(asMusic).toEqual(expect.arrayContaining([sMusic, sEither]));
+    expect(asMusic).not.toContain(sComedy);
+
+    // ...and asking for `either` means "don't care", not "only either nights"
+    const asEither = await ids(await feed(`metro=${metro}&format=either`));
+    expect(asEither).toEqual(expect.arrayContaining([sMusic, sComedy, sEither]));
+  });
+
+  it("matches a metro the way it was typed, not the way it is stored", async () => {
+    // metroSchema lowercases on the way in; the API matched the raw param, so
+    // any capitalized city returned an empty feed.
+    const upper = await ids(await feed(`metro=${metro.toUpperCase()}`));
+    expect(upper).toEqual(expect.arrayContaining([sMusic, sComedy]));
   });
 
   it("applies the budget floor", async () => {
@@ -93,18 +119,18 @@ describe("open slot feed filters", () => {
   });
 
   it("radius filter keeps nearby venues and venues without coordinates", async () => {
-    // Searching from downtown Milwaukee with a 40 km radius.
+    // Searching from downtown Milwaukee with a 25-mile radius.
     const got = await ids(
-      await feed(`metro=${metro}&lat=43.04&lng=-87.91&radius_km=40`),
+      await feed(`metro=${metro}&lat=43.04&lng=-87.91&radius_miles=25`),
     );
     expect(got).toEqual(expect.arrayContaining([sMusic, sNoCoords]));
   });
 
   it("radius filter excludes venues with far-away coordinates", async () => {
-    // 1 km radius from a point ~100 km away: coordinate venues drop out,
+    // 1-mile radius from a point ~60 miles away: coordinate venues drop out,
     // the coordinate-less venue stays visible by design.
     const got = await ids(
-      await feed(`metro=${metro}&lat=44.0&lng=-89.0&radius_km=1`),
+      await feed(`metro=${metro}&lat=44.0&lng=-89.0&radius_miles=1`),
     );
     expect(got).not.toContain(sMusic);
     expect(got).toContain(sNoCoords);

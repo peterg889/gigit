@@ -13,7 +13,7 @@ export async function GET() {
       rateLaborCents: schema.techs.rateLaborCents,
       rateWithRigCents: schema.techs.rateWithRigCents,
       reliabilityStrikes: schema.techs.reliabilityStrikes,
-      travelRadiusKm: schema.techs.travelRadiusKm,
+      travelRadiusMiles: schema.techs.travelRadiusMiles,
     })
     .from(schema.techs)
     .where(eq(schema.techs.status, "live"))

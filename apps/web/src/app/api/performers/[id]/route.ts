@@ -18,7 +18,7 @@ export async function GET(_req: Request, { params }: Params) {
       bio: schema.performers.bio,
       genreTags: schema.performers.genreTags,
       homeMetro: schema.performers.homeMetro,
-      travelRadiusKm: schema.performers.travelRadiusKm,
+      travelRadiusMiles: schema.performers.travelRadiusMiles,
       rateMinCents: schema.performers.rateMinCents,
       rateMaxCents: schema.performers.rateMaxCents,
       setLengthsMinutes: schema.performers.setLengthsMinutes,

@@ -38,7 +38,7 @@ const performerObject = z.object({
   bio: z.string().max(4000).default(""),
   genreTags: z.array(z.string().min(1).max(40)).max(10).default([]),
   homeMetro: metroSchema,
-  travelRadiusKm: z.number().int().min(0).max(500).default(50),
+  travelRadiusMiles: z.number().int().min(0).max(300).default(30),
   rateMinCents: z.number().int().min(0).optional(),
   rateMaxCents: z.number().int().min(0).optional(),
   setLengthsMinutes: z.array(z.number().int().min(10).max(360)).max(5).default([]),
@@ -93,7 +93,7 @@ export const techCreateSchema = z.object({
   gear: z.enum(["none", "partial", "full_rig"]),
   rateLaborCents: z.number().int().min(0).optional(),
   rateWithRigCents: z.number().int().min(0).optional(),
-  travelRadiusKm: z.number().int().min(0).max(500).default(50),
+  travelRadiusMiles: z.number().int().min(0).max(300).default(30),
 });
 export const techUpdateSchema = techCreateSchema.partial();
 

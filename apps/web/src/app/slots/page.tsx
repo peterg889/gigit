@@ -1,4 +1,4 @@
-import { db, schema } from "@gigit/db";
+import { db, openSlotFeed, schema } from "@gigit/db";
 import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { performerOwnedBy, venueOwnedBy } from "@/lib/auth";
@@ -39,33 +39,11 @@ export default async function FeedPage({
         .from(schema.savedSearches)
         .where(eq(schema.savedSearches.performerId, performer.id))
     : [];
-  const rows = await db()
-    .select({
-      slot: schema.slots,
-      venueName: schema.venues.name,
-      venueKind: schema.venues.kind,
-      venueAddressLine1: schema.venues.addressLine1,
-      venueAddressLine2: schema.venues.addressLine2,
-      venueCity: schema.venues.city,
-      venueRegion: schema.venues.region,
-      venuePostalCode: schema.venues.postalCode,
-      venueTimeZone: schema.venues.timeZone,
-    })
-    .from(schema.slots)
-    .innerJoin(schema.venues, eq(schema.slots.venueId, schema.venues.id))
-    .where(
-      and(
-        eq(schema.slots.status, "open"),
-        gte(schema.slots.startsAt, new Date()),
-        // a hidden venue (deactivated/suspended owner) must not keep collecting
-        // applications through its still-listed open nights
-        eq(schema.venues.status, "live"),
-        ...(formatFilter ? [inArray(schema.slots.format, [formatFilter, "either"])] : []),
-        ...(metroFilter ? [eq(schema.slots.metro, metroFilter)] : []),
-      ),
-    )
-    .orderBy(asc(schema.slots.startsAt))
-    .limit(50);
+  const rows = await openSlotFeed({
+    format: formatFilter,
+    metro: metroFilter,
+    limit: 50,
+  });
 
   const chipHref = (format: string | null) => {
     const params = new URLSearchParams();

@@ -189,7 +189,7 @@ export default async function OnboardingPage({
                 { name: "genreTags", label: "Genres (comma-separated)" },
                 { name: "rateMinCents", label: "Typical rate from ($)", type: "number" },
                 { name: "rateMaxCents", label: "Typical rate to ($)", type: "number" },
-                { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: 50 },
+                { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: 30 },
                 { name: "setLengthsMinutes", label: "Set lengths in minutes", placeholder: "45, 60, 120" },
                 { name: "inputs", label: "Audio inputs needed", type: "number", defaultValue: 0 },
                 { name: "micsNeeded", label: "Microphones needed", type: "number", defaultValue: 0 },
@@ -263,7 +263,7 @@ export default async function OnboardingPage({
                 { name: "bio", label: "Experience and typical rooms", type: "textarea" },
                 { name: "rateLaborCents", label: "Labor rate ($)", type: "number" },
                 { name: "rateWithRigCents", label: "Rate with rig ($)", type: "number" },
-                { name: "travelRadiusKm", label: "Travel radius (km)", type: "number", defaultValue: 50 },
+                { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: 30 },
               ]}
             />
           </>

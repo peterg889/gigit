@@ -71,7 +71,7 @@ async function main() {
       bio: "Four-piece roots-rock band. Tight two-hour sets of originals and crowd-pleasers.",
       genreTags: ["roots rock", "americana", "covers"],
       homeMetro: "milwaukee",
-      travelRadiusKm: 80,
+      travelRadiusMiles: 50,
       rateMinCents: 40_000,
       rateMaxCents: 80_000,
       setLengthsMinutes: [60, 120],
@@ -85,7 +85,7 @@ async function main() {
       bio: "Stand-up. Host of the Riverwest open mic; clean-ish 30 or rowdy 45, your call.",
       genreTags: ["stand-up", "host"],
       homeMetro: "milwaukee",
-      travelRadiusKm: 40,
+      travelRadiusMiles: 25,
       rateMinCents: 10_000,
       rateMaxCents: 30_000,
       setLengthsMinutes: [15, 30, 45],
@@ -101,7 +101,7 @@ async function main() {
     gear: "full_rig",
     rateLaborCents: 15_000,
     rateWithRigCents: 30_000,
-    travelRadiusKm: 60,
+    travelRadiusMiles: 35,
   });
 
   const friday = nextWeekday(5, 20, "America/Chicago");

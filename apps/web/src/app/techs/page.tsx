@@ -186,7 +186,7 @@ export default async function TechsPage() {
               </>
             )}
             {t.rateLaborCents == null && t.rateWithRigCents == null && "Rates not listed"}
-            {" · "}Travels {t.travelRadiusKm} km
+            {" · "}Travels {t.travelRadiusMiles} miles
           </p>
           {canInvite && (
             <ApiForm

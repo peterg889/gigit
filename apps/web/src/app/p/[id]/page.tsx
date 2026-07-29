@@ -96,7 +96,7 @@ export default async function PerformerPage({
           )}
         </h1>
         <p className="muted">
-          {formatAreaName(p.homeMetro)} · travels {p.travelRadiusKm} km
+          {formatAreaName(p.homeMetro)} · travels {p.travelRadiusMiles} miles
           {p.genreTags.length > 0 && <> · {p.genreTags.join(", ")}</>}
         </p>
         <p>{p.bio || <span className="muted">This act has not added a bio yet.</span>}</p>

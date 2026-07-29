@@ -74,7 +74,7 @@ export const performers = pgTable("performers", {
   bio: text("bio").notNull().default(""),
   genreTags: jsonb("genre_tags").$type<string[]>().notNull().default([]),
   homeMetro: text("home_metro").notNull(),
-  travelRadiusKm: integer("travel_radius_km").notNull().default(50),
+  travelRadiusMiles: integer("travel_radius_miles").notNull().default(30),
   rateMinCents: integer("rate_min_cents"),
   rateMaxCents: integer("rate_max_cents"),
   setLengthsMinutes: jsonb("set_lengths_minutes").$type<number[]>().notNull().default([]),
@@ -172,7 +172,7 @@ export const techs = pgTable("techs", {
   gear: text("gear").notNull(), // none | partial | full_rig
   rateLaborCents: integer("rate_labor_cents"),
   rateWithRigCents: integer("rate_with_rig_cents"),
-  travelRadiusKm: integer("travel_radius_km").notNull().default(50),
+  travelRadiusMiles: integer("travel_radius_miles").notNull().default(30),
   reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
   status: text("status").notNull().default("live"), // live | hidden (see venues.status)
   createdAt: ts("created_at").notNull().defaultNow(),
