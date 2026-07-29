@@ -141,6 +141,9 @@ export async function runBookingTransition(
           state: decision.next,
           version: row.version + 1,
           ...(event.kind === "PERFORMER_ACCEPTED" ? { performerAcceptedAt: now } : {}),
+          ...(event.kind === "PERFORMER_MARKED_PLAYED"
+            ? { performerMarkedPlayedAt: now }
+            : {}),
         })
         .where(and(eq(bookings.id, bookingId), eq(bookings.version, row.version)))
         .returning({ id: bookings.id });

@@ -331,6 +331,7 @@ export const bookings = pgTable(
     paymentRef: text("payment_ref"), // PaymentIntent id once charged
     venueAcceptedAt: ts("venue_accepted_at"),
     performerAcceptedAt: ts("performer_accepted_at"),
+    performerMarkedPlayedAt: ts("performer_marked_played_at"),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
   (t) => [

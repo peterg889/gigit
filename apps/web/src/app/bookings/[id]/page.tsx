@@ -228,10 +228,20 @@ export default async function BookingPage({
             </>
           )}{" "}
           {state === "awaiting_confirmation" && asPerformer && (
-            <ActionButton
-              endpoint={`/api/bookings/${id}/mark-played`}
-              label="Mark gig as played"
-            />
+            // Pressing this doesn't change state, so without the recorded
+            // timestamp the page re-rendered the same button and the act had no
+            // way to know it worked — several pressed it repeatedly.
+            b.performerMarkedPlayedAt ? (
+              <span className="muted">
+                You marked this played. Waiting on the venue to confirm — it
+                closes out on its own 24 hours after the set ended.
+              </span>
+            ) : (
+              <ActionButton
+                endpoint={`/api/bookings/${id}/mark-played`}
+                label="Mark gig as played"
+              />
+            )
           )}{" "}
           {state === "awaiting_confirmation" && asVenue && (
             <>

@@ -185,6 +185,35 @@ describe("booking transition runner (integration)", () => {
     ).toBe(false);
   });
 
+  it("records the act's mark-played claim and hands the night to the venue", async () => {
+    const d = db();
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker");
+    await runBookingTransition(bookingId, { kind: "GIG_ENDED" }, "worker");
+
+    const marked = await runBookingTransition(
+      bookingId,
+      { kind: "PERFORMER_MARKED_PLAYED" },
+      userBand,
+    );
+    // Same state on purpose — but it used to emit nothing and persist nothing,
+    // so the act's press was indistinguishable from never pressing it and the
+    // venue was never told the night was waiting on them.
+    expect(marked.to).toBe("awaiting_confirmation");
+    expect(marked.effects).toContainEqual({
+      kind: "notify",
+      template: "performer_marked_played",
+      to: "venue",
+    });
+    const [b] = await d
+      .select({ at: bookings.performerMarkedPlayedAt })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    expect(b!.at).toBeInstanceOf(Date);
+  });
+
   it("venue cancellation inside 48h records a 100% fee", async () => {
     const d = db();
     const slotId = newId("slot");

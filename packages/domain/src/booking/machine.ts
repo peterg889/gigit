@@ -155,10 +155,17 @@ export function decide(
         k === "VENUE_CONFIRMED" ||
         k === "AUTO_CONFIRM_ELAPSED"
       ) {
-        // PERFORMER_MARKED_PLAYED alone does not release: it records the claim;
-        // release happens on venue confirm or the 24h auto-confirm elapsing.
+        // PERFORMER_MARKED_PLAYED alone does not release: it records the claim
+        // and hands the night to the venue, who confirms it (or the 24h
+        // auto-confirm elapses). It used to emit nothing at all, which made the
+        // act's press indistinguishable from never pressing it.
         if (k === "PERFORMER_MARKED_PLAYED")
-          return { next: "awaiting_confirmation", effects: [] };
+          return {
+            next: "awaiting_confirmation",
+            effects: [
+              { kind: "notify", template: "performer_marked_played", to: "venue" },
+            ],
+          };
         return {
           next: "released",
           effects: [

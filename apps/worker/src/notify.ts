@@ -40,7 +40,11 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
   mark_played_prompt: {
     subject: "How'd the night go?",
-    body: "Mark the gig played and the pay heads your way. It releases on its own 24 hours after the set ends: {url}/bookings",
+    body: "Mark the gig played and we'll ask the venue to confirm. The pay releases on its own 24 hours after the set ends either way: {url}/bookings/{bookingId}",
+  },
+  performer_marked_played: {
+    subject: "The act says the night happened",
+    body: "{performerName} marked the gig played. Confirm it and the pay releases now — otherwise it releases on its own 24 hours after the set ended: {url}/bookings/{bookingId}",
   },
   review_prompt: {
     subject: "How was the night?",
@@ -132,7 +136,10 @@ const DISCOVERY_OVERRIDES: Record<string, { subject?: string; body: string }> = 
     body: "Confirmed and on the books. Set times, contacts, and terms are here — sort the pay with the room directly: {url}/bookings",
   },
   mark_played_prompt: {
-    body: "How'd the night go? Mark the gig played to close it out — and square up with the room if you haven't: {url}/bookings",
+    body: "How'd the night go? Mark the gig played and we'll ask the venue to confirm — and square up with the room if you haven't: {url}/bookings/{bookingId}",
+  },
+  performer_marked_played: {
+    body: "{performerName} marked the gig played. Confirm it to close the night out — otherwise it closes on its own 24 hours after the set ended: {url}/bookings/{bookingId}",
   },
   payment_released: {
     subject: "All wrapped up",
@@ -171,6 +178,8 @@ export async function notifyBookingParties(
     .select({
       venueOwner: schema.venues.ownerUserId,
       performerOwner: schema.performers.ownerUserId,
+      performerName: schema.performers.name,
+      venueName: schema.venues.name,
     })
     .from(schema.bookings)
     .innerJoin(schema.venues, eq(schema.bookings.venueId, schema.venues.id))
@@ -180,13 +189,21 @@ export async function notifyBookingParties(
     )
     .where(eq(schema.bookings.id, bookingId));
   if (!row) return;
+  // Reducer-emitted effects carry no vars, so the names and the deep link have
+  // to come from the subject itself or templates render their placeholders raw.
+  const subjectVars = {
+    bookingId,
+    performerName: row.performerName,
+    venueName: row.venueName,
+    ...vars,
+  };
   const userIds =
     to === "both"
       ? [row.venueOwner, row.performerOwner]
       : to === "venue"
         ? [row.venueOwner]
         : [row.performerOwner];
-  for (const userId of userIds) await notifyUser(userId, template, vars);
+  for (const userId of userIds) await notifyUser(userId, template, subjectVars);
 }
 
 /**
