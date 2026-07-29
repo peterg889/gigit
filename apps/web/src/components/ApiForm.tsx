@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { venueLocalInputToIso } from "@/lib/date-time";
+import { applyTransform, type TransformName } from "@/lib/form-transforms";
 
 type SelectOption = string | { value: string; label: string };
 
@@ -117,55 +118,7 @@ export function ApiForm({
       }
       else body[f.name] = raw;
     }
-    if (transform === "ratingsOverall" && typeof body.overall === "number") {
-      body.ratings = { overall: body.overall };
-      delete body.overall;
-    }
-    if (transform === "ratingsMulti") {
-      const ratings: Record<string, number> = {};
-      for (const k of [
-        "overall",
-        "draw",
-        "professionalism",
-        "quality",
-        "hospitality",
-        "accuracy",
-        "payment",
-      ]) {
-        if (typeof body[k] === "number") {
-          ratings[k] = body[k] as number;
-          delete body[k];
-        }
-      }
-      body.ratings = ratings;
-    }
-    if (
-      (transform === "genreTagsCsv" || transform === "performerProfile") &&
-      typeof body.genreTags === "string"
-    ) {
-      body.genreTags = (body.genreTags as string)
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    if (transform === "performerProfile") {
-      if (typeof body.setLengthsMinutes === "string") {
-        body.setLengthsMinutes = body.setLengthsMinutes
-          .split(",")
-          .map((s) => Number(s.trim()))
-          .filter((n) => Number.isInteger(n) && n > 0);
-      }
-      const techNeeds: Record<string, number | boolean> = {};
-      for (const key of ["inputs", "micsNeeded", "monitorsNeeded"] as const) {
-        if (typeof body[key] === "number") techNeeds[key] = body[key] as number;
-        delete body[key];
-      }
-      if (typeof body.canPlayUnamplified === "string") {
-        techNeeds.canPlayUnamplified = body.canPlayUnamplified === "true";
-        delete body.canPlayUnamplified;
-      }
-      if (Object.keys(techNeeds).length > 0) body.techNeeds = techNeeds;
-    }
+    applyTransform(body, transform as TransformName | undefined);
     const res = await fetch(endpoint, {
       method,
       headers: { "content-type": "application/json" },

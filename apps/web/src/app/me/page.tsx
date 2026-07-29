@@ -238,6 +238,7 @@ export default async function MePage() {
               endpoint={`/api/venues/${venue.id}`}
               method="PATCH"
               submitLabel="Save changes"
+              transform="venueGear"
               fields={[
                 { name: "name", label: "Venue name", defaultValue: venue.name },
                 { name: "bio", label: "About the room", type: "textarea", defaultValue: venue.bio ?? "" },
@@ -257,6 +258,11 @@ export default async function MePage() {
                 },
                 { name: "capacity", label: "Capacity", type: "number", defaultValue: venue.capacity ?? undefined },
                 { name: "noiseCurfew", label: "Noise curfew (e.g. 11pm)", defaultValue: venue.noiseCurfew ?? "" },
+                { name: "hasPA", label: "Does the room have a house PA?", type: "select", options: ["true", "false"], defaultValue: String(venue.paInventory.hasPA) },
+                { name: "mixerChannels", label: "Mixer channels", type: "number", defaultValue: venue.paInventory.mixerChannels ?? undefined },
+                { name: "micsAvailable", label: "Microphones available", type: "number", defaultValue: venue.paInventory.micsAvailable ?? undefined },
+                { name: "monitors", label: "Stage monitors", type: "number", defaultValue: venue.paInventory.monitors ?? undefined },
+                { name: "hasOperator", label: "Is there someone who runs sound?", type: "select", options: ["false", "true"], defaultValue: String(venue.paInventory.hasOperator ?? false) },
               ]}
             />
           </details>
@@ -273,6 +279,7 @@ export default async function MePage() {
             <ApiForm
             endpoint="/api/venues"
             submitLabel="Create venue profile"
+            transform="venueGear"
             fields={[
               { name: "name", label: "Venue name", required: true },
               { name: "kind", label: "Type", type: "select", options: ["bar", "restaurant", "coffee_shop", "brewery", "other"], required: true },
@@ -291,6 +298,11 @@ export default async function MePage() {
                 defaultValue: "America/Chicago",
               },
               { name: "bio", label: "About the room", type: "textarea" },
+              { name: "hasPA", label: "Does the room have a house PA?", type: "select", options: ["true", "false"], defaultValue: "true" },
+              { name: "mixerChannels", label: "Mixer channels (if you know)", type: "number", placeholder: "8" },
+              { name: "micsAvailable", label: "Microphones available", type: "number", placeholder: "2" },
+              { name: "monitors", label: "Stage monitors", type: "number", placeholder: "1" },
+              { name: "hasOperator", label: "Is there someone who runs sound?", type: "select", options: ["false", "true"], defaultValue: "false" },
             ]}
             />
           </>

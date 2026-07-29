@@ -212,6 +212,7 @@ export default async function OnboardingPage({
             <ApiForm
               endpoint="/api/venues"
               submitLabel="Create venue and post an open date"
+              transform="venueGear"
               redirectTo="/onboarding?role=venue&welcome=1"
               fields={[
                 { name: "name", label: "Venue name", required: true },
@@ -240,6 +241,11 @@ export default async function OnboardingPage({
                 },
                 { name: "bio", label: "About the room", type: "textarea" },
                 { name: "capacity", label: "Capacity", type: "number" },
+                { name: "hasPA", label: "Does the room have a house PA?", type: "select", options: ["true", "false"], defaultValue: "true" },
+                { name: "mixerChannels", label: "Mixer channels (if you know)", type: "number", placeholder: "8" },
+                { name: "micsAvailable", label: "Microphones available", type: "number", placeholder: "2" },
+                { name: "monitors", label: "Stage monitors", type: "number", placeholder: "1" },
+                { name: "hasOperator", label: "Is there someone who runs sound?", type: "select", options: ["false", "true"], defaultValue: "false" },
               ]}
             />
           </>
