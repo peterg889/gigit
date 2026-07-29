@@ -627,9 +627,12 @@ export const events = pgTable(
     attempts: integer("attempts").notNull().default(0),
     lastError: text("last_error"),
     deadLetteredAt: ts("dead_lettered_at"),
+    // Retry backoff: a failed dispatch pushes this forward, so the claim query
+    // skips the row until it's due instead of re-claiming it every iteration.
+    nextAttemptAt: ts("next_attempt_at").notNull().defaultNow(),
   },
   (t) => [
-    index("events_outbox_idx").on(t.dispatchedAt),
+    index("events_outbox_idx").on(t.dispatchedAt, t.nextAttemptAt),
     index("events_subject_idx").on(t.subjectType, t.subjectId, t.id),
   ],
 );

@@ -264,6 +264,7 @@ export async function drainOutboxOnce(
       `select id, actor, kind, subject_type, subject_id, payload, attempts
          from events
         where dispatched_at is null and dead_lettered_at is null
+          and next_attempt_at <= now()
         order by id
         limit 50
         for update skip locked`,
@@ -280,11 +281,17 @@ export async function drainOutboxOnce(
         // dispatchEvent uses other connections, so a throw leaves THIS tx healthy.
         const attempts = (row.attempts ?? 0) + 1;
         const dead = attempts >= maxAttempts;
+        // Back off exponentially (2s, 4s, 8s, 16s, capped at an hour) so the
+        // five-attempt budget spans a real outage instead of ~50ms of hot loop.
         await client.query(
           `update events
               set attempts = $2,
                   last_error = $3,
-                  dead_lettered_at = case when $4 then now() else null end
+                  dead_lettered_at = case when $4 then now() else null end,
+                  next_attempt_at = now() + least(
+                    interval '1 hour',
+                    interval '2 seconds' * power(2, $2::int - 1)
+                  )
             where id = $1`,
           [row.id, attempts, String(err).slice(0, 1000), dead],
         );
@@ -530,12 +537,32 @@ async function reconcileLoop(boss: PgBoss) {
   while (!stopping) {
     try {
       const { rows } = await pool.query(
-        `select id, state, offer_expires_at, terms from bookings
-          where state in ('offered','confirmed','awaiting_confirmation')`,
+        `select id, state, offer_expires_at, performer_accepted_at, terms from bookings
+          where state in ('offered','confirming','confirmed','awaiting_confirmation')`,
       );
       const now = Date.now();
       for (const b of rows) {
         const endsAt = new Date(b.terms.endsAt).getTime();
+        // `confirming` waits on PAYMENT_SUCCEEDED/PAYMENT_FAILED fed back by the
+        // outbox, and nothing else leaves it — no timer, no cancel, no admin
+        // override. A dead-lettered dispatch left the booking there forever:
+        // slot neither filled nor reopened, rivals never declined, both parties
+        // staring at "Confirming booking". This implements the 24h payment
+        // timeout the engineering spec always specified (§ booking lifecycle),
+        // derived from state so it survives a lost dispatch.
+        if (b.state === "confirming") {
+          const acceptedAt = b.performer_accepted_at
+            ? new Date(b.performer_accepted_at).getTime()
+            : null;
+          if (acceptedAt !== null && acceptedAt + 24 * 3_600_000 <= now) {
+            log("reconcile.payment_timeout", { bookingId: b.id });
+            await fireBookingEvent(b.id, {
+              kind: "PAYMENT_FAILED",
+              reason: "payment_timeout",
+            });
+          }
+          continue;
+        }
         let due: TimerJob | undefined;
         if (b.state === "offered" && new Date(b.offer_expires_at).getTime() <= now)
           due = { bookingId: b.id, fire: "OFFER_EXPIRED" };

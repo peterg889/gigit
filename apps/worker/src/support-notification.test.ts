@@ -39,6 +39,7 @@ vi.mock("@gigit/db", async (importOriginal) => {
 });
 
 import { closeDb, getPool } from "@gigit/db";
+import { newId } from "@gigit/domain";
 import { drainOutboxOnce } from "./index.js";
 
 const noBoss = {} as unknown as PgBoss;
@@ -101,6 +102,44 @@ describe("support escalation operator notification", () => {
 
   afterAll(async () => {
     await closeDb();
+  });
+
+  it("retries a login code whose delivery failed instead of losing it", async () => {
+    // sendEmail used to swallow every SES error and return normally, so the
+    // dispatcher marked the row dispatched and the notification was gone for
+    // good. For a login code that means the one person who needed it can't get
+    // in, with the lag and dead-letter alarms both staying green.
+    notificationConfig.emailConfigured = true;
+    sesSend.mockRejectedValue(new Error("Throttling: Maximum sending rate exceeded"));
+
+    const otpId = newId("user");
+    const destination = `${otpId}@retry.test`;
+    await getPool().query(
+      `insert into auth_otps (id, destination, code, expires_at)
+       values ($1, $2, '424242', now() + interval '10 minutes')`,
+      [otpId, destination],
+    );
+    const { rows } = await getPool().query(
+      `insert into events (actor, kind, subject_type, subject_id, payload)
+       values ('system','auth.otp_requested','auth',$1,$2::jsonb) returning id`,
+      [destination, JSON.stringify({ otpId, effects: [{ kind: "notify", template: "otp", to: "both" }] })],
+    );
+    const eventId = Number(rows[0].id);
+
+    const { stats } = await drainWithLogs();
+    const state = await eventState(eventId);
+
+    expect(sesSend).toHaveBeenCalled();
+    expect(stats).toMatchObject({ dispatched: 0, deadLettered: 0 });
+    expect(state.dispatched_at).toBeNull();
+    expect(state.attempts).toBe(1);
+    expect(state.last_error).toContain("Throttling");
+    // and it waits for the backoff rather than burning the budget immediately
+    const { rows: next } = await getPool().query(
+      `select next_attempt_at > now() + interval '1 second' as waiting from events where id = $1`,
+      [eventId],
+    );
+    expect(next[0].waiting).toBe(true);
   });
 
   it("routes support.escalated to the configured operator log sink in test", async () => {

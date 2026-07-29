@@ -62,16 +62,43 @@ describe("outbox poison isolation (integration)", () => {
     expect(g2!.dispatchedAt).not.toBeNull();
   });
 
+  it("makes the failed row wait for its backoff before retrying", async () => {
+    // The retry budget used to have no time dimension: the claim query had no
+    // time predicate and the poll only slept on an empty batch, so all five
+    // attempts burned in milliseconds and any outage longer than a second was
+    // a guaranteed permanent dead-letter.
+    const [before] = await db()
+      .select().from(schema.events).where(eq(schema.events.id, poisonId));
+    expect(before!.attempts).toBe(1);
+    expect(before!.nextAttemptAt.getTime()).toBeGreaterThan(Date.now() + 1_000);
+
+    await drainOutboxOnce(noBoss);
+    const [after] = await db()
+      .select().from(schema.events).where(eq(schema.events.id, poisonId));
+    expect(after!.attempts).toBe(1); // not due yet — not re-claimed
+  });
+
   it("parks the poison after the attempt cap, then excludes it so the head advances", async () => {
-    // one attempt already; drain to the cap of 5
-    for (let i = 0; i < 4; i++) await drainOutboxOnce(noBoss);
+    // One attempt already. Drain to the cap, making each retry due first —
+    // the backoff is what we just asserted, so here we only care about the cap.
+    for (let i = 0; i < 4; i++) {
+      await getPool().query(
+        `update events set next_attempt_at = now() where id = $1`,
+        [poisonId],
+      );
+      await drainOutboxOnce(noBoss);
+    }
 
     const [p] = await db().select().from(schema.events).where(eq(schema.events.id, poisonId));
     expect(p!.attempts).toBe(5);
     expect(p!.deadLetteredAt).not.toBeNull();
     expect(p!.lastError).toContain("iterable");
 
-    // parked → excluded from the claim, so a further drain doesn't touch it again
+    // parked → excluded from the claim even once due, so the head advances
+    await getPool().query(
+      `update events set next_attempt_at = now() where id = $1`,
+      [poisonId],
+    );
     await drainOutboxOnce(noBoss);
     const [p2] = await db().select().from(schema.events).where(eq(schema.events.id, poisonId));
     expect(p2!.attempts).toBe(5);

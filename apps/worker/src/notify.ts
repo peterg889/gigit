@@ -357,7 +357,7 @@ export async function notifySupportOperator(requestId: string): Promise<void> {
     });
     return;
   }
-  await sendEmail(destination, rendered.subject, rendered.body, true);
+  await sendEmail(destination, rendered.subject, rendered.body);
 }
 
 /** Send the sign-in code for a stored OTP row to its destination (auth flow). */
@@ -424,14 +424,33 @@ async function sendSms(to: string, body: string): Promise<void> {
       body: new URLSearchParams({ To: to, From: env().TWILIO_FROM ?? "", Body: body }),
     },
   );
-  if (!res.ok) log("notify.sms_failed", { to, status: res.status });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    log("notify.sms_failed", { to, status: res.status });
+    // A 4xx is our bug (bad number, bad credentials) and will never succeed;
+    // burning the retry budget on it just delays the dead-letter. A 5xx or 429
+    // is exactly what the outbox retry exists for, so let it through.
+    if (res.status >= 500 || res.status === 429)
+      throw new Error(`twilio ${res.status}: ${detail.slice(0, 200)}`);
+  }
 }
 
+/**
+ * Deliver, and let failures reach the outbox.
+ *
+ * This used to swallow every SES error and return normally, so the dispatcher
+ * marked the event dispatched and the notification was permanently lost — a
+ * throttled send meant nobody was ever told their gig was confirmed, with both
+ * the lag and dead-letter alarms staying green. The one caller that wanted a
+ * throw passed a flag; now that's the default, and the exceptions are the
+ * genuinely best-effort templates. Safe only because the outbox retries with
+ * backoff (migration 0024) instead of burning five attempts in milliseconds.
+ */
 async function sendEmail(
   to: string,
   subject: string,
   body: string,
-  throwOnFailure = false,
+  bestEffort = false,
 ): Promise<void> {
   ses ??= new SESv2Client({ region: env().AWS_REGION });
   try {
@@ -444,7 +463,7 @@ async function sendEmail(
     );
   } catch (err) {
     log("notify.email_failed", { to, err: String(err) });
-    if (throwOnFailure) throw err;
+    if (!bestEffort) throw err;
   }
 }
 
