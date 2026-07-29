@@ -48,6 +48,7 @@ import {
   matchOpenSlotsForPerformer,
   staleOpenSlots,
   outboxLagMs,
+  expirePastSlots,
   reconcileMoney,
   snapshotNightFacts,
 } from "@gigit/db";
@@ -208,6 +209,19 @@ async function main() {
     }
     if (stale.length > 0) log("reengage.nudged", { count: stale.length });
   });
+
+  // Age out open nights whose date has passed (hourly, plus once at boot so a
+  // restart heals anything that accumulated while the worker was down).
+  const EXPIRE_QUEUE = "expire-slots";
+  await boss.createQueue(EXPIRE_QUEUE);
+  await boss.schedule(EXPIRE_QUEUE, "5 * * * *");
+  await boss.work(EXPIRE_QUEUE, async () => {
+    const expired = await expirePastSlots();
+    if (expired > 0) log("slots.expired", { count: expired });
+  });
+  void expirePastSlots()
+    .then((expired) => log("slots.expired", { count: expired, at: "boot" }))
+    .catch((err) => log("slots.expire_error", { err: String(err) }));
 
   void outboxLoop(boss);
   void reconcileLoop(boss);

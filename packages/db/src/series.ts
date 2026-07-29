@@ -5,7 +5,8 @@
  * filled bookings are untouched (they're contracts).
  */
 import { and, eq, gt, inArray } from "drizzle-orm";
-import { newId, nextOccurrences } from "@gigit/domain";
+import {
+  FELL_THROUGH_STATES, newId, nextOccurrences } from "@gigit/domain";
 import type { SeriesPattern } from "@gigit/domain";
 import type { Db } from "./client.js";
 import { db, getPool } from "./client.js";
@@ -52,8 +53,7 @@ export async function findRebookTarget(
             and not exists (
               select 1 from bookings b2
                where b2.slot_id = s.id
-                 and b2.state not in ('collapsed','cancelled_by_venue',
-                                      'cancelled_by_performer','refunded')
+                 and b2.state <> all($2::text[])
             )
             and not exists (
               select 1 from applications a
@@ -64,7 +64,7 @@ export async function findRebookTarget(
        ) tgt on true
       where b.id = $1
         and b.state in ('confirmed','awaiting_confirmation','released','partially_released')`,
-    [bookingId],
+    [bookingId, [...FELL_THROUGH_STATES]],
   );
   const r = rows[0];
   if (!r) return null;

@@ -120,6 +120,17 @@ export async function runSubslotTransition(
       .returning({ id: techSubslots.id });
     if (updated.length === 0) throw new ConcurrentUpdateError(subslotId);
 
+    // A reopened sound slot is a fresh selection round, so the old applications
+    // go. This used to run in the cancel route AFTER the transition committed:
+    // a crash in that two-statement window left the sub-slot `open` with stale
+    // rows, and the apply route's conflict guard then told every one of those
+    // techs "You've already applied" forever — while the copy had just told
+    // them the slot was back open. Inside the transaction it's all-or-nothing.
+    if (s.state === "booked" && decision.next === "open")
+      await tx
+        .delete(techSubslotApplications)
+        .where(eq(techSubslotApplications.subslotId, subslotId));
+
     const payerParty =
       s.payer === "venue" ? `venue:${locked.venueId}` : `performer:${locked.performerId}`;
     const techParty = `tech:${decision.techId ?? s.techId ?? "unassigned"}`;

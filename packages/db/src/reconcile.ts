@@ -1,3 +1,4 @@
+import { MONEY_SETTLED_STATES } from "@gigit/domain";
 /**
  * Nightly money reconciliation (engineering-spec §5 invariants, §12):
  *
@@ -25,17 +26,19 @@ export async function reconcileMoney(): Promise<Mismatch[]> {
   const mismatches: Mismatch[] = [];
 
   // A1: terminal bookings must balance.
-  const { rows: unbalanced } = await pool.query(`
+  const { rows: unbalanced } = await pool.query(
+    `
     select b.id,
            coalesce(sum(l.amount_cents) filter (where l.entry_type = 'charge'), 0) as charged,
-           coalesce(sum(l.amount_cents) filter (where l.entry_type in ('release','refund','fee')), 0) as settled
+           coalesce(sum(l.amount_cents) filter (where l.entry_type in ('release','refund','fee','adjustment')), 0) as settled
       from bookings b
       join ledger_entries l on l.booking_id = b.id
-     where b.state in ('released','refunded','partially_released',
-                       'cancelled_by_venue','cancelled_by_performer')
+     where b.state = any($1::text[])
      group by b.id
     having coalesce(sum(l.amount_cents) filter (where l.entry_type = 'charge'), 0)
-        <> coalesce(sum(l.amount_cents) filter (where l.entry_type in ('release','refund','fee')), 0)`);
+        <> coalesce(sum(l.amount_cents) filter (where l.entry_type in ('release','refund','fee','adjustment')), 0)`,
+    [[...MONEY_SETTLED_STATES]],
+  );
   for (const r of unbalanced)
     mismatches.push({
       bookingId: r.id,
@@ -47,7 +50,7 @@ export async function reconcileMoney(): Promise<Mismatch[]> {
   const { rows: orphans } = await pool.query(`
     select distinct l.booking_id
       from ledger_entries l
-     where l.entry_type in ('release','refund','fee')
+     where l.entry_type in ('release','refund','fee','adjustment')
        and not exists (
          select 1 from ledger_entries c
           where c.booking_id = l.booking_id and c.entry_type = 'charge')`);

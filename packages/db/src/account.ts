@@ -14,6 +14,7 @@ import type { Db } from "./client.js";
 import { db } from "./client.js";
 import { appendEvent } from "./events.js";
 import { cancelSeries } from "./series.js";
+import { runSubslotTransition } from "./subslots.js";
 import {
   BookingNotFoundError,
   ConcurrentUpdateError,
@@ -28,6 +29,7 @@ import {
   slotSeries,
   techs,
   users,
+  techSubslots,
   venues,
 } from "./schema.js";
 
@@ -155,6 +157,26 @@ export async function deactivateAccount(userId: string): Promise<void> {
           payload: { reason: "account_deactivated" },
         });
     });
+  }
+
+  // A tech who leaves used to have their profile hidden and nothing else: booked
+  // sound jobs stayed `booked`, with money charged and nobody told. The performer
+  // and venue paths both wind down their commitments; this one didn't, and the
+  // incompleteness of the three-way parallelism WAS the bug.
+  const [tech] = await d.select().from(techs).where(eq(techs.ownerUserId, userId));
+  if (tech) {
+    const booked = await d
+      .select({ id: techSubslots.id })
+      .from(techSubslots)
+      .where(and(eq(techSubslots.techId, tech.id), eq(techSubslots.state, "booked")));
+    for (const sub of booked) {
+      try {
+        await runSubslotTransition(sub.id, { kind: "TECH_CANCELLED" }, userId);
+      } catch {
+        // Already moved on, or lost a race — the wind-down is best-effort, and
+        // leaving one behind must not block the rest of the deactivation.
+      }
+    }
   }
 
   await d.transaction(async (tx) => {

@@ -26,8 +26,13 @@ describe("open slot feed filters", () => {
 
   beforeAll(async () => {
     const d = db();
+    // A venue per owner: venues_owner_uq allows one live venue profile per user.
     const owner = newId("user");
-    await d.insert(schema.users).values({ id: owner, email: `${owner}@t.test` });
+    const owner2 = newId("user");
+    await d.insert(schema.users).values([
+      { id: owner, email: `${owner}@t.test` },
+      { id: owner2, email: `${owner2}@t.test` },
+    ]);
     await d.insert(schema.venues).values([
       {
         id: vMke,
@@ -40,7 +45,7 @@ describe("open slot feed filters", () => {
       },
       {
         id: vNoCoords,
-        ownerUserId: owner,
+        ownerUserId: owner2,
         kind: "brewery",
         name: "Unknown Metro Taproom",
         metro,

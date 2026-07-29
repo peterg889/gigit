@@ -1,4 +1,5 @@
 import {
+  ACTIVE_BOOKING_STATES,
   AGREEMENT_TEMPLATE_VERSION,
   decide,
   IllegalTransitionError,
@@ -116,12 +117,7 @@ export async function runBookingTransition(
           and(
             eq(bookings.performerId, row.performerId),
             ne(bookings.id, bookingId),
-            inArray(bookings.state, [
-              "confirming",
-              "confirmed",
-              "awaiting_confirmation",
-              "disputed",
-            ]),
+            inArray(bookings.state, [...ACTIVE_BOOKING_STATES]),
             sql`(${bookings.terms}->>'startsAt')::timestamptz < ${snapshot.terms.endsAt}::timestamptz`,
             sql`(${bookings.terms}->>'endsAt')::timestamptz > ${snapshot.terms.startsAt}::timestamptz`,
           ),

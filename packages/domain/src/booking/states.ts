@@ -27,6 +27,50 @@ export const TERMINAL_STATES: ReadonlySet<BookingState> = new Set([
   "cancelled_by_venue",
 ]);
 
+/**
+ * Sets that LOOK like TERMINAL_STATES and are not. Each is a distinct question,
+ * so they're named rather than merged — four hardcoded lists that partly overlap
+ * is an invitation to "consolidate" them into a bug.
+ */
+
+/**
+ * A booking that occupies the performer's calendar, for the double-book guard.
+ * `offered` is deliberately absent — an unaccepted offer doesn't block anything —
+ * and so is every terminal state, including `released`: a gig that already
+ * happened can't collide with a future one.
+ */
+export const ACTIVE_BOOKING_STATES: readonly BookingState[] = [
+  "confirming",
+  "confirmed",
+  "awaiting_confirmation",
+  "disputed",
+];
+
+/**
+ * The booking died, so the slot is genuinely free again. Note `released` and
+ * `partially_released` are NOT here: the night happened, so the slot is spent
+ * even though the booking is terminal. This is what series re-book asks.
+ */
+export const FELL_THROUGH_STATES: readonly BookingState[] = [
+  "collapsed",
+  "cancelled_by_venue",
+  "cancelled_by_performer",
+  "refunded",
+];
+
+/**
+ * Terminal states where money actually moved, i.e. the scope of the ledger
+ * balance check. `collapsed` is absent because it never charged — including it
+ * would flag every abandoned offer as an imbalance.
+ */
+export const MONEY_SETTLED_STATES: readonly BookingState[] = [
+  "released",
+  "refunded",
+  "partially_released",
+  "cancelled_by_venue",
+  "cancelled_by_performer",
+];
+
 export const BOOKING_EVENTS = [
   "PERFORMER_ACCEPTED",
   "PERFORMER_DECLINED",

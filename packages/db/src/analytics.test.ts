@@ -1,7 +1,9 @@
+import { eq } from "drizzle-orm";
 import { newId } from "@gigit/domain";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, db, getPool } from "./client.js";
 import {
+  expirePastSlots,
   matchOpenSlotsForPerformer,
   matchSavedSearches,
   snapshotNightFacts,
@@ -108,6 +110,37 @@ describe("night facts + saved-search matching (integration)", () => {
     );
     expect(rows[0].had_booking).toBe(false);
     expect(rows[0].format).toBeNull();
+  });
+
+  it("ages out an open night whose date has passed", async () => {
+    // Nothing ever wrote 'expired', so a night that came and went unfilled
+    // stayed `open` forever — still rendering an apply form for a past gig, and
+    // still sitting in the admin fill-rate denominator.
+    const d = db();
+    const past = newId("slot");
+    const future = newId("slot");
+    await d.insert(slots).values([
+      {
+        id: past, venueId, metro: "analytics-testville",
+        startsAt: new Date(Date.now() - 3 * 86_400_000),
+        durationMinutes: 90, format: "music", budgetCents: 20_000,
+      },
+      {
+        id: future, venueId, metro: "analytics-testville",
+        startsAt: new Date(Date.now() + 30 * 86_400_000),
+        durationMinutes: 90, format: "music", budgetCents: 20_000,
+      },
+    ]);
+
+    await expirePastSlots();
+    const statusOf = async (id: string) =>
+      (await d.select({ s: slots.status }).from(slots).where(eq(slots.id, id)))[0]?.s;
+    expect(await statusOf(past)).toBe("expired");
+    expect(await statusOf(future)).toBe("open"); // and nothing else moves
+
+    // idempotent: a second sweep leaves the already-expired row alone
+    await expirePastSlots();
+    expect(await statusOf(past)).toBe("expired");
   });
 
   it("saved-search matching honors format/metro/budget and the `either` rule", async () => {

@@ -1,5 +1,5 @@
 import { db, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import type { NextResponse } from "next/server";
 import { sessionUserId } from "./session";
 import { fail } from "./respond";
@@ -52,7 +52,11 @@ export async function performerOwnedBy(userId: string) {
   const rows = await db()
     .select()
     .from(schema.performers)
-    .where(eq(schema.performers.ownerUserId, userId));
+    .where(eq(schema.performers.ownerUserId, userId))
+    // Oldest wins, deterministically. A bare rows[0] with no ordering
+    // meant a duplicate (possible before performers_owner_uq) resolved
+    // differently per request.
+    .orderBy(asc(schema.performers.createdAt));
   return rows[0] ?? null;
 }
 
@@ -60,7 +64,11 @@ export async function venueOwnedBy(userId: string) {
   const rows = await db()
     .select()
     .from(schema.venues)
-    .where(eq(schema.venues.ownerUserId, userId));
+    .where(eq(schema.venues.ownerUserId, userId))
+    // Oldest wins, deterministically. A bare rows[0] with no ordering
+    // meant a duplicate (possible before performers_owner_uq) resolved
+    // differently per request.
+    .orderBy(asc(schema.venues.createdAt));
   return rows[0] ?? null;
 }
 
@@ -77,6 +85,10 @@ export async function techOwnedBy(userId: string) {
   const rows = await db()
     .select()
     .from(schema.techs)
-    .where(eq(schema.techs.ownerUserId, userId));
+    .where(eq(schema.techs.ownerUserId, userId))
+    // Oldest wins, deterministically. A bare rows[0] with no ordering
+    // meant a duplicate (possible before performers_owner_uq) resolved
+    // differently per request.
+    .orderBy(asc(schema.techs.createdAt));
   return rows[0] ?? null;
 }

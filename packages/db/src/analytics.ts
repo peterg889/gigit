@@ -70,6 +70,22 @@ export interface StaleSlot {
  * `slot.reengaged` event (appended after the nudge), so a long-open slot is
  * nudged once, not every night.
  */
+/**
+ * Age out open nights whose date has passed.
+ *
+ * Nothing ever wrote `slots.status = 'expired'`, so a night that came and went
+ * unfilled stayed `open` forever: /slots/[id] kept rendering an apply form for a
+ * gig in the past, and the admin fill-rate denominator counted every dead slot
+ * for good. Idempotent — only `open` rows move.
+ */
+export async function expirePastSlots(): Promise<number> {
+  const { rowCount } = await getPool().query(
+    `update slots set status = 'expired'
+      where status = 'open' and starts_at < now()`,
+  );
+  return rowCount ?? 0;
+}
+
 export async function staleOpenSlots(): Promise<StaleSlot[]> {
   const { rows } = await getPool().query(
     `select s.id as slot_id, v.owner_user_id

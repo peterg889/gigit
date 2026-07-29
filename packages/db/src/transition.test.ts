@@ -25,6 +25,9 @@ import {
 describe("booking transition runner (integration)", () => {
   const userVenue = newId("user");
   const userBand = newId("user");
+  // The rival is a separate act, so a separate account: performers_owner_uq
+  // enforces one live act profile per user, which this fixture used to break.
+  const userRival = newId("user");
   const venueId = newId("venue");
   const performerId = newId("performer");
   const rivalPerformerId = newId("performer");
@@ -35,6 +38,7 @@ describe("booking transition runner (integration)", () => {
     await d.insert(users).values([
       { id: userVenue, email: `${userVenue}@t.test` },
       { id: userBand, email: `${userBand}@t.test` },
+      { id: userRival, email: `${userRival}@t.test` },
     ]);
     await d.insert(venues).values({
       id: venueId,
@@ -55,7 +59,7 @@ describe("booking transition runner (integration)", () => {
       },
       {
         id: rivalPerformerId,
-        ownerUserId: userBand,
+        ownerUserId: userRival,
         kind: "solo",
         name: "Rival Act",
         homeMetro: "testville",

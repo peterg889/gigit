@@ -38,13 +38,8 @@ export async function POST(_req: Request, { params }: Params) {
       isBookedTech ? { kind: "TECH_CANCELLED" } : { kind: "PAYER_CANCELLED" },
       userId,
     );
-    if (isBookedTech && result.to === "open") {
-      // A reopened sound slot is a fresh selection round. Remove the old
-      // applications so previously declined techs may apply again.
-      await d
-        .delete(schema.techSubslotApplications)
-        .where(eq(schema.techSubslotApplications.subslotId, subslotId));
-    }
+    // The reopen cleanup lives inside runSubslotTransition's transaction now,
+    // so it can't be lost between the state change and the delete.
     return ok({ state: result.to });
   } catch (e) {
     if (e instanceof IllegalSubslotTransitionError)

@@ -1,9 +1,10 @@
 import { newId } from "@gigit/domain";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, db } from "./client.js";
 import { bookingLedger } from "./ledger.js";
 import { createOffer, runBookingTransition } from "./transition.js";
-import { applications, performers, slots, users, venues } from "./schema.js";
+import { applications, bookings, performers, slots, users, venues } from "./schema.js";
 
 /**
  * THE money invariant (engineering-spec §5): at terminal states,
@@ -85,8 +86,20 @@ describe("ledger invariants", () => {
       chargedCents: expected.charged,
       releasedCents: expected.released,
       refundedCents: expected.refunded,
+      adjustedCents: 0,
     });
-    expect(l.chargedCents).toBe(l.releasedCents + l.refundedCents);
+    // Conservation, measured against the booking's OWN terms rather than the
+    // literals above. Asserting `charged === released + refunded` right after
+    // toEqual pinned all three to those literals could only fail if the test
+    // author's arithmetic was wrong — it checked the test, not the code.
+    const [b] = await db()
+      .select({ terms: bookings.terms })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    expect(l.chargedCents).toBe(b!.terms.amountCents);
+    expect(l.releasedCents + l.refundedCents + l.adjustedCents).toBe(
+      b!.terms.amountCents,
+    );
   }
 
   it("full release: charge 500 → release 500", async () => {

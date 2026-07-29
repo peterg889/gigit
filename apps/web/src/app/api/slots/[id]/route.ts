@@ -1,3 +1,4 @@
+import { TERMINAL_STATES } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
 import { and, eq, notInArray } from "drizzle-orm";
 import type { NextResponse } from "next/server";
@@ -102,14 +103,8 @@ export async function DELETE(_req: Request, { params }: Params): Promise<NextRes
       .where(
         and(
           eq(schema.bookings.slotId, id),
-          notInArray(schema.bookings.state, [
-            "collapsed",
-            "cancelled_by_venue",
-            "cancelled_by_performer",
-            "refunded",
-            "released",
-            "partially_released",
-          ]),
+          // the genuine terminal set: anything else still blocks the edit
+          notInArray(schema.bookings.state, [...TERMINAL_STATES]),
         ),
       );
     if (active)

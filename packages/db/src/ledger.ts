@@ -44,6 +44,9 @@ export interface BookingLedgerSummary {
   chargedCents: number;
   releasedCents: number;
   refundedCents: number;
+  /** Manual admin corrections. Omitting these made the one entry type a human
+   *  types a free-form number into invisible to the only balance summary. */
+  adjustedCents: number;
 }
 
 export async function bookingLedger(
@@ -63,5 +66,6 @@ export async function bookingLedger(
     chargedCents: get("charge"),
     releasedCents: get("release") + get("fee"),
     refundedCents: get("refund"),
+    adjustedCents: get("adjustment"),
   };
 }
