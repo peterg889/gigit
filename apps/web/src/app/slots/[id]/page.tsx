@@ -125,7 +125,13 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
             </p>
           ) : myApplication && myApplication.status !== "withdrawn" ? (
             <p className="muted">
-              Your application is {friendlyLabel(APPLICATION_STATUS_LABELS, myApplication.status).toLowerCase()}.
+              {/* An open slot with a declined application means it filled and
+                  was then cancelled. Those applications are revived on reopen,
+                  so reaching here at all is a leftover — say something useful
+                  rather than restating a status. */}
+              {myApplication.status === "declined"
+                ? "This one went to another act. It is open again — check back or find another gig."
+                : `Your application is ${friendlyLabel(APPLICATION_STATUS_LABELS, myApplication.status).toLowerCase()}.`}
             </p>
           ) : (
             // No application yet — or a withdrawn one, which re-applying

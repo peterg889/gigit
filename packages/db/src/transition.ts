@@ -230,6 +230,33 @@ export async function runBookingTransition(
               eq(applications.status, "offered"),
             ),
           );
+        // Everyone else was auto-declined when the slot filled. Reopening put
+        // the night back on the board but left that whole warm pool frozen:
+        // they couldn't re-apply (unique index → 409), the venue couldn't offer
+        // them (createOffer requires 'submitted'), and series re-book skipped
+        // the night forever — so it could only be filled by an act that had
+        // never applied. Revive exactly the passed-over ones; a venue's
+        // deliberate decline stays declined.
+        const revived = await tx
+          .update(applications)
+          .set({ status: "submitted", declineReason: null })
+          .where(
+            and(
+              eq(applications.slotId, row.slotId),
+              eq(applications.status, "declined"),
+              eq(applications.declineReason, "slot_filled"),
+              ne(applications.performerId, row.performerId),
+            ),
+          )
+          .returning({ id: applications.id });
+        if (revived.length > 0)
+          await appendEvent(tx, {
+            actor,
+            kind: "slot.applicants_revived",
+            subjectType: "slot",
+            subjectId: row.slotId,
+            payload: { count: revived.length, applicationIds: revived.map((r) => r.id) },
+          });
       }
       if (fx.kind === "reliability_strike") {
         if (fx.against === "performer") {
@@ -256,7 +283,7 @@ export async function runBookingTransition(
       // at all — so most acts never heard anything back.
       const declined = await tx
         .update(applications)
-        .set({ status: "declined" })
+        .set({ status: "declined", declineReason: "slot_filled" })
         .where(
           and(
             eq(applications.slotId, row.slotId),

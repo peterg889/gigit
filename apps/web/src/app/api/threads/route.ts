@@ -50,18 +50,19 @@ export async function POST(req: Request) {
       recipientRef = { techId: t.id };
     }
 
+    // Count what this user SENT. Joining through participants counted inquiries
+    // other people opened with them too, so an act that got 10 inquiries in a
+    // day was locked out of sending its own — and it never cleared while the
+    // inbox stayed busy. Anyone holding both a venue and an act profile (which
+    // onboarding actively invites) could hit this having sent nothing.
     const since = new Date(Date.now() - 24 * 3_600_000);
     const [{ count }] = (await d
       .select({ count: sql<number>`count(*)::int` })
       .from(schema.threads)
-      .innerJoin(
-        schema.threadParticipants,
-        eq(schema.threads.id, schema.threadParticipants.threadId),
-      )
       .where(
         and(
           eq(schema.threads.scope, "inquiry"),
-          eq(schema.threadParticipants.userId, userId),
+          eq(schema.threads.createdByUserId, userId),
           gte(schema.threads.createdAt, since),
         ),
       )) as [{ count: number }];
@@ -75,6 +76,7 @@ export async function POST(req: Request) {
         id: threadId,
         scope: "inquiry",
         subjectId: parsed.data.slotId ?? null,
+        createdByUserId: userId,
       });
       await tx.insert(schema.threadParticipants).values([
         { threadId, userId },

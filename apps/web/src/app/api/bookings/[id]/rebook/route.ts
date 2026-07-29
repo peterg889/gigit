@@ -42,12 +42,25 @@ export async function POST(_req: Request, { params }: Params) {
     // Reuse the offer rails: a venue-initiated application, then a firm offer
     // matching the target slot. The act reviews and accepts like any offer.
     const applicationId = newId("application");
-    await db().insert(schema.applications).values({
-      id: applicationId,
-      slotId: target.slotId,
-      performerId: target.performerId,
-      status: "submitted",
-    });
+    try {
+      await db().insert(schema.applications).values({
+        id: applicationId,
+        slotId: target.slotId,
+        performerId: target.performerId,
+        status: "submitted",
+      });
+    } catch (err) {
+      // findRebookTarget checks for an existing application, so a concurrent
+      // apply between that check and this insert trips the unique index. That
+      // surfaced as an unhandled 500; it's a lost race, which is a 409.
+      if ((err as { code?: string })?.code === "23505")
+        return fail(
+          "conflict",
+          "That act just applied to this date on their own. Reload to see it.",
+          409,
+        );
+      throw err;
+    }
     const endsAt = new Date(
       target.startsAt.getTime() + target.durationMinutes * 60_000,
     );

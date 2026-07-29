@@ -214,6 +214,55 @@ describe("booking transition runner (integration)", () => {
     expect(b!.at).toBeInstanceOf(Date);
   });
 
+  it("puts the passed-over applicants back in the running when a slot reopens", async () => {
+    const d = db();
+    const { slotId, appId, rivalAppId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker");
+
+    const [declined] = await d
+      .select({ status: applications.status, reason: applications.declineReason })
+      .from(applications)
+      .where(eq(applications.id, rivalAppId));
+    expect(declined).toEqual({ status: "declined", reason: "slot_filled" });
+
+    // Cancelling reopened the slot but left the whole warm pool frozen: they
+    // couldn't re-apply (unique index → 409) and the venue couldn't offer them
+    // (createOffer requires 'submitted'), so the night could only be filled by
+    // an act that had never applied.
+    await runBookingTransition(bookingId, { kind: "VENUE_CANCELLED" }, userVenue);
+
+    const [slot] = await d.select().from(slots).where(eq(slots.id, slotId));
+    expect(slot!.status).toBe("open");
+    const [revived] = await d
+      .select({ status: applications.status, reason: applications.declineReason })
+      .from(applications)
+      .where(eq(applications.id, rivalAppId));
+    expect(revived).toEqual({ status: "submitted", reason: null });
+  });
+
+  it("leaves a venue's deliberate decline declined when the slot reopens", async () => {
+    const d = db();
+    const { slotId, appId, rivalAppId, startsAt } = await makeSlotWithApplications();
+    // the venue turns the rival down on purpose before booking anyone
+    await d
+      .update(applications)
+      .set({ status: "declined", declineReason: "venue_declined" })
+      .where(eq(applications.id, rivalAppId));
+
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker");
+    await runBookingTransition(bookingId, { kind: "VENUE_CANCELLED" }, userVenue);
+
+    const [still] = await d
+      .select({ status: applications.status })
+      .from(applications)
+      .where(eq(applications.id, rivalAppId));
+    expect(still!.status).toBe("declined");
+  });
+
   it("venue cancellation inside 48h records a 100% fee", async () => {
     const d = db();
     const slotId = newId("slot");

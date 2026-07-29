@@ -105,6 +105,45 @@ describe("threads and messages", () => {
     ]);
   });
 
+  it("the daily cap counts inquiries you sent, not ones you received", async () => {
+    // The cap joined through participants, so inbound inquiries counted against
+    // your own send budget. Anyone holding both a venue and an act profile —
+    // which onboarding actively invites — could be locked out having sent
+    // nothing, and it never cleared while their inbox stayed busy.
+    const d = db();
+    const uBoth = newId("user");
+    const bothVenue = newId("venue");
+    const bothPerformer = newId("performer");
+    await d.insert(schema.users).values({ id: uBoth, email: `${uBoth}@t.test` });
+    await d.insert(schema.venues).values({
+      id: bothVenue, ownerUserId: uBoth, kind: "bar", name: "Both Bar",
+      metro: "thread-tv", lat: 43, lng: -88,
+    });
+    await d.insert(schema.performers).values({
+      id: bothPerformer, ownerUserId: uBoth, kind: "solo", name: "Both Act",
+      homeMetro: "thread-tv",
+    });
+
+    // 12 venues each open an inquiry to their act — well past the cap of 10
+    for (let i = 0; i < 12; i++) {
+      const threadId = newId("thread");
+      await d.insert(schema.threads).values({
+        id: threadId,
+        scope: "inquiry",
+        createdByUserId: uVenue, // someone ELSE authored these
+      });
+      await d.insert(schema.threadParticipants).values([
+        { threadId, userId: uVenue },
+        { threadId, userId: uBoth },
+      ]);
+    }
+
+    // having sent zero, they can still send
+    as(uBoth);
+    const res = await inquiry({ techId, body: "Free Friday?" });
+    expect(res.status).toBe(201);
+  });
+
   it("performer cannot cold-message a performer (only techs)", async () => {
     as(uBand);
     const res = await inquiry({ performerId, body: "hey rival band" });

@@ -39,7 +39,12 @@ export async function POST(req: Request, { params }: Params) {
     const status = parsed.data.action === "decline" ? "declined" : "withdrawn";
     await d
       .update(schema.applications)
-      .set({ status })
+      .set({
+        status,
+        // A venue's deliberate decline is sticky — reopening a cancelled slot
+        // revives only the acts that were auto-declined when it filled.
+        ...(status === "declined" ? { declineReason: "venue_declined" as const } : {}),
+      })
       .where(eq(schema.applications.id, id));
     await appendEvent(d, {
       actor: userId,

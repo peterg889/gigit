@@ -294,9 +294,15 @@ export const applications = pgTable(
       .references(() => performers.id),
     note: text("note"),
     status: text("status").notNull().default("submitted"), // submitted | withdrawn | declined | offered
+    // Why a decline happened, so reopening a cancelled slot can revive the acts
+    // who were merely passed over without resurrecting ones a venue turned down.
+    declineReason: text("decline_reason"), // slot_filled | venue_declined
     createdAt: ts("created_at").notNull().defaultNow(),
   },
-  (t) => [uniqueIndex("applications_slot_performer_uq").on(t.slotId, t.performerId)],
+  (t) => [
+    uniqueIndex("applications_slot_performer_uq").on(t.slotId, t.performerId),
+    index("applications_slot_reason_idx").on(t.slotId, t.status, t.declineReason),
+  ],
 );
 
 export const bookings = pgTable(
@@ -349,12 +355,19 @@ export const bookings = pgTable(
 );
 
 // ── comms ───────────────────────────────────────────────────────────────────
-export const threads = pgTable("threads", {
-  id: text("id").primaryKey(),
-  scope: text("scope").notNull(), // inquiry | application | booking | support
-  subjectId: text("subject_id"), // slot/application/booking id when scoped
-  createdAt: ts("created_at").notNull().defaultNow(),
-});
+export const threads = pgTable(
+  "threads",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope").notNull(), // inquiry | application | booking | support
+    subjectId: text("subject_id"), // slot/application/booking id when scoped
+    // Authorship, so the daily inquiry cap can count what you SENT. Counting
+    // participation meant inbound popularity tightened your own send limit.
+    createdByUserId: text("created_by_user_id").references(() => users.id),
+    createdAt: ts("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("threads_author_idx").on(t.createdByUserId, t.scope, t.createdAt)],
+);
 
 export const threadParticipants = pgTable(
   "thread_participants",
