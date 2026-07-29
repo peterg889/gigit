@@ -76,6 +76,62 @@ describe("auth verify route", () => {
     });
   });
 
+  it("counts every concurrent wrong guess, not just one", async () => {
+    // `attempts: otp.attempts + 1` in JS off an unlocked SELECT meant twenty
+    // parallel guesses all read 0 and all wrote 1 — so firing them at once cost
+    // a single attempt and walked around the cap entirely.
+    const email = `${newId("user")}@verify.test`;
+    await seedOtp(email);
+    await Promise.all(
+      Array.from({ length: 20 }, () =>
+        verify({ email, code: "999999", termsAccepted: true }),
+      ),
+    );
+    const [otp] = await db()
+      .select({ attempts: schema.authOtps.attempts })
+      .from(schema.authOtps)
+      .where(eq(schema.authOtps.destination, email));
+    // The exact total is racy — once the cap is reached, later requests bail
+    // before incrementing. What must hold is that the guesses did NOT collapse
+    // into one, and that the code is burned afterwards.
+    expect(otp!.attempts).toBeGreaterThanOrEqual(5);
+    const afterwards = await verify({ email, code: "123456", termsAccepted: true });
+    expect(afterwards.status).toBe(401);
+  });
+
+  it("only one of two concurrent correct submissions can claim the code", async () => {
+    // Consuming was a blind UPDATE, so both requests saw an unconsumed row and
+    // both minted a session off one code.
+    const email = `${newId("user")}@verify.test`;
+    await seedOtp(email);
+    const results = await Promise.all([
+      verify({ email, code: "123456", termsAccepted: true }),
+      verify({ email, code: "123456", termsAccepted: true }),
+    ]);
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses).toEqual([200, 401]);
+  });
+
+  it("refuses a request that names two different destinations", async () => {
+    // The code was checked against the phone and the user row was then created
+    // carrying the email — an account minted around someone else's address.
+    const mine = "+15555550123";
+    const theirs = `${newId("user")}@verify.test`;
+    await seedOtp(mine);
+    const res = await verify({
+      phone: mine,
+      email: theirs,
+      code: "123456",
+      termsAccepted: true,
+    });
+    expect(res.status).toBe(422);
+    const rows = await db()
+      .select({ id: schema.users.id })
+      .from(schema.users)
+      .where(eq(schema.users.email, theirs));
+    expect(rows).toHaveLength(0);
+  });
+
   it("rejects a wrong code and counts the attempt", async () => {
     const email = `${newId("user")}@verify.test`;
     await seedOtp(email);

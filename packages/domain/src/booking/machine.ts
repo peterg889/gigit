@@ -29,7 +29,15 @@ export interface Decision {
   effects: Effect[];
 }
 
-const AUTO_CONFIRM_HOURS = 24;
+/**
+ * How long after the set ends before the gig closes itself out.
+ *
+ * Exported because five notification bodies state this number in prose and the
+ * worker's reconcile safety net re-derives it. Shortening it privately would
+ * have released money hours before both parties were told it would — a venue
+ * that meant to dispute inside its stated window would find the payout gone.
+ */
+export const AUTO_CONFIRM_HOURS = 24;
 
 /**
  * Pure reducer for the booking lifecycle (engineering-spec §5).

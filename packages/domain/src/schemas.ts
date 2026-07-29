@@ -212,11 +212,23 @@ export const authRequestSchema = z
     message: "provide exactly one of phone or email",
   });
 
-export const authVerifySchema = z.object({
-  phone: z.string().optional(),
-  email: z.string().email().optional(),
-  code: z.string().regex(/^[0-9]{6}$/),
-  termsAccepted: z.literal(true),
-  source: z.string().trim().min(1).max(80).optional(),
-  campaign: z.string().trim().min(1).max(120).optional(),
-});
+export const authVerifySchema = z
+  .object({
+    // Same shape and the same exactly-one rule as authRequestSchema. Without
+    // them, `{phone: <mine, with a valid code>, email: <someone else's>}` passed
+    // validation: the code was checked against the phone, and the user row was
+    // then created carrying the OTHER address. Verify has to be at least as
+    // strict as request, since it's the half that mints the account.
+    phone: z
+      .string()
+      .regex(/^\+?[0-9]{10,15}$/)
+      .optional(),
+    email: z.string().email().optional(),
+    code: z.string().regex(/^[0-9]{6}$/),
+    termsAccepted: z.literal(true),
+    source: z.string().trim().min(1).max(80).optional(),
+    campaign: z.string().trim().min(1).max(120).optional(),
+  })
+  .refine((v) => !!v.phone !== !!v.email, {
+    message: "provide exactly one of phone or email",
+  });

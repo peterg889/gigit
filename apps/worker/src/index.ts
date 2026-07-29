@@ -23,7 +23,11 @@ import {
   ConcurrentUpdateError,
 } from "@gigit/db";
 import type { BookingEvent, BookingState, Effect } from "@gigit/domain";
-import { REVIEW_VISIBILITY_DAYS, isReviewableBookingState } from "@gigit/domain";
+import {
+  AUTO_CONFIRM_HOURS,
+  REVIEW_VISIBILITY_DAYS,
+  isReviewableBookingState,
+} from "@gigit/domain";
 import PgBoss from "pg-boss";
 import { CloudWatchClient, PutMetricDataCommand } from "@aws-sdk/client-cloudwatch";
 import * as Sentry from "@sentry/node";
@@ -53,6 +57,7 @@ if (process.env.SENTRY_DSN) Sentry.init({ dsn: process.env.SENTRY_DSN });
 const TIMER_QUEUE = "booking-timers";
 const REMINDER_QUEUE = "booking-reminders";
 const REVIEW_QUEUE = "review-prompts";
+const AUTO_CONFIRM_MS = AUTO_CONFIRM_HOURS * 3_600_000;
 const NIGHT_FACTS_QUEUE = "venue-night-facts";
 type TimerJob = {
   bookingId: string;
@@ -544,47 +549,72 @@ async function fireBookingEvent(bookingId: string, event: BookingEvent) {
   }
 }
 
+/**
+ * One reconcile sweep: re-derive anything the state says is overdue.
+ *
+ * Exported as a single-shot seam so it can be tested at all — it used to live
+ * only inside the `while (!stopping)` loop below, which meant the 24h payment
+ * timeout, the timer re-arm safety net, and the alarm thresholds had no test
+ * despite being the last line of defence for a lost dispatch.
+ */
+export async function reconcileOnce(): Promise<{ payments: number; timers: number }> {
+  const stats = { payments: 0, timers: 0 };
+  const { rows } = await getPool().query(
+    `select id, state, offer_expires_at, performer_accepted_at, created_at, terms
+       from bookings
+      where state in ('offered','confirming','confirmed','awaiting_confirmation')`,
+  );
+  const now = Date.now();
+  for (const b of rows) {
+    const endsAt = new Date(b.terms.endsAt).getTime();
+    // `confirming` waits on PAYMENT_SUCCEEDED/PAYMENT_FAILED fed back by the
+    // outbox, and nothing else leaves it — no timer, no cancel, no admin
+    // override. A dead-lettered dispatch left the booking there forever: slot
+    // neither filled nor reopened, rivals never declined, both parties staring
+    // at "Confirming booking". This implements the 24h payment timeout the
+    // engineering spec always specified, derived from state so it survives a
+    // lost dispatch.
+    if (b.state === "confirming") {
+      // Fall back to created_at when the acceptance timestamp is missing. The
+      // first cut required performer_accepted_at, which stranded precisely the
+      // rows most likely to be broken — a `confirming` booking with no recorded
+      // acceptance is already anomalous, and it could never be drained. Being a
+      // little eager here is recoverable (collapse reopens the slot, so the
+      // venue can re-offer); being stuck never is.
+      const since = new Date(b.performer_accepted_at ?? b.created_at).getTime();
+      if (since + AUTO_CONFIRM_MS <= now) {
+        log("reconcile.payment_timeout", {
+          bookingId: b.id,
+          basis: b.performer_accepted_at ? "accepted_at" : "created_at",
+        });
+        await fireBookingEvent(b.id, {
+          kind: "PAYMENT_FAILED",
+          reason: "payment_timeout",
+        });
+        stats.payments++;
+      }
+      continue;
+    }
+    let due: TimerJob | undefined;
+    if (b.state === "offered" && new Date(b.offer_expires_at).getTime() <= now)
+      due = { bookingId: b.id, fire: "OFFER_EXPIRED" };
+    else if (b.state === "confirmed" && endsAt <= now)
+      due = { bookingId: b.id, fire: "GIG_ENDED" };
+    else if (b.state === "awaiting_confirmation" && endsAt + AUTO_CONFIRM_MS <= now)
+      due = { bookingId: b.id, fire: "AUTO_CONFIRM_ELAPSED" };
+    if (due) {
+      await fireTimer(due);
+      stats.timers++;
+    }
+  }
+  return stats;
+}
+
 /** Re-arm timers derivable from state; safety net for lost jobs. */
 async function reconcileLoop(boss: PgBoss) {
-  const pool = getPool();
   while (!stopping) {
     try {
-      const { rows } = await pool.query(
-        `select id, state, offer_expires_at, performer_accepted_at, terms from bookings
-          where state in ('offered','confirming','confirmed','awaiting_confirmation')`,
-      );
-      const now = Date.now();
-      for (const b of rows) {
-        const endsAt = new Date(b.terms.endsAt).getTime();
-        // `confirming` waits on PAYMENT_SUCCEEDED/PAYMENT_FAILED fed back by the
-        // outbox, and nothing else leaves it — no timer, no cancel, no admin
-        // override. A dead-lettered dispatch left the booking there forever:
-        // slot neither filled nor reopened, rivals never declined, both parties
-        // staring at "Confirming booking". This implements the 24h payment
-        // timeout the engineering spec always specified (§ booking lifecycle),
-        // derived from state so it survives a lost dispatch.
-        if (b.state === "confirming") {
-          const acceptedAt = b.performer_accepted_at
-            ? new Date(b.performer_accepted_at).getTime()
-            : null;
-          if (acceptedAt !== null && acceptedAt + 24 * 3_600_000 <= now) {
-            log("reconcile.payment_timeout", { bookingId: b.id });
-            await fireBookingEvent(b.id, {
-              kind: "PAYMENT_FAILED",
-              reason: "payment_timeout",
-            });
-          }
-          continue;
-        }
-        let due: TimerJob | undefined;
-        if (b.state === "offered" && new Date(b.offer_expires_at).getTime() <= now)
-          due = { bookingId: b.id, fire: "OFFER_EXPIRED" };
-        else if (b.state === "confirmed" && endsAt <= now)
-          due = { bookingId: b.id, fire: "GIG_ENDED" };
-        else if (b.state === "awaiting_confirmation" && endsAt + 24 * 3_600_000 <= now)
-          due = { bookingId: b.id, fire: "AUTO_CONFIRM_ELAPSED" };
-        if (due) await fireTimer(due);
-      }
+      await reconcileOnce();
     } catch (err) {
       log("reconcile.error", { err: String(err) });
     }

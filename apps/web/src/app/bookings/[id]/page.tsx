@@ -1,4 +1,5 @@
 import {
+  AUTO_CONFIRM_HOURS,
   isReviewableBookingState,
   renderAgreement,
   soundPlan,
@@ -234,7 +235,7 @@ export default async function BookingPage({
             b.performerMarkedPlayedAt ? (
               <span className="muted">
                 You marked this played. Waiting on the venue to confirm — it
-                closes out on its own 24 hours after the set ended.
+                closes out on its own {AUTO_CONFIRM_HOURS} hours after the set ended.
               </span>
             ) : (
               <ActionButton
@@ -251,8 +252,8 @@ export default async function BookingPage({
               />{" "}
               <span className="muted">
                 {paymentsEnabled()
-                  ? "Or the pay releases automatically 24 hours after the set ends, unless you open a dispute."
-                  : "Or this auto-confirms 24 hours after the set ends, unless you open a dispute. You and the act settle pay directly."}
+                  ? `Or the pay releases automatically ${AUTO_CONFIRM_HOURS} hours after the set ends, unless you open a dispute.`
+                  : `Or this auto-confirms ${AUTO_CONFIRM_HOURS} hours after the set ends, unless you open a dispute. You and the act settle pay directly.`}
               </span>
             </>
           )}

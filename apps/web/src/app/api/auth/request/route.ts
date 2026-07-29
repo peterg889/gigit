@@ -1,9 +1,9 @@
-import { randomInt } from "node:crypto";
 import { authRequestSchema, newId } from "@gigit/domain";
 import { appendEvent, db, emailConfigured, env, schema, smsConfigured } from "@gigit/db";
 import { and, eq, gte, sql, type SQL } from "drizzle-orm";
 import { clientIp } from "@/lib/client-ip";
 import { fail, ok, parseBody } from "@/lib/respond";
+import { otpCode } from "@/lib/otp";
 
 const OTP_HOURLY_CAP = 5; // per destination
 const OTP_IP_HOURLY_CAP = 20; // per requesting IP (shared NATs get headroom)
@@ -55,13 +55,7 @@ export async function POST(req: Request) {
   if ((await countOtps(gte(schema.authOtps.createdAt, hourAgo))) >= OTP_GLOBAL_HOURLY_CAP)
     return fail("rate_limited", tooBusy, 429);
 
-  // Sign-in codes are a credential: they must come from a CSPRNG. Math.random()
-  // is a seeded PRNG whose future output can be derived from observed values —
-  // and codes are observable to anyone who can request one for their own address.
-  const code =
-    env().NODE_ENV === "production"
-      ? String(randomInt(100000, 1000000))
-      : "000000"; // dev/test: fixed code, logged
+  const code = otpCode();
 
   const otpId = newId("user"); // otp rows reuse the ULID generator; prefix is irrelevant
   await db().insert(schema.authOtps).values({

@@ -3,6 +3,7 @@
  * SES — each enabled by env, falling back to structured logs in dev.
  * Critical-path templates only at M1; copy lives here, versioned in git.
  */
+import { AUTO_CONFIRM_HOURS } from "@gigit/domain";
 import { db, emailConfigured, env, paymentsEnabled, schema, smsConfigured } from "@gigit/db";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 import { eq } from "drizzle-orm";
@@ -40,11 +41,11 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
   mark_played_prompt: {
     subject: "How'd the night go?",
-    body: "Mark the gig played and we'll ask the venue to confirm. The pay releases on its own 24 hours after the set ends either way: {url}/bookings/{bookingId}",
+    body: "Mark the gig played and we'll ask the venue to confirm. The pay releases on its own {autoConfirmHours} hours after the set ends either way: {url}/bookings/{bookingId}",
   },
   performer_marked_played: {
     subject: "The act says the night happened",
-    body: "{performerName} marked the gig played. Confirm it and the pay releases now — otherwise it releases on its own 24 hours after the set ended: {url}/bookings/{bookingId}",
+    body: "{performerName} marked the gig played. Confirm it and the pay releases now — otherwise it releases on its own {autoConfirmHours} hours after the set ended: {url}/bookings/{bookingId}",
   },
   review_prompt: {
     subject: "How was the night?",
@@ -147,7 +148,7 @@ const DISCOVERY_OVERRIDES: Record<string, { subject?: string; body: string }> = 
     body: "How'd the night go? Mark the gig played and we'll ask the venue to confirm — and square up with the room if you haven't: {url}/bookings/{bookingId}",
   },
   performer_marked_played: {
-    body: "{performerName} marked the gig played. Confirm it to close the night out — otherwise it closes on its own 24 hours after the set ended: {url}/bookings/{bookingId}",
+    body: "{performerName} marked the gig played. Confirm it to close the night out — otherwise it closes on its own {autoConfirmHours} hours after the set ended: {url}/bookings/{bookingId}",
   },
   payment_released: {
     subject: "All wrapped up",
@@ -201,6 +202,7 @@ export async function notifyBookingParties(
   // to come from the subject itself or templates render their placeholders raw.
   const subjectVars = {
     bookingId,
+    autoConfirmHours: String(AUTO_CONFIRM_HOURS),
     performerName: row.performerName,
     venueName: row.venueName,
     ...vars,

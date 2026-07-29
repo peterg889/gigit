@@ -1,9 +1,12 @@
 import { authVerifySchema, newId } from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
-import { and, desc, eq, gt, isNull } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { createSession } from "@/lib/session";
 import { consentVersions } from "@/lib/legal";
 import { fail, ok, parseBody } from "@/lib/respond";
+
+/** Wrong guesses allowed per code before it's burned. */
+const MAX_OTP_ATTEMPTS = 5;
 
 export async function POST(req: Request) {
   const parsed = await parseBody(req, authVerifySchema);
@@ -26,19 +29,36 @@ export async function POST(req: Request) {
     .orderBy(desc(schema.authOtps.createdAt))
     .limit(1);
 
-  if (!otp || otp.attempts >= 5)
+  if (!otp || otp.attempts >= MAX_OTP_ATTEMPTS)
     return fail("otp_invalid", "That code has expired. Ask for a new one.", 401);
   if (otp.code !== code) {
+    // `attempts + 1` in SQL, not in JS. Read-modify-write off an unlocked SELECT
+    // meant concurrent wrong guesses all read the same value and all wrote the
+    // same value — so N parallel guesses cost one attempt, and the cap could be
+    // walked around by simply firing them at once.
     await d
       .update(schema.authOtps)
-      .set({ attempts: otp.attempts + 1 })
+      .set({ attempts: sql`${schema.authOtps.attempts} + 1` })
       .where(eq(schema.authOtps.id, otp.id));
     return fail("otp_invalid", "That code doesn't match. Check it and try again.", 401);
   }
-  await d
+  // Claim the code atomically. The cap and the not-yet-consumed check move into
+  // the WHERE so a correct code racing either one loses cleanly: two parallel
+  // requests with the right code can't both mint a session, and a guess that
+  // arrives alongside the 5th failure can't slip past a stale count.
+  const claimed = await d
     .update(schema.authOtps)
     .set({ consumedAt: new Date() })
-    .where(eq(schema.authOtps.id, otp.id));
+    .where(
+      and(
+        eq(schema.authOtps.id, otp.id),
+        isNull(schema.authOtps.consumedAt),
+        lt(schema.authOtps.attempts, MAX_OTP_ATTEMPTS),
+      ),
+    )
+    .returning({ id: schema.authOtps.id });
+  if (claimed.length === 0)
+    return fail("otp_invalid", "That code has expired. Ask for a new one.", 401);
 
   const byField = phone ? schema.users.phone : schema.users.email;
   let [user] = await d.select().from(schema.users).where(eq(byField, destination));
