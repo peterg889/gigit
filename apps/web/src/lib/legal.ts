@@ -13,6 +13,7 @@
  */
 export const TERMS_VERSION = "2026-07-29";
 export const PRIVACY_VERSION = "2026-07-14";
+export const COPYRIGHT_VERSION = "2026-07-29";
 
 /** "2026-07-29" → "July 29, 2026" (UTC, so it can't shift by timezone). */
 export function effectiveLabel(version: string): string {

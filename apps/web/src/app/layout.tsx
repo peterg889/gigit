@@ -85,6 +85,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             <Link href="/help">Help &amp; Support</Link>
             <Link href="/privacy">Privacy</Link>
             <Link href="/terms">Terms</Link>
+            <Link href="/dmca">Copyright</Link>
           </nav>
         </footer>
       </body>

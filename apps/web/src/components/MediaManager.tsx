@@ -1,6 +1,7 @@
 "use client";
 
 /** Upload photos/audio (presign → PUT → complete) and add video embeds. */
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
@@ -47,6 +48,14 @@ export function MediaManager({
 
   return (
     <div>
+      {/* §512(i) conditions every safe harbor on users being told the rules
+          before they post, and it's the honest ask anyway — most people posting
+          a live recording have never thought about who owns it. */}
+      <p className="muted">
+        Post only what&rsquo;s yours or you have permission to use. Repeated
+        copyright complaints end an account —{" "}
+        <Link href="/dmca">how that works</Link>.
+      </p>
       <label>Add photos or audio (JPG/PNG/WebP, MP3/M4A)</label>
       <input
         type="file"

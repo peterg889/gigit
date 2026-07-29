@@ -73,7 +73,8 @@ export default function TermsPage() {
         Review the venue, local date and time, address, duration, pay, sound
         expectations, and provided equipment before accepting. Use the product
         controls to cancel or raise a dispute. Repeated cancellations, no-shows,
-        unsafe conduct, or dishonest listings can lead to restrictions.
+        unsafe conduct, dishonest listings, or repeated copyright infringement
+        can lead to restrictions, up to losing the account.
       </p>
 
       <h2>Your responsibilities</h2>
@@ -132,7 +133,8 @@ export default function TermsPage() {
         We remove material that is properly reported and tell whoever posted
         it. If you think your material was removed by mistake, send a counter
         notice the same way and we may restore it. Repeat infringement ends an
-        account.
+        account. The full procedure, including what a notice has to contain, is
+        on the <Link href="/dmca">Copyright &amp; DMCA</Link> page.
       </p>
 
       <h2>Service limits</h2>
