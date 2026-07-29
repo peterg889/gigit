@@ -49,7 +49,7 @@ export async function POST(_req: Request, { params }: Params) {
       .from(schema.mediaAssets)
       .where(eq(schema.mediaAssets.id, id));
     if (!asset || asset.ownerUserId !== userId)
-      return fail("not_found", "media not found", 404);
+      return fail("not_found", "We couldn't find that photo or clip.", 404);
     return ok({ id, status: asset.status }); // idempotent: already screening/done
   } catch (e) {
     return respondError(e);

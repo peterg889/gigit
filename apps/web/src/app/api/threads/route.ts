@@ -37,7 +37,7 @@ export async function POST(req: Request) {
         .select()
         .from(schema.performers)
         .where(eq(schema.performers.id, parsed.data.performerId));
-      if (!p) return fail("not_found", "performer not found", 404);
+      if (!p) return fail("not_found", "We couldn't find that act.", 404);
       recipientUserId = p.ownerUserId;
       recipientRef = { performerId: p.id };
     } else {
@@ -45,7 +45,7 @@ export async function POST(req: Request) {
         .select()
         .from(schema.techs)
         .where(eq(schema.techs.id, parsed.data.techId!));
-      if (!t) return fail("not_found", "tech not found", 404);
+      if (!t) return fail("not_found", "We couldn't find that sound tech.", 404);
       recipientUserId = t.ownerUserId;
       recipientRef = { techId: t.id };
     }
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
         ),
       )) as [{ count: number }];
     if (count >= DAILY_INQUIRY_CAP)
-      return fail("rate_limited", "daily inquiry limit reached", 429);
+      return fail("rate_limited", "You've hit today's message limit. Try again tomorrow.", 429);
 
     const threadId = newId("thread");
     const messageId = newId("message");

@@ -121,7 +121,7 @@ describe("review route guards (audit #22)", () => {
       await expect(response.json()).resolves.toMatchObject({
         error: {
           code: "conflict",
-          message: "reviews open after a completed gig",
+          message: "Reviews open once the gig is done.",
         },
       });
       expect(

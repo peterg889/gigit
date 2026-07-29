@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   if ("response" in parsed) return parsed.response;
   const { phone, email, code, source, campaign } = parsed.data;
   const destination = phone ?? email;
-  if (!destination) return fail("validation", "phone or email required", 422);
+  if (!destination) return fail("validation", "Enter an email address or phone number.", 422);
 
   const d = db();
   const [otp] = await d
@@ -26,13 +26,13 @@ export async function POST(req: Request) {
     .limit(1);
 
   if (!otp || otp.attempts >= 5)
-    return fail("otp_invalid", "code expired or too many attempts", 401);
+    return fail("otp_invalid", "That code has expired. Ask for a new one.", 401);
   if (otp.code !== code) {
     await d
       .update(schema.authOtps)
       .set({ attempts: otp.attempts + 1 })
       .where(eq(schema.authOtps.id, otp.id));
-    return fail("otp_invalid", "incorrect code", 401);
+    return fail("otp_invalid", "That code doesn't match. Check it and try again.", 401);
   }
   await d
     .update(schema.authOtps)

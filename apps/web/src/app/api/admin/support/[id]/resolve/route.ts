@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { id } = await params;
     const adminId = await requireUser();
-    if (!(await isAdmin(adminId))) return fail("forbidden", "admin only", 403);
+    if (!(await isAdmin(adminId))) return fail("forbidden", "That page is for EightGig staff.", 403);
     const parsed = await parseBody(req, bodySchema);
     if ("response" in parsed) return parsed.response;
 
@@ -67,7 +67,7 @@ export async function POST(req: Request, { params }: Params) {
     });
 
     if (outcome.kind === "not_found")
-      return fail("not_found", "support request not found", 404);
+      return fail("not_found", "We couldn't find that support request.", 404);
     if (outcome.kind === "conflict")
       return fail(
         "conflict",

@@ -12,12 +12,12 @@ export async function POST(req: Request, { params }: Params) {
     const { id: slotId } = await params;
     const userId = await requireUser();
     const performer = await performerOwnedBy(userId);
-    if (!performer) return fail("forbidden", "create a performer profile first", 403);
+    if (!performer) return fail("forbidden", "Create an act profile first.", 403);
 
     const d = db();
     const [slot] = await d.select().from(schema.slots).where(eq(schema.slots.id, slotId));
-    if (!slot) return fail("not_found", "slot not found", 404);
-    if (slot.status !== "open") return fail("conflict", "slot is not open", 409);
+    if (!slot) return fail("not_found", "We couldn't find that date.", 404);
+    if (slot.status !== "open") return fail("conflict", "This date is no longer open.", 409);
 
     const parsed = await parseBody(req, applicationCreateSchema);
     if ("response" in parsed) return parsed.response;
@@ -48,7 +48,7 @@ export async function POST(req: Request, { params }: Params) {
         )
         .returning({ id: schema.applications.id });
       if (revived.length === 0)
-        return fail("conflict", "you already applied to this slot", 409);
+        return fail("conflict", "You've already applied to this date.", 409);
       id = revived[0]!.id;
     }
     await appendEvent(d, {
@@ -76,9 +76,9 @@ export async function GET(_req: Request, { params }: Params) {
     const venue = await venueOwnedBy(userId);
     const d = db();
     const [slot] = await d.select().from(schema.slots).where(eq(schema.slots.id, slotId));
-    if (!slot) return fail("not_found", "slot not found", 404);
+    if (!slot) return fail("not_found", "We couldn't find that date.", 404);
     if (!venue || venue.id !== slot.venueId)
-      return fail("forbidden", "only the slot's venue can view applicants", 403);
+      return fail("forbidden", "Only the venue that posted this date can see who applied.", 403);
 
     const rows = await d
       .select({ application: schema.applications, performer: schema.performers })

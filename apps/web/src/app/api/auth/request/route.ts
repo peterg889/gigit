@@ -85,6 +85,6 @@ export async function POST(req: Request) {
     console.log(JSON.stringify({ kind: "auth.dev_otp", destination, code }));
   }
   // In production the worker sends the code via Twilio/SES (M1).
-  if (!destination) return fail("validation", "destination required", 422);
+  if (!destination) return fail("validation", "Enter your email address.", 422);
   return ok({ sent: true });
 }

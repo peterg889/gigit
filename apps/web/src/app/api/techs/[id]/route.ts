@@ -24,7 +24,7 @@ export async function GET(_req: Request, { params }: Params) {
     })
     .from(schema.techs)
     .where(eq(schema.techs.id, id));
-  if (!t) return fail("not_found", "tech not found", 404);
+  if (!t) return fail("not_found", "We couldn't find that sound tech.", 404);
   return ok({ tech: t });
 }
 
@@ -34,8 +34,8 @@ export async function PATCH(req: Request, { params }: Params) {
     const userId = await requireUser();
     const d = db();
     const [t] = await d.select().from(schema.techs).where(eq(schema.techs.id, id));
-    if (!t) return fail("not_found", "tech not found", 404);
-    if (t.ownerUserId !== userId) return fail("forbidden", "not your profile", 403);
+    if (!t) return fail("not_found", "We couldn't find that sound tech.", 404);
+    if (t.ownerUserId !== userId) return fail("forbidden", "That profile isn't yours.", 403);
     const parsed = await parseBody(req, techUpdateSchema);
     if ("response" in parsed) return parsed.response;
     await d.update(schema.techs).set(parsed.data).where(eq(schema.techs.id, id));

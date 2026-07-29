@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   try {
     const userId = await requireUser();
     const venue = await venueOwnedBy(userId);
-    if (!venue) return fail("forbidden", "venue profile required", 403);
+    if (!venue) return fail("forbidden", "You need a venue profile to do that.", 403);
 
     const url = new URL(req.url);
     const kind = url.searchParams.get("kind");

@@ -30,7 +30,7 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { id: bookingId } = await params;
     const userId = await requireUser();
-    if (!(await isAdmin(userId))) return fail("forbidden", "admin only", 403);
+    if (!(await isAdmin(userId))) return fail("forbidden", "That page is for EightGig staff.", 403);
 
     const parsed = await parseBody(req, bodySchema);
     if ("response" in parsed) return parsed.response;
@@ -41,7 +41,7 @@ export async function POST(req: Request, { params }: Params) {
         .select()
         .from(schema.bookings)
         .where(eq(schema.bookings.id, bookingId));
-      if (!booking) return fail("not_found", "booking not found", 404);
+      if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
       if (
         resolution.releaseCents + resolution.refundCents !==
         booking.terms.amountCents
@@ -61,8 +61,8 @@ export async function POST(req: Request, { params }: Params) {
     return ok({ state: result.to });
   } catch (e) {
     if (e instanceof IllegalTransitionError)
-      return fail("illegal_transition", "booking is not disputed", 409);
-    if (e instanceof ConcurrentUpdateError) return fail("conflict", "retry", 409);
+      return fail("illegal_transition", "There's no open dispute on this booking.", 409);
+    if (e instanceof ConcurrentUpdateError) return fail("conflict", "Something moved while you were working. Reload and try again.", 409);
     if (e instanceof InvalidResolutionError) return fail("validation", e.message, 422);
     return respondError(e);
   }

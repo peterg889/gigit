@@ -24,7 +24,7 @@ export async function GET(_req: Request, { params }: Params) {
     const { id: threadId } = await params;
     const userId = await requireUser();
     if (!(await assertParticipant(threadId, userId)))
-      return fail("forbidden", "not a participant", 403);
+      return fail("forbidden", "This conversation isn't yours.", 403);
     // Window to the most recent 200 (newest-first from the DB), then reverse to
     // ascending for display. A plain asc+limit returned the OLDEST 200 and hid
     // every later message once a thread crossed 200 — the opposite of a chat view.
@@ -45,7 +45,7 @@ export async function POST(req: Request, { params }: Params) {
     const { id: threadId } = await params;
     const userId = await requireUser();
     if (!(await assertParticipant(threadId, userId)))
-      return fail("forbidden", "not a participant", 403);
+      return fail("forbidden", "This conversation isn't yours.", 403);
     const parsed = await parseBody(req, messageCreateSchema);
     if ("response" in parsed) return parsed.response;
     const id = newId("message");

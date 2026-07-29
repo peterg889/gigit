@@ -15,7 +15,7 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { id } = await params;
     const adminId = await requireUser();
-    if (!(await isAdmin(adminId))) return fail("forbidden", "admin only", 403);
+    if (!(await isAdmin(adminId))) return fail("forbidden", "That page is for EightGig staff.", 403);
 
     const parsed = await parseBody(req, bodySchema);
     if ("response" in parsed) return parsed.response;
@@ -26,7 +26,7 @@ export async function POST(req: Request, { params }: Params) {
       .select()
       .from(schema.fraudFlags)
       .where(eq(schema.fraudFlags.id, id));
-    if (!flagRow) return fail("not_found", "flag not found", 404);
+    if (!flagRow) return fail("not_found", "We couldn't find that flag.", 404);
     if (flagRow.state !== "open") return fail("conflict", `flag is ${flagRow.state}`, 409);
 
     await d

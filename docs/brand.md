@@ -1,6 +1,6 @@
-# Gigit — Brand Identity (v0.1)
+# EightGig — Brand Identity (v0.2)
 
-**Date:** June 2026. Companion to [`PRD.md`](../PRD.md) (Mission, §2 goals, §4 business model, anti-requirements), [`pricing.md`](pricing.md) (the discovery-first posture), and [`research/competitive-landscape.md`](../research/competitive-landscape.md). The rule that governs this whole document: **every brand claim must be backed by a product policy we actually enforce.** Brand is how our policies become legible. If a value below ever loses its policy, cut the value from the copy — which is exactly why the payment-timing language of the first draft is gone: we defer processing money ([`pricing.md`](pricing.md)), so we no longer claim it.
+**Date:** July 2026 (v0.2 — renamed from the working title "Gigit"; the product, package name, and AWS stacks still carry the old string, the brand does not). Companion to [`PRD.md`](../PRD.md) (Mission, §2 goals, §4 business model, anti-requirements), [`pricing.md`](pricing.md) (the discovery-first posture), and [`research/competitive-landscape.md`](../research/competitive-landscape.md). The rule that governs this whole document: **every brand claim must be backed by a product policy we actually enforce.** Brand is how our policies become legible. If a value below ever loses its policy, cut the value from the copy — which is exactly why the payment-timing language of the first draft is gone: we defer processing money ([`pricing.md`](pricing.md)), so we no longer claim it.
 
 ---
 
@@ -8,13 +8,13 @@
 
 **There should be more live music in the world.** It mostly doesn't happen for a dull reason: the rooms that would host it and the acts that would fill them can't find each other. Booking runs on Instagram DMs, ghosted emails, and handshake math — everyone in it (the band, the bar, the sound tech) is a small operator doing business with other small operators, with no infrastructure between them.
 
-**Gigit is that infrastructure: the place where the local scene does business.** Not a talent agency, not a promoter, and not another dead directory of stale listings — a working market. Venues post real slots with the pay shown; acts find them and lock the night with a handshake that holds; the sound is sorted before load-in; reviews are real and cut both ways. We don't take a cut of the music and we're not here to get rich off it — we're here so more nights happen.
+**EightGig is that infrastructure: the place where the local scene does business.** Not a talent agency, not a promoter, and not another dead directory of stale listings — a working market. Venues post real slots with the pay shown; acts find them and lock the night with a handshake that holds; the sound is sorted before load-in; reviews are real and cut both ways. We don't take a cut of the music and we're not here to get rich off it — we're here so more nights happen.
 
 The positioning gap (from the research): GigPig sells *ease* and joy; GigFinesse sells *concierge polish* with opaque pricing; Sofar got burned for opaque money; GigSalad/The Bash run race-to-the-bottom quote auctions performers resent. Nobody owns **square dealing** — the brand whose whole identity is that everyone at the table sees the same numbers, the deal holds, and the platform isn't skimming the people who make the night. That's ours, because our product policies are the proof.
 
 ## 2. Brand idea in one line
 
-> **Gigit — the square deal for the local scene.**
+> **EightGig — the square deal for the local scene.**
 
 Working alternatives if "square deal" reads too retro: "Where the scene does business." / "Get the gig. Get paid." / "Book the night." The recommendation is to lead with **"Get the gig. Get paid."** on performer/tech surfaces and **"Book the night, every night."** on venue surfaces, keeping "where the local scene does business" as the company-level descriptor.
 
@@ -29,7 +29,7 @@ Working alternatives if "square deal" reads too retro: "Where the scene does bus
 
 ## 4. Key value proposition
 
-**Master:** Gigit makes booking live entertainment a sure thing — the slot gets filled, the act and the room agree on it in the open, the sound is sorted, and the pay is exactly the number everyone saw up front. No chasing, no haggling from zero, no cut taken out of the middle.
+**Master:** EightGig makes booking live entertainment a sure thing — the slot gets filled, the act and the room agree on it in the open, the sound is sorted, and the pay is exactly the number everyone saw up front. No chasing, no haggling from zero, no cut taken out of the middle.
 
 **Per side:**
 - **Venues:** *Fill your calendar without chasing anyone.* Post a slot in a text message; get real, reviewable acts applying with their actual sets; lock the night in a couple taps. Free while we earn it, and never more than a round of drinks after — provable in your register eventually (the ROI receipt).
@@ -44,7 +44,7 @@ Working alternatives if "square deal" reads too retro: "Where the scene does bus
 1. **Talk money like musicians do.** "$300 for two sets" — never "compensation," "remuneration," or coy ranges. If there's a fee, name the dollar amount and what it buys.
 2. **Use the scene's words.** Gig, slot, set, room, the door, load-in, house PA, input list, rider, mark played. Say "the band," "the act," "the room," "your tech." Never "talent" as a noun for people, never "content" for someone's music, never "users," "supply," or "vendors."
 3. **Short sentences. One ask per message.** SMS is a first-class surface; write everything as if it costs 160 characters.
-4. **The spotlight is theirs.** We say "you" a lot and "we" rarely; Gigit is the rigging, not the headliner. No "we're thrilled to announce."
+4. **The spotlight is theirs.** We say "you" a lot and "we" rarely; EightGig is the rigging, not the headliner. No "we're thrilled to announce."
 5. **Honest on the bad path.** Cancellations and disputes (and, once payments are on, failed charges) get the calmest, clearest copy in the product — that's where the brand is actually earned. State what happened, what the policy says, what happens next, in that order. Never blame, never bury the fee.
 6. **No hype vocabulary, ever:** revolutionize, disrupt, unleash, supercharge, rockstar/ninja, "magic," emoji pile-ups. One exclamation point per relationship, maybe.
 
@@ -60,20 +60,20 @@ Working alternatives if "square deal" reads too retro: "Where the scene does bus
 
 ## 6. The relationship, side by side
 
-**To performers, Gigit is the booking agent you could never afford — minus the 15%, minus any cut at all.** It watches for rooms that fit, puts your real work in front of them, and papers the handshake. It never gatekeeps (no curation wall, no fees), never negotiates your worth for you (you see the budget; you decide), never takes a slice of your pay, and never pretends to be your manager, label, or path to fame. Promises we make: you'll never pay us a cent; we'll never stand between you and your money; you'll always know the number before you commit. What we ask back: show up, on time, as advertised.
+**To performers, EightGig is the booking agent you could never afford — minus the 15%, minus any cut at all.** It watches for rooms that fit, puts your real work in front of them, and papers the handshake. It never gatekeeps (no curation wall, no fees), never negotiates your worth for you (you see the budget; you decide), never takes a slice of your pay, and never pretends to be your manager, label, or path to fame. Promises we make: you'll never pay us a cent; we'll never stand between you and your money; you'll always know the number before you commit. What we ask back: show up, on time, as advertised.
 
-**To venues, Gigit is the booker on staff you can't justify hiring.** It knows what fits your room and your budget, keeps the calendar full, sorts the sound, and surfaces a replacement when an act falls through. It is *not* a talent agency curating taste for you — you pick the act, you own the crowd, the regulars are yours. Promises: the budget you post is the cost — you pay the act directly, and Gigit stays free until it's provably filling your calendar, then never more than a round of drinks; the acts are real people we've screened. What we ask back: honor the slot, pay the act what you posted, review honestly, treat acts like the professionals they are.
+**To venues, EightGig is the booker on staff you can't justify hiring.** It knows what fits your room and your budget, keeps the calendar full, sorts the sound, and surfaces a replacement when an act falls through. It is *not* a talent agency curating taste for you — you pick the act, you own the crowd, the regulars are yours. Promises: the budget you post is the cost — you pay the act directly, and EightGig stays free until it's provably filling your calendar, then never more than a round of drinks; the acts are real people we've screened. What we ask back: honor the slot, pay the act what you posted, review honestly, treat acts like the professionals they are.
 
-**To techs, Gigit is the first place the industry has ever put your chair at the table.** Twenty years of "ask around" replaced by a feed of gigs that need sound, each with the room specs and input list attached. Same feed, same standing, same review weight as the act. Promises: never a fee, never walking into a mystery, the number shown before you commit. What we ask back: the rig you list is the rig you bring.
+**To techs, EightGig is the first place the industry has ever put your chair at the table.** Twenty years of "ask around" replaced by a feed of gigs that need sound, each with the room specs and input list attached. Same feed, same standing, same review weight as the act. Promises: never a fee, never walking into a mystery, the number shown before you commit. What we ask back: the rig you list is the rig you bring.
 
-**Between the sides, Gigit is the neutral table.** We are nobody's agent against anybody. The transparency rules exist so that neutrality is checkable: everyone on a booking sees the same terms, the same money, the same reviews. When sides conflict, we follow the written policy, not the bigger account.
+**Between the sides, EightGig is the neutral table.** We are nobody's agent against anybody. The transparency rules exist so that neutrality is checkable: everyone on a booking sees the same terms, the same money, the same reviews. When sides conflict, we follow the written policy, not the bigger account.
 
 ## 7. Naming & visual direction (light touch, v0)
 
-- **"Gigit"** works as a verb — *"just gigit"* — keep that available; always one word, capital G, never "GigIt."
+- **"EightGig"** is always one word with two capitals — never "8Gig," "Eight Gig," "eightgig," or "Eightgig" in prose. Lowercase `eightgig.com` is fine as a URL. The name is a room-size promise (eight gigs a month keeps a small room's calendar alive), not a number-to-letter pun, so don't lean on the "8" as a glyph.
 - Aesthetic lane: **gig poster, not SaaS.** Show-print typography, ink-on-paper contrast, real photography of real rooms (never stock stages, never AI imagery — that's a brand-level commitment, same as the product policy). Feels at home stapled to a telephone pole in Bay View.
 - Color/energy: warm stage-light tones over dark room, not startup gradient. Looks right on a phone at 11pm in a loud bar.
-- Trademark check on "Gigit" is still open (PRD §11.6) — settle before spending on identity assets.
+- Trademark check on "EightGig" is still open (PRD §11.6) — settle before spending on identity assets. Note `8gig.com` is not ours; every surface uses `eightgig.com`.
 
 ## 8. Brand red lines (the don'ts that are really policies)
 

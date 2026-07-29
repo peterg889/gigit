@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   try {
     const userId = await requireUser();
     const performer = await performerOwnedBy(userId);
-    if (!performer) return fail("forbidden", "performer profile required", 403);
+    if (!performer) return fail("forbidden", "You need an act profile to do that.", 403);
 
     const parsed = await parseBody(req, savedSearchCreateSchema);
     if ("response" in parsed) return parsed.response;
@@ -40,7 +40,7 @@ export async function GET() {
   try {
     const userId = await requireUser();
     const performer = await performerOwnedBy(userId);
-    if (!performer) return fail("forbidden", "performer profile required", 403);
+    if (!performer) return fail("forbidden", "You need an act profile to do that.", 403);
     const searches = await db()
       .select()
       .from(schema.savedSearches)

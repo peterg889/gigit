@@ -20,7 +20,7 @@ export async function POST(_req: Request, { params }: Params) {
       .select()
       .from(schema.bookings)
       .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "booking not found", 404);
+    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
 
     const [performer, venue] = await Promise.all([
       performerOwnedBy(userId),
@@ -36,7 +36,7 @@ export async function POST(_req: Request, { params }: Params) {
         booking.state === "offered"
           ? "PERFORMER_DECLINED"
           : "PERFORMER_CANCELLED";
-    else return fail("forbidden", "you are not a party to this booking", 403);
+    else return fail("forbidden", "This booking isn't yours.", 403);
 
     const result = await runBookingTransition(bookingId, { kind: event }, userId);
     return ok({ state: result.to, effects: result.effects });
@@ -44,7 +44,7 @@ export async function POST(_req: Request, { params }: Params) {
     if (e instanceof IllegalTransitionError)
       return fail("illegal_transition", e.message, 409);
     if (e instanceof ConcurrentUpdateError)
-      return fail("conflict", "booking changed concurrently — retry", 409);
+      return fail("conflict", "Someone else just updated this booking. Reload and try again.", 409);
     return respondError(e);
   }
 }

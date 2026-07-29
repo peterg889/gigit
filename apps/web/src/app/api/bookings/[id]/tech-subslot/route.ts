@@ -15,7 +15,7 @@ export async function POST(req: Request, { params }: Params) {
       .select()
       .from(schema.bookings)
       .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "booking not found", 404);
+    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
 
     const [performer, venue] = await Promise.all([
       performerOwnedBy(userId),
@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: Params) {
     ]);
     const isParty =
       performer?.id === booking.performerId || venue?.id === booking.venueId;
-    if (!isParty) return fail("forbidden", "not your booking", 403);
+    if (!isParty) return fail("forbidden", "That booking isn't yours.", 403);
     if (booking.state !== "confirmed")
       return fail("conflict", `booking is ${booking.state}; sound attaches to confirmed bookings`, 409);
 

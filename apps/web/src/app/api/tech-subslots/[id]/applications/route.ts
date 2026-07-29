@@ -12,14 +12,14 @@ export async function POST(req: Request, { params }: Params) {
     const { id: subslotId } = await params;
     const userId = await requireUser();
     const tech = await techOwnedBy(userId);
-    if (!tech) return fail("forbidden", "tech profile required", 403);
+    if (!tech) return fail("forbidden", "You need a sound tech profile to do that.", 403);
 
     const [subslot] = await db()
       .select()
       .from(schema.techSubslots)
       .where(eq(schema.techSubslots.id, subslotId));
-    if (!subslot) return fail("not_found", "sub-slot not found", 404);
-    if (subslot.state !== "open") return fail("conflict", "sub-slot is not open", 409);
+    if (!subslot) return fail("not_found", "We couldn't find that sound job.", 404);
+    if (subslot.state !== "open") return fail("conflict", "This sound job is no longer open.", 409);
 
     const note = (await req.json().catch(() => ({})))?.note;
     const id = newId("application");
@@ -32,7 +32,7 @@ export async function POST(req: Request, { params }: Params) {
     // Re-apply by the same tech is a no-op insert; don't fabricate a 201 with an
     // id that was never persisted — report the conflict like the slot apply route.
     if (inserted.length === 0)
-      return fail("conflict", "you already applied to this sub-slot", 409);
+      return fail("conflict", "You've already applied to this sound job.", 409);
     await appendEvent(d, {
       actor: userId,
       kind: "subslot.application",
@@ -52,7 +52,7 @@ export async function DELETE(_req: Request, { params }: Params) {
     const { id: subslotId } = await params;
     const userId = await requireUser();
     const tech = await techOwnedBy(userId);
-    if (!tech) return fail("forbidden", "tech profile required", 403);
+    if (!tech) return fail("forbidden", "You need a sound tech profile to do that.", 403);
 
     const d = db();
     const [application] = await d
@@ -62,9 +62,9 @@ export async function DELETE(_req: Request, { params }: Params) {
         eq(schema.techSubslotApplications.subslotId, subslotId),
         eq(schema.techSubslotApplications.techId, tech.id),
       ));
-    if (!application) return fail("not_found", "application not found", 404);
+    if (!application) return fail("not_found", "We couldn't find that application.", 404);
     if (application.status !== "submitted")
-      return fail("conflict", "only a pending application can be withdrawn", 409);
+      return fail("conflict", "This application already has an answer, so there's nothing to withdraw.", 409);
 
     await d
       .delete(schema.techSubslotApplications)

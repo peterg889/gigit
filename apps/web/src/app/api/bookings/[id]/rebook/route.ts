@@ -21,15 +21,15 @@ export async function POST(_req: Request, { params }: Params) {
     const { id: bookingId } = await params;
     const userId = await requireUser();
     const venue = await venueOwnedBy(userId);
-    if (!venue) return fail("forbidden", "venue profile required", 403);
+    if (!venue) return fail("forbidden", "You need a venue profile to do that.", 403);
 
     const [bk] = await db()
       .select({ venueId: schema.bookings.venueId })
       .from(schema.bookings)
       .where(eq(schema.bookings.id, bookingId));
-    if (!bk) return fail("not_found", "booking not found", 404);
+    if (!bk) return fail("not_found", "We couldn't find that booking.", 404);
     if (bk.venueId !== venue.id)
-      return fail("forbidden", "not your booking", 403);
+      return fail("forbidden", "That booking isn't yours.", 403);
 
     const target = await findRebookTarget(bookingId);
     if (!target)

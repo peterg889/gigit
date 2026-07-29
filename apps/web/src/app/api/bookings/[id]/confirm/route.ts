@@ -26,9 +26,9 @@ export async function POST(_req: Request, { params }: Params) {
       .select()
       .from(schema.bookings)
       .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "booking not found", 404);
+    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
     if (!venue || venue.id !== booking.venueId)
-      return fail("forbidden", "not your booking", 403);
+      return fail("forbidden", "That booking isn't yours.", 403);
     const result = await runBookingTransition(
       bookingId,
       { kind: "VENUE_CONFIRMED" },
@@ -37,8 +37,8 @@ export async function POST(_req: Request, { params }: Params) {
     return ok({ state: result.to });
   } catch (e) {
     if (e instanceof IllegalTransitionError)
-      return fail("illegal_transition", "confirm only after the gig ends", 409);
-    if (e instanceof ConcurrentUpdateError) return fail("conflict", "retry", 409);
+      return fail("illegal_transition", "You can confirm the night once the set is over.", 409);
+    if (e instanceof ConcurrentUpdateError) return fail("conflict", "Something moved while you were working. Reload and try again.", 409);
     return respondError(e);
   }
 }

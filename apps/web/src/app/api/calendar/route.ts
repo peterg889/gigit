@@ -23,7 +23,7 @@ export async function POST() {
 
 export async function GET(req: Request) {
   const token = new URL(req.url).searchParams.get("token");
-  if (!token) return fail("auth", "token required", 401);
+  if (!token) return fail("auth", "Sign in to do that.", 401);
   let userId: string;
   try {
     const { payload } = await jwtVerify(token, key());
@@ -31,7 +31,7 @@ export async function GET(req: Request) {
       throw new Error("bad scope");
     userId = payload.sub;
   } catch {
-    return fail("auth", "invalid token", 401);
+    return fail("auth", "That link isn't valid anymore. Sign in and try again.", 401);
   }
 
   const d = db();

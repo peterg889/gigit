@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   try {
     const userId = await requireUser();
     if (await techOwnedBy(userId))
-      return fail("conflict", "you already have a tech profile", 409);
+      return fail("conflict", "You already have a sound tech profile — edit it from your profile page.", 409);
     const parsed = await parseBody(req, techCreateSchema);
     if ("response" in parsed) return parsed.response;
     const id = newId("tech");

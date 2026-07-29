@@ -9,7 +9,7 @@ export async function POST(req: Request) {
   try {
     const userId = await requireUser();
     const venue = await venueOwnedBy(userId);
-    if (!venue) return fail("forbidden", "create a venue profile first", 403);
+    if (!venue) return fail("forbidden", "Create a venue profile first.", 403);
     if (!venueLocationIsComplete(venue))
       return fail(
         "venue_location_required",

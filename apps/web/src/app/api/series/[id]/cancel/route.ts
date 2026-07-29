@@ -11,14 +11,14 @@ export async function POST(_req: Request, { params }: Params) {
     const { id } = await params;
     const userId = await requireUser();
     const venue = await venueOwnedBy(userId);
-    if (!venue) return fail("forbidden", "venue profile required", 403);
+    if (!venue) return fail("forbidden", "You need a venue profile to do that.", 403);
 
     const [series] = await db()
       .select()
       .from(schema.slotSeries)
       .where(eq(schema.slotSeries.id, id));
-    if (!series) return fail("not_found", "series not found", 404);
-    if (series.venueId !== venue.id) return fail("forbidden", "not your series", 403);
+    if (!series) return fail("not_found", "We couldn't find that recurring night.", 404);
+    if (series.venueId !== venue.id) return fail("forbidden", "That recurring night isn't yours.", 403);
 
     const slotsCancelled = await cancelSeries(id, userId);
     return ok({ slotsCancelled });

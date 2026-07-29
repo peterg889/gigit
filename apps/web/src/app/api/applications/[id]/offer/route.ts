@@ -19,7 +19,7 @@ export async function POST(req: Request, { params }: Params) {
     const { id: applicationId } = await params;
     const userId = await requireUser();
     const venue = await venueOwnedBy(userId);
-    if (!venue) return fail("forbidden", "venue profile required", 403);
+    if (!venue) return fail("forbidden", "You need a venue profile to do that.", 403);
 
     const d = db();
     const [row] = await d
@@ -27,12 +27,12 @@ export async function POST(req: Request, { params }: Params) {
       .from(schema.applications)
       .innerJoin(schema.slots, eq(schema.applications.slotId, schema.slots.id))
       .where(eq(schema.applications.id, applicationId));
-    if (!row) return fail("not_found", "application not found", 404);
+    if (!row) return fail("not_found", "We couldn't find that application.", 404);
     if (row.slot.venueId !== venue.id)
-      return fail("forbidden", "not your slot", 403);
+      return fail("forbidden", "That date isn't yours.", 403);
     if (row.application.status !== "submitted")
       return fail("conflict", `application is ${row.application.status}`, 409);
-    if (row.slot.status !== "open") return fail("conflict", "slot is not open", 409);
+    if (row.slot.status !== "open") return fail("conflict", "This date is no longer open.", 409);
 
     // Charge gate (F4.1): the card that gets charged at confirmation must
     // exist before the offer goes out. Null gateway (dev) always passes.

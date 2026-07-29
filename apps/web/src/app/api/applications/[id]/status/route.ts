@@ -22,18 +22,18 @@ export async function POST(req: Request, { params }: Params) {
       .from(schema.applications)
       .innerJoin(schema.slots, eq(schema.applications.slotId, schema.slots.id))
       .where(eq(schema.applications.id, id));
-    if (!row) return fail("not_found", "application not found", 404);
+    if (!row) return fail("not_found", "We couldn't find that application.", 404);
     if (row.application.status !== "submitted")
       return fail("conflict", `application is ${row.application.status}`, 409);
 
     if (parsed.data.action === "decline") {
       const venue = await venueOwnedBy(userId);
       if (!venue || venue.id !== row.slot.venueId)
-        return fail("forbidden", "not your slot", 403);
+        return fail("forbidden", "That date isn't yours.", 403);
     } else {
       const performer = await performerOwnedBy(userId);
       if (!performer || performer.id !== row.application.performerId)
-        return fail("forbidden", "not your application", 403);
+        return fail("forbidden", "That application isn't yours.", 403);
     }
 
     const status = parsed.data.action === "decline" ? "declined" : "withdrawn";

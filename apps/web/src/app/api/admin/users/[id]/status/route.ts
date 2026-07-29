@@ -12,7 +12,7 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { id } = await params;
     const adminId = await requireUser();
-    if (!(await isAdmin(adminId))) return fail("forbidden", "admin only", 403);
+    if (!(await isAdmin(adminId))) return fail("forbidden", "That page is for EightGig staff.", 403);
 
     const parsed = await parseBody(req, bodySchema);
     if ("response" in parsed) return parsed.response;
@@ -23,7 +23,7 @@ export async function POST(req: Request, { params }: Params) {
       .set({ status: parsed.data.status })
       .where(eq(schema.users.id, id))
       .returning({ id: schema.users.id });
-    if (updated.length === 0) return fail("not_found", "user not found", 404);
+    if (updated.length === 0) return fail("not_found", "We couldn't find that account.", 404);
 
     // Suspension has to unlist the person too: otherwise a suspended act stays
     // in the directory collecting inquiries and firm offers it can never answer.

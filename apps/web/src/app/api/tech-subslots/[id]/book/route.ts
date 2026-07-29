@@ -18,7 +18,7 @@ export async function POST(req: Request, { params }: Params) {
       .from(schema.techSubslots)
       .innerJoin(schema.bookings, eq(schema.techSubslots.bookingId, schema.bookings.id))
       .where(eq(schema.techSubslots.id, subslotId));
-    if (!row) return fail("not_found", "sub-slot not found", 404);
+    if (!row) return fail("not_found", "We couldn't find that sound job.", 404);
 
     const [performer, venue] = await Promise.all([
       performerOwnedBy(userId),
@@ -28,7 +28,7 @@ export async function POST(req: Request, { params }: Params) {
       row.subslot.payer === "venue"
         ? venue?.id === row.booking.venueId
         : performer?.id === row.booking.performerId;
-    if (!isPayer) return fail("forbidden", "only the paying side can book the tech", 403);
+    if (!isPayer) return fail("forbidden", "Only the side paying for sound can book the tech.", 403);
 
     const parsed = await parseBody(req, techSubslotBookSchema);
     if ("response" in parsed) return parsed.response;
@@ -43,7 +43,7 @@ export async function POST(req: Request, { params }: Params) {
           eq(schema.techSubslotApplications.techId, techId),
         ),
       );
-    if (!application) return fail("not_found", "that tech has not applied", 404);
+    if (!application) return fail("not_found", "That sound tech hasn't applied to this job.", 404);
 
     const result = await runSubslotTransition(
       subslotId,
@@ -68,7 +68,7 @@ export async function POST(req: Request, { params }: Params) {
     if (e instanceof IllegalSubslotTransitionError)
       return fail("illegal_transition", e.message, 409);
     if (e instanceof ConcurrentUpdateError)
-      return fail("conflict", "sub-slot changed concurrently — retry", 409);
+      return fail("conflict", "Someone else just updated this sound job. Reload and try again.", 409);
     return respondError(e);
   }
 }

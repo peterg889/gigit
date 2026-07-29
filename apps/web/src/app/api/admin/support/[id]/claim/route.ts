@@ -10,7 +10,7 @@ export async function POST(_req: Request, { params }: Params) {
   try {
     const { id } = await params;
     const adminId = await requireUser();
-    if (!(await isAdmin(adminId))) return fail("forbidden", "admin only", 403);
+    if (!(await isAdmin(adminId))) return fail("forbidden", "That page is for EightGig staff.", 403);
 
     const d = db();
     const outcome = await d.transaction(async (tx) => {
@@ -54,9 +54,9 @@ export async function POST(_req: Request, { params }: Params) {
     });
 
     if (outcome.kind === "not_found")
-      return fail("not_found", "support request not found", 404);
+      return fail("not_found", "We couldn't find that support request.", 404);
     if (outcome.kind === "conflict")
-      return fail("conflict", "support request is already claimed or resolved", 409);
+      return fail("conflict", "Someone on the team already picked this up.", 409);
     return ok(outcome.request);
   } catch (e) {
     return respondError(e);

@@ -10,10 +10,10 @@ export async function POST() {
   try {
     // Discovery-first: no gig money, no payouts to onboard (docs/pricing.md).
     if (!paymentsEnabled())
-      return fail("payments_disabled", "payouts aren't part of EightGig right now", 404);
+      return fail("payments_disabled", "EightGig doesn't handle payouts right now — the room pays you directly.", 404);
     const userId = await requireUser();
     const performer = await performerOwnedBy(userId);
-    if (!performer) return fail("forbidden", "performer profile required", 403);
+    if (!performer) return fail("forbidden", "You need an act profile to do that.", 403);
     const url = await paymentGateway().connectOnboardingLink(
       performer.id,
       `${env().APP_URL}/me`,

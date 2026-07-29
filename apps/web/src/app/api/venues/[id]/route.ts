@@ -32,7 +32,7 @@ export async function GET(_req: Request, { params }: Params) {
     })
     .from(schema.venues)
     .where(eq(schema.venues.id, id));
-  if (!v) return fail("not_found", "venue not found", 404);
+  if (!v) return fail("not_found", "We couldn't find that venue.", 404);
   return ok({ venue: v });
 }
 
@@ -42,8 +42,8 @@ export async function PATCH(req: Request, { params }: Params) {
     const userId = await requireUser();
     const d = db();
     const [v] = await d.select().from(schema.venues).where(eq(schema.venues.id, id));
-    if (!v) return fail("not_found", "venue not found", 404);
-    if (v.ownerUserId !== userId) return fail("forbidden", "not your venue", 403);
+    if (!v) return fail("not_found", "We couldn't find that venue.", 404);
+    if (v.ownerUserId !== userId) return fail("forbidden", "That venue isn't yours.", 403);
     const parsed = await parseBody(req, venueUpdateSchema);
     if ("response" in parsed) return parsed.response;
     await d.update(schema.venues).set(parsed.data).where(eq(schema.venues.id, id));

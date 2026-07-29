@@ -16,9 +16,9 @@ export async function POST(req: Request, { params }: Params) {
       .from(schema.techSubslots)
       .innerJoin(schema.bookings, eq(schema.techSubslots.bookingId, schema.bookings.id))
       .where(eq(schema.techSubslots.id, subslotId));
-    if (!row) return fail("not_found", "sound booking not found", 404);
+    if (!row) return fail("not_found", "We couldn't find that sound gig.", 404);
     if (row.subslot.state !== "released")
-      return fail("conflict", "reviews open after the sound gig is completed", 409);
+      return fail("conflict", "Reviews open once the sound gig is done.", 409);
 
     const [venue, performer, tech] = await Promise.all([
       venueOwnedBy(userId),
@@ -31,7 +31,7 @@ export async function POST(req: Request, { params }: Params) {
       const isPayer = row.subslot.payer === "venue"
         ? venue?.id === row.booking.venueId
         : performer?.id === row.booking.performerId;
-      if (!isPayer) return fail("forbidden", "not a party to this sound booking", 403);
+      if (!isPayer) return fail("forbidden", "This sound gig isn't yours.", 403);
       authorRole = "payer";
     }
 
@@ -48,7 +48,7 @@ export async function POST(req: Request, { params }: Params) {
       });
     } catch (error) {
       if (pgErrorCode(error) === "23505")
-        return fail("conflict", "you already reviewed this sound booking", 409);
+        return fail("conflict", "You've already reviewed this sound gig.", 409);
       throw error;
     }
     await appendEvent(d, {

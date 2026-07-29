@@ -23,11 +23,11 @@ type Guard =
 async function ownedOpenSlot(id: string, userId: string): Promise<Guard> {
   const venue = await venueOwnedBy(userId);
   if (!venue)
-    return { ok: false, response: fail("forbidden", "venue profile required", 403) };
+    return { ok: false, response: fail("forbidden", "You need a venue profile to do that.", 403) };
   const [slot] = await db().select().from(schema.slots).where(eq(schema.slots.id, id));
-  if (!slot) return { ok: false, response: fail("not_found", "slot not found", 404) };
+  if (!slot) return { ok: false, response: fail("not_found", "We couldn't find that date.", 404) };
   if (slot.venueId !== venue.id)
-    return { ok: false, response: fail("forbidden", "not your slot", 403) };
+    return { ok: false, response: fail("forbidden", "That date isn't yours.", 403) };
   if (slot.status !== "open")
     return { ok: false, response: fail("conflict", `slot is ${slot.status}`, 409) };
   return { ok: true, slot };
@@ -79,7 +79,7 @@ export async function PATCH(req: Request, { params }: Params): Promise<NextRespo
         409,
       );
     if (updateResult === "unavailable")
-      return fail("conflict", "slot is no longer open", 409);
+      return fail("conflict", "This date has already been filled or taken down.", 409);
     return ok({ id });
   } catch (e) {
     return respondError(e);

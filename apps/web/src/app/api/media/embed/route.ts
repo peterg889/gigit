@@ -20,7 +20,7 @@ export async function POST(req: Request) {
 
     // M0: embeds on performer profiles (venue/tech embed support is trivial later)
     const performer = await performerOwnedBy(userId);
-    if (!performer) return fail("forbidden", "performer profile required", 403);
+    if (!performer) return fail("forbidden", "You need an act profile to do that.", 403);
 
     const d = db();
     const existing = await d

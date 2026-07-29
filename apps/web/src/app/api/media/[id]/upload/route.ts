@@ -17,14 +17,14 @@ export async function PUT(req: Request, { params }: Params) {
       .from(schema.mediaAssets)
       .where(eq(schema.mediaAssets.id, id));
     if (!asset || asset.ownerUserId !== userId)
-      return fail("not_found", "media not found", 404);
+      return fail("not_found", "We couldn't find that photo or clip.", 404);
     if (asset.status !== "uploaded")
       return fail("conflict", `asset is ${asset.status}`, 409);
 
     const buf = Buffer.from(await req.arrayBuffer());
     const max = asset.kind === "audio" ? AUDIO_MAX_BYTES : IMAGE_MAX_BYTES;
     if (buf.byteLength === 0 || buf.byteLength > max)
-      return fail("too_large", "invalid upload size", 422);
+      return fail("too_large", "That file is too big.", 422);
     await localWrite(asset.storageKey!, buf);
     // Stay 'uploaded': complete() is the single place that advances to
     // 'processing' and requests screening — identical for the local and S3 paths.

@@ -24,6 +24,6 @@ export async function GET(_req: Request, { params }: Params) {
       headers: { "content-type": type, "cache-control": "public, max-age=3600" },
     });
   } catch {
-    return fail("not_found", "file not found", 404);
+    return fail("not_found", "We couldn't find that file.", 404);
   }
 }

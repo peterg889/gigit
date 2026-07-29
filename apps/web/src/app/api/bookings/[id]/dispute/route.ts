@@ -26,7 +26,7 @@ export async function POST(req: Request, { params }: Params) {
       .select()
       .from(schema.bookings)
       .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "booking not found", 404);
+    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
 
     const [performer, venue] = await Promise.all([
       performerOwnedBy(userId),
@@ -35,7 +35,7 @@ export async function POST(req: Request, { params }: Params) {
     let openedBy: "venue" | "performer";
     if (venue && venue.id === booking.venueId) openedBy = "venue";
     else if (performer && performer.id === booking.performerId) openedBy = "performer";
-    else return fail("forbidden", "not a party to this booking", 403);
+    else return fail("forbidden", "This booking isn't yours.", 403);
 
     const parsed = await parseBody(req, bodySchema);
     if ("response" in parsed) return parsed.response;
@@ -48,8 +48,8 @@ export async function POST(req: Request, { params }: Params) {
     return ok({ state: result.to });
   } catch (e) {
     if (e instanceof IllegalTransitionError)
-      return fail("illegal_transition", "disputes open only in the post-gig window", 409);
-    if (e instanceof ConcurrentUpdateError) return fail("conflict", "retry", 409);
+      return fail("illegal_transition", "Disputes open after the gig and close a few days later.", 409);
+    if (e instanceof ConcurrentUpdateError) return fail("conflict", "Something moved while you were working. Reload and try again.", 409);
     return respondError(e);
   }
 }

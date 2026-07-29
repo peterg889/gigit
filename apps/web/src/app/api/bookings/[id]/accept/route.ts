@@ -29,15 +29,15 @@ export async function POST(req: Request, { params }: Params) {
     const { id: bookingId } = await params;
     const userId = await requireUser();
     const performer = await performerOwnedBy(userId);
-    if (!performer) return fail("forbidden", "performer profile required", 403);
+    if (!performer) return fail("forbidden", "You need an act profile to do that.", 403);
 
     const [booking] = await db()
       .select()
       .from(schema.bookings)
       .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "booking not found", 404);
+    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
     if (booking.performerId !== performer.id)
-      return fail("forbidden", "not your booking", 403);
+      return fail("forbidden", "That booking isn't yours.", 403);
 
     const parsed = await parseBody(req, acceptSchema);
     if ("response" in parsed) return parsed.response;
@@ -73,9 +73,9 @@ export async function POST(req: Request, { params }: Params) {
     if (e instanceof IllegalTransitionError)
       return fail("illegal_transition", e.message, 409);
     if (e instanceof ConcurrentUpdateError)
-      return fail("conflict", "booking changed concurrently - retry", 409);
+      return fail("conflict", "Someone else just updated this booking. Reload and try again.", 409);
     if (e instanceof SlotUnavailableError)
-      return fail("slot_unavailable", "This slot is no longer available.", 409);
+      return fail("slot_unavailable", "This date is no longer available.", 409);
     return respondError(e);
   }
 }

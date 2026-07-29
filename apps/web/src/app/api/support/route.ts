@@ -35,7 +35,7 @@ export async function POST(req: Request) {
     const userId = sessionUser?.status === "active" ? sessionId : null;
     if (!userId) {
       if (!parsed.data.email)
-        return fail("validation", "email is required when you are not signed in", 422);
+        return fail("validation", "Enter your email address so we can reach you.", 422);
 
       const d = db();
       const hourAgo = new Date(Date.now() - 3_600_000);
@@ -59,7 +59,7 @@ export async function POST(req: Request) {
         (counts?.global ?? 0) >= PUBLIC_GLOBAL_HOURLY_CAP ||
         (counts?.fromIp ?? 0) >= PUBLIC_IP_HOURLY_CAP
       )
-        return fail("rate_limited", "too many support requests — try again later", 429);
+        return fail("rate_limited", "You've sent a lot of support requests. Give us a bit to catch up.", 429);
 
       const requestId = await createSupportRequest({
         contactEmail: parsed.data.email.toLowerCase(),

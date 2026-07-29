@@ -12,7 +12,7 @@ export async function POST(req: Request) {
   try {
     const userId = await requireUser();
     const venue = await venueOwnedBy(userId);
-    if (!venue) return fail("forbidden", "venue profile required", 403);
+    if (!venue) return fail("forbidden", "You need a venue profile to do that.", 403);
     if (!venueLocationIsComplete(venue))
       return fail(
         "venue_location_required",
@@ -53,7 +53,7 @@ export async function GET() {
   try {
     const userId = await requireUser();
     const venue = await venueOwnedBy(userId);
-    if (!venue) return fail("forbidden", "venue profile required", 403);
+    if (!venue) return fail("forbidden", "You need a venue profile to do that.", 403);
     const series = await seriesForVenue(db(), venue.id);
     return ok({ series });
   } catch (e) {

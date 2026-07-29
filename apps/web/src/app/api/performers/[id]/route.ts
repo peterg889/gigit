@@ -29,7 +29,7 @@ export async function GET(_req: Request, { params }: Params) {
     })
     .from(schema.performers)
     .where(eq(schema.performers.id, id));
-  if (!p) return fail("not_found", "performer not found", 404);
+  if (!p) return fail("not_found", "We couldn't find that act.", 404);
   return ok({ performer: p });
 }
 
@@ -39,8 +39,8 @@ export async function PATCH(req: Request, { params }: Params) {
     const userId = await requireUser();
     const d = db();
     const [p] = await d.select().from(schema.performers).where(eq(schema.performers.id, id));
-    if (!p) return fail("not_found", "performer not found", 404);
-    if (p.ownerUserId !== userId) return fail("forbidden", "not your profile", 403);
+    if (!p) return fail("not_found", "We couldn't find that act.", 404);
+    if (p.ownerUserId !== userId) return fail("forbidden", "That profile isn't yours.", 403);
     const parsed = await parseBody(req, performerUpdateSchema);
     if ("response" in parsed) return parsed.response;
     await d.update(schema.performers).set(parsed.data).where(eq(schema.performers.id, id));

@@ -7,7 +7,7 @@ export async function POST(req: Request) {
   try {
     const userId = await requireUser();
     if (await performerOwnedBy(userId))
-      return fail("conflict", "you already have a performer profile", 409);
+      return fail("conflict", "You already have an act profile — edit it from your profile page.", 409);
     const parsed = await parseBody(req, performerCreateSchema);
     if ("response" in parsed) return parsed.response;
     const id = newId("performer");

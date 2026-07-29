@@ -20,7 +20,7 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { id: bookingId } = await params;
     const adminId = await requireUser();
-    if (!(await isAdmin(adminId))) return fail("forbidden", "admin only", 403);
+    if (!(await isAdmin(adminId))) return fail("forbidden", "That page is for EightGig staff.", 403);
 
     const parsed = await parseBody(req, bodySchema);
     if ("response" in parsed) return parsed.response;
@@ -31,7 +31,7 @@ export async function POST(req: Request, { params }: Params) {
       .select()
       .from(schema.bookings)
       .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "booking not found", 404);
+    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
 
     await recordLedgerEntry(d, {
       bookingId,

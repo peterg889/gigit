@@ -24,7 +24,7 @@ export async function GET(_req: Request, { params }: Params) {
         eq(schema.bookings.performerId, schema.performers.id),
       )
       .where(eq(schema.bookings.id, id));
-    if (!row) return fail("not_found", "booking not found", 404);
+    if (!row) return fail("not_found", "We couldn't find that booking.", 404);
 
     const [performer, venue] = await Promise.all([
       performerOwnedBy(userId),
@@ -32,7 +32,7 @@ export async function GET(_req: Request, { params }: Params) {
     ]);
     const isParty =
       performer?.id === row.booking.performerId || venue?.id === row.booking.venueId;
-    if (!isParty) return fail("forbidden", "not a party to this booking", 403);
+    if (!isParty) return fail("forbidden", "This booking isn't yours.", 403);
 
     return ok({
       templateVersion: row.booking.agreementTemplateVer,
