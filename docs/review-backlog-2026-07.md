@@ -1,5 +1,12 @@
 # Review backlog — July 2026
 
+> **Status, 2026-07-30:** the correctness, auth, duplication and
+> highest-impact design items below have been fixed — see git log for
+> 2026-07-29/30. What remains is listed under **Still open** at the bottom;
+> everything above it is kept as the record of what was found and why it
+> mattered, since several fixes are only sensible in light of the original
+> reasoning.
+
 Output of a 13-dimension review. Everything below was **verified against the
 code**, not guessed. Items already fixed are in git log for 2026‑07‑29; this file
 is only what's left, ranked within each section.
@@ -209,3 +216,68 @@ Dead code worth deleting: `SUBSLOT_TERMINAL`, `resetGateway`,
 `venueLocalInputValue`, 13 unreferenced branded-ID aliases, three `void db()`
 no-ops, and `bookingLedger` (zero production callers — while `reconcileMoney`,
 the invariant that actually runs, has one seeded scenario).
+
+---
+
+## Still open
+
+Ordered by value. Nothing here is a live functional bug.
+
+**Tests**
+- `reconcileMoney()` has one seeded scenario; add a clean-check per terminal path
+  and a case whose only imbalance is an `adjustment` (now in scope for the
+  balance check, so it should be caught).
+- No `cancellation.test.ts`. `Math.round(amountCents / 2)` is the only percentage
+  split in the product and every money literal in the suite is a whole dollar.
+  Conservation currently holds only because the second leg is derived by
+  subtraction. Table it over 1, 3, 99, 12_345, 100_001.
+- Fall-back DST is untested everywhere (spring-forward is well covered).
+  `zonedDateTimeToDate` has no defined behaviour for a wall time that occurs
+  twice, and a flip to the second instant breaks `materializeSeries`
+  idempotency. Both `series.test.ts` cases also use the legacy `startTimeUtc`
+  shape, so the venue-local branch never runs against the DB.
+- No `makeVenue()` factory: 30 hand-rolled fixtures, every one omitting
+  `timeZone`, so all suite venues are UTC and `venueLocationIsComplete` is false
+  for all of them — which is *why* the venue-local scheduling code is untested.
+- `apps/web/vitest.config.ts` has neither `globalSetup` nor
+  `fileParallelism: false`, so `--workspace-concurrency=1` in the root script is
+  load-bearing. Nothing truncates between runs; `founding.test.ts` and
+  `ratelimit.test.ts` are non-idempotent against a persistent database.
+- `booking-journey.spec.ts` re-inlines all five `e2e/helpers.ts` functions
+  verbatim. The e2e specs also pin `.card`/`.badge`/`.money` class names ~20
+  times, so a stylesheet rename silently returns zero matches in the suite that
+  gates the staging deploy.
+- Ownership checks with no 403 test: `slots/[id]/applications` (any venue can
+  enumerate a competitor's applicant list), `venues/[id]` and `techs/[id]` PATCH,
+  `series/*`, `tech-subslots/[id]/{book,cancel}`, `media/presign`.
+
+**Product** — see the fuller reasoning above; these are still the top five:
+booking-scoped thread; structured invite-to-slot; make rooms discoverable to
+acts (`/v/[id]` is linked from one place and there is no `/venues`);
+sound-plan defaults that flag every gig as needing a tech; rebook outside a
+series.
+
+**Design**
+- `/inbox` still shows no counterparty and no preview — a dozen rows reading
+  `ACT INQUIRY · 3 days ago`. The data is already resolved in `inbox/[id]`.
+- The nav is four rows of ~20px tap targets on a 390px phone (~110px before any
+  content), with no current-page indicator and `:hover` as its only state.
+  Buttons are ~38px, filter chips ~29px.
+- Ten unassociated `<label>`s in `AiAssist.tsx` / `MediaManager.tsx` — the forms
+  where a human is meant to verify AI output. (`ApiForm` is fixed.)
+- The type scale has a 2.5× cliff from h1 to h2 then eight sizes inside a 10px
+  band; `h3` has no size and falls to ~18px, smaller than `h2`.
+- `.notice` and `.badge` can't express valence, so cancellation copy is 14px
+  `.muted` and "3 cancellations" renders in the money amber.
+  `performerReliability` already returns a `tier` that every call site discards.
+- No `generateMetadata` outside the legal pages: an act sharing their profile
+  gets a generic unfurl.
+
+**Duplication**
+- `loadSubslotForActor()`: the sub-slot party predicate is duplicated 4×, and
+  it's an authorization predicate.
+- The 12-line booking-load preamble is byte-identical in three routes.
+- Dead code: `SUBSLOT_TERMINAL`, `resetGateway`, `venueLocalInputValue`, 13
+  unreferenced branded-ID aliases, three `void db()` no-ops.
+- `docs/prd-coverage.md` claims all 14 gaps closed while its own tables mark
+  four as ❌. Rewrite or delete.
