@@ -187,10 +187,14 @@ export default async function BookingPage({
             {friendlyLabel(BOOKING_STATE_LABELS, state)}
           </span>
         </h1>
-        <p>
-          {formatVenueDateTime(b.terms.startsAt, dealTimeZone, "full")}{" "}
-          {shortTimeZoneName(b.terms.startsAt, dealTimeZone)}{" "}
-          / <span className="money">${(b.terms.amountCents / 100).toFixed(0)}</span>
+        <p className="deal-terms">
+          <span className="money money--lead">
+            ${(b.terms.amountCents / 100).toFixed(0)}
+          </span>
+          <span className="gig-line">
+            {formatVenueDateTime(b.terms.startsAt, dealTimeZone)}{" "}
+            {shortTimeZoneName(b.terms.startsAt, dealTimeZone)}
+          </span>
         </p>
         <p className="muted">
           {venueAddress}

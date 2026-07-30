@@ -12,6 +12,18 @@
      --line is 1.54:1 on --room, which made every form field a faint smudge
      indistinguishable from the card behind it. */
   --line-strong: #7d6234;
+
+  /* Type scale. A gig poster works by violent contrast between FEW sizes; this
+     had a 2.5x cliff from h1 to h2 and then ten sizes inside a 5px band, six of
+     them within 1px of each other — which is why the cards read flat despite the
+     palette. Six steps, each clearly not the one next to it. */
+  --step-lead: 1.75rem;  /* the number or date a page is about */
+  --step-title: 1.25rem; /* h2 */
+  --step-sub: 1.05rem;   /* h3 */
+  --step-body: 1rem;
+  --step-small: 0.875rem;
+  --step-micro: 0.75rem;
+  --step-stamp: 0.66rem; /* badges, nav, the mono furniture */
   --ink: #f3e8d2;         /* cream — paper, reversed out */
   --muted: #a9986f;
   --amber: #ffb53f;       /* the stage light; also: the money */
@@ -39,7 +51,8 @@ body {
   background-attachment: fixed;
   font-family: var(--font-body);
   line-height: 1.55;
-  font-size: 15.5px;
+  /* rem, so raising the browser default actually does something. */
+  font-size: var(--step-body);
 }
 
 ::selection { background: var(--amber); color: var(--room); }
@@ -63,6 +76,7 @@ header.site {
 header.site .brand {
   font-family: var(--font-display);
   font-weight: 900;
+  /* Display furniture, deliberately outside the text scale. */
   font-size: 2rem;
   line-height: 1;
   letter-spacing: 0.01em;
@@ -81,7 +95,7 @@ header.site nav {
 }
 header.site nav a {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: var(--step-micro);
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--ink);
@@ -105,7 +119,7 @@ footer.site {
   padding: 18px 16px 40px;
   border-top: 1px solid var(--line);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: var(--step-micro);
   letter-spacing: 0.04em;
   color: var(--muted);
 }
@@ -115,7 +129,7 @@ footer.site .footer-mark {
   text-transform: uppercase;
   letter-spacing: 0.02em;
   color: var(--amber);
-  font-size: 0.9rem;
+  font-size: var(--step-small);
 }
 
 /* ── Type: show-print headlines ── */
@@ -129,7 +143,7 @@ h1, h2, h3 {
 h1 { font-weight: 900; font-size: clamp(2.3rem, 7vw, 3.1rem); }
 h2 {
   font-weight: 800;
-  font-size: 1.25rem;
+  font-size: var(--step-title);
   letter-spacing: 0.04em;
   display: flex;
   align-items: center;
@@ -174,13 +188,13 @@ p { margin: 0.5em 0; }
   .card { animation: none; }
 }
 
-.muted { color: var(--muted); font-size: 0.88rem; }
+.muted { color: var(--muted); font-size: var(--step-small); }
 
 /* ── Badges: ticket stubs ── */
 .badge {
   display: inline-block;
   font-family: var(--font-mono);
-  font-size: 0.66rem;
+  font-size: var(--step-stamp);
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -193,6 +207,15 @@ p { margin: 0.5em 0; }
 }
 
 /* ── The money is on the table ── */
+/* The number a page is ABOUT: slot detail, booking detail. `.money` alone
+   inherits its container, which is right inside a sentence and far too quiet
+   when the figure IS the headline. */
+.money--lead {
+  display: inline-block;
+  font-size: var(--step-lead);
+  line-height: 1.1;
+}
+
 .money {
   font-family: var(--font-mono);
   font-weight: 600;
@@ -206,7 +229,7 @@ p { margin: 0.5em 0; }
 /* ── Buttons: stamped in amber ink ── */
 button, .btn {
   font-family: var(--font-mono);
-  font-size: 0.78rem;
+  font-size: var(--step-micro);
   font-weight: 600;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -248,7 +271,7 @@ button.quiet[disabled]:hover { background: transparent; }
 }
 .filter-chip {
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: var(--step-micro);
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 6px 12px 5px;
@@ -303,7 +326,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
 }
 label {
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: var(--step-micro);
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -311,7 +334,7 @@ label {
 }
 form.inline { display: inline; }
 
-.error { color: var(--red); font-size: 0.88rem; }
+.error { color: var(--red); font-size: var(--step-small); }
 
 img { border: 1px solid var(--line); }
 
@@ -330,7 +353,7 @@ pre {
   display: inline-block;
   margin-bottom: 8px;
   font-family: var(--font-mono);
-  font-size: 0.68rem;
+  font-size: var(--step-stamp);
   font-weight: 600;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -356,7 +379,7 @@ pre {
 .trust-line {
   margin-top: 18px;
   font-family: var(--font-mono);
-  font-size: 0.7rem;
+  font-size: var(--step-micro);
   color: var(--muted);
 }
 
@@ -465,7 +488,7 @@ pre {
   margin: 2px 0 16px;
   color: var(--ink);
   font-family: var(--font-body);
-  font-size: 0.82rem;
+  font-size: var(--step-small);
   letter-spacing: 0;
   line-height: 1.45;
   text-transform: none;
@@ -486,7 +509,7 @@ header.site .nav-button {
   color: var(--ink);
   background: transparent;
   box-shadow: none;
-  font-size: 0.72rem;
+  font-size: var(--step-micro);
 }
 header.site .nav-button:hover {
   color: var(--amber-hot);
@@ -530,7 +553,7 @@ button.danger[disabled]:hover { background: #8f2f24; }
    two facts a booking is actually about the dimmest text on the card. */
 .gig-line {
   color: var(--ink);
-  font-size: 0.94rem;
+  font-size: var(--step-body);
   letter-spacing: 0.01em;
 }
 
@@ -554,6 +577,16 @@ a.thread-row:hover strong { color: var(--amber-hot); }
 /* h3 was styled for family and transform but never given a size, so it fell to
    the UA default (~18px) — SMALLER than h2's 20px, and without h2's tracking. */
 h3 {
-  font-size: 1.05rem;
+  font-size: var(--step-sub);
   letter-spacing: 0.04em;
+}
+
+/* The deal, on the two pages where somebody is deciding: the figure first at
+   display size, the date under it. Both used to be one 15px run of text with the
+   pay buried mid-sentence — on the screen the whole product turns on. */
+.deal-terms {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 0 14px;
 }

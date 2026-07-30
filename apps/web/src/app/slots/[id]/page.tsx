@@ -100,11 +100,14 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
           <span className="badge">{GIG_FORMAT_LABEL[slot.format] ?? slot.format}</span>{" "}
           <span className="badge">{friendlyLabel(SLOT_STATUS_LABELS, slot.status)}</span>
         </h1>
-        <p>
-          {formatVenueDateTime(slot.startsAt, venue.timeZone, "full")}{" "}
-          {shortTimeZoneName(slot.startsAt, venue.timeZone)}{" "}
-          / {slot.durationMinutes} min /{" "}
-          <span className="money">${(slot.budgetCents / 100).toFixed(0)}</span>
+        <p className="deal-terms">
+          <span className="money money--lead">
+            ${(slot.budgetCents / 100).toFixed(0)}
+          </span>
+          <span className="gig-line">
+            {formatVenueDateTime(slot.startsAt, venue.timeZone)}{" "}
+            {shortTimeZoneName(slot.startsAt, venue.timeZone)} · {slot.durationMinutes} min
+          </span>
         </p>
         {slot.notes && <p>{slot.notes}</p>}
         <p className="muted">{formatAddress(venue)}</p>
