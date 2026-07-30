@@ -535,6 +535,30 @@ export class GigitStack extends cdk.Stack {
       evaluationPeriods: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
+    // The ledger not adding up is the highest-severity thing the worker can
+    // find, and it used to report only to Sentry — which is gated on SENTRY_DSN,
+    // unset in production, so it paged nobody. treatMissingData stays `notBreaching`
+    // because the check runs nightly, not continuously.
+    alarm(
+      "MoneyMismatchAlarm",
+      new cloudwatch.Metric({
+        namespace: "Gigit",
+        metricName: "MoneyMismatches",
+        dimensionsMap: { Stage: props.stage },
+        statistic: "Maximum",
+        // The reconcile runs nightly, so the window has to span a full day or
+        // the alarm spends most of its life in INSUFFICIENT_DATA.
+        period: cdk.Duration.hours(25),
+      }),
+      1,
+      {
+        alarmDescription: "money reconciliation found unbalanced terminal bookings",
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+        evaluationPeriods: 1,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      },
+    );
     alarm("OutboxLagAlarm", outboxMetric("OutboxLagMs"), 10 * 60_000, {
       comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
       evaluationPeriods: 1,

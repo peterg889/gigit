@@ -1,7 +1,7 @@
 import { AiNotConfiguredError, slotParse } from "@gigit/db";
 import { z } from "zod";
 import { AuthError, requireUser, venueOwnedBy } from "@/lib/auth";
-import { fail, ok, parseBody } from "@/lib/respond";
+import { aiUnavailable, fail, ok, parseBody } from "@/lib/respond";
 import { venueLocationIsComplete } from "@/lib/date-time";
 
 const bodySchema = z.object({ text: z.string().min(5).max(1000) });
@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     if (!venueLocationIsComplete(venue))
       return fail(
         "venue_location_required",
-        "add your venue address and timezone before drafting a slot",
+        "Add your venue's address and timezone first — a draft needs to know when and where.",
         409,
       );
     const parsed = await parseBody(req, bodySchema);
@@ -29,8 +29,11 @@ export async function POST(req: Request) {
     return ok({ draft });
   } catch (e) {
     if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    if (e instanceof AiNotConfiguredError)
-      return fail("ai_not_configured", e.message, 503);
-    return fail("parse_failed", String(e), 502);
+    // Unconfigured and broken look the same to the user, and the answer is the
+    // same either way: use the form. Never surface the exception — it names an
+    // environment variable.
+    if (e instanceof AiNotConfiguredError) return aiUnavailable("draft");
+    console.log(JSON.stringify({ kind: "ai.parse_failed", err: String(e) }));
+    return aiUnavailable("draft");
   }
 }

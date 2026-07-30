@@ -1,7 +1,7 @@
 import { AiNotConfiguredError, profileIngest } from "@gigit/db";
 import { z } from "zod";
 import { AuthError, requireUser } from "@/lib/auth";
-import { fail, ok, parseBody } from "@/lib/respond";
+import { aiUnavailable, fail, ok, parseBody } from "@/lib/respond";
 
 const bodySchema = z.object({ url: z.string().url() });
 
@@ -18,8 +18,11 @@ export async function POST(req: Request) {
     return ok(result);
   } catch (e) {
     if (e instanceof AuthError) return fail("auth", e.message, e.status);
-    if (e instanceof AiNotConfiguredError)
-      return fail("ai_not_configured", e.message, 503);
-    return fail("ingest_failed", String(e), 502);
+    // Unconfigured and broken look the same to the user, and the answer is the
+    // same either way: use the form. Never surface the exception — it names an
+    // environment variable.
+    if (e instanceof AiNotConfiguredError) return aiUnavailable("profile");
+    console.log(JSON.stringify({ kind: "ai.ingest_failed", err: String(e) }));
+    return aiUnavailable("profile");
   }
 }

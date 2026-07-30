@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { nextOccurrences, patternFromFirst } from "./recurrence.js";
+import {
+  localDateTimeParts,
+  nextOccurrences,
+  patternFromFirst,
+  zonedDateTimeToDate,
+} from "./recurrence.js";
 
 describe("patternFromFirst", () => {
   it("derives weekly pattern", () => {
@@ -120,5 +125,55 @@ describe("venue-local recurrence through DST", () => {
       1,
     );
     expect(occ[0].toISOString()).toBe("2026-06-19T20:00:00.000Z");
+  });
+});
+
+/**
+ * Fall-back was untested everywhere: an ambiguous wall time has two valid
+ * instants, and nothing pinned which one we pick. materializeSeries keys its
+ * unique index on the resolved instant, so a flip would move a booked gig by an
+ * hour AND duplicate the occurrence.
+ */
+describe("DST fall-back (an hour that happens twice)", () => {
+  const CHI = "America/Chicago";
+  // US fall-back 2026: Nov 1, 02:00 CDT → 01:00 CST.
+  //   1:30 AM CDT = 06:30Z   |   1:30 AM CST = 07:30Z
+  const ambiguous = { year: 2026, month: 11, day: 1, hour: 1, minute: 30 };
+
+  it("resolves an ambiguous time to the EARLIER instant", () => {
+    expect(zonedDateTimeToDate(ambiguous, CHI).toISOString()).toBe(
+      "2026-11-01T06:30:00.000Z",
+    );
+  });
+
+  it("is stable across calls, which is what series idempotency rests on", () => {
+    const first = zonedDateTimeToDate(ambiguous, CHI).getTime();
+    for (let i = 0; i < 5; i++)
+      expect(zonedDateTimeToDate(ambiguous, CHI).getTime()).toBe(first);
+  });
+
+  it("round-trips: the instant we pick reads back as the requested wall time", () => {
+    const instant = zonedDateTimeToDate(ambiguous, CHI);
+    const parts = localDateTimeParts(instant, CHI);
+    expect(parts.hour).toBe(1);
+    expect(parts.minute).toBe(30);
+    expect(parts.day).toBe(1);
+  });
+
+  it("holds an 8pm gig at 8pm local across the fall-back boundary", () => {
+    // The offset changes from -5 to -6, so the UTC instant must shift by an hour
+    // while the wall clock stays put — that's the whole point for a weekly night.
+    const before = zonedDateTimeToDate(
+      { year: 2026, month: 10, day: 25, hour: 20, minute: 0 },
+      CHI,
+    );
+    const after = zonedDateTimeToDate(
+      { year: 2026, month: 11, day: 1, hour: 20, minute: 0 },
+      CHI,
+    );
+    expect(before.toISOString()).toBe("2026-10-26T01:00:00.000Z"); // CDT, -5
+    expect(after.toISOString()).toBe("2026-11-02T02:00:00.000Z"); // CST, -6
+    expect(localDateTimeParts(before, CHI).hour).toBe(20);
+    expect(localDateTimeParts(after, CHI).hour).toBe(20);
   });
 });

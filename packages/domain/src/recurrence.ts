@@ -64,6 +64,21 @@ export function localDateTimeParts(date: Date, timeZone: string): Required<Local
  * "every Friday 2:30 AM" lands at 3:30 AM on the transition night, like
  * common schedulers, instead of aborting materialization.
  */
+/**
+ * A venue-local wall time → the instant it names.
+ *
+ * DST makes this two-sided and both sides matter for a series:
+ *
+ * - **Spring forward** removes an hour, so the requested time may not exist.
+ *   Throws by default; `resolveGapForward` moves to the first real instant after
+ *   the jump (what a weekly night should do rather than vanish).
+ * - **Fall back** repeats an hour, so the requested time exists TWICE. This
+ *   returns the **earlier** instant — the first 1:30 AM, not the second. That's
+ *   the conventional resolution, and it has to be a documented guarantee rather
+ *   than an accident of the loop below: `materializeSeries` keys its unique index
+ *   on the resolved instant, so a change of mind here would both move a booked
+ *   gig by an hour and silently duplicate the occurrence.
+ */
 export function zonedDateTimeToDate(
   local: LocalDateTime,
   timeZone: string,

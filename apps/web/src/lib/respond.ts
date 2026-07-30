@@ -119,3 +119,26 @@ function describeIssues(issues: z.ZodIssue[]): string {
   }
   return parts.length > 0 ? parts.join(" ") : "Some of those answers need another look.";
 }
+
+/**
+ * AI-assist failure responses.
+ *
+ * Every one of these features is a shortcut around a form the user can always
+ * fill in by hand, so an outage is a nudge back to the form — not an error. It
+ * used to return the exception: with GEMINI_API_KEY unset in an environment,
+ * `AiNotConfiguredError.message` is literally "GEMINI_API_KEY is not set", and
+ * the widget renders `error.message` verbatim. So the marquee "post a slot in a
+ * text message" feature greeted venues with a variable name.
+ */
+export function aiUnavailable(what: "draft" | "profile" | "gear"): NextResponse {
+  const fallback = {
+    draft: "Fill the date, pay, and length in below and you're set.",
+    profile: "Fill your profile in below — it takes a couple of minutes.",
+    gear: "List your equipment in the fields below instead.",
+  }[what];
+  return fail(
+    "ai_unavailable",
+    `The assistant isn't available right now. ${fallback}`,
+    503,
+  );
+}

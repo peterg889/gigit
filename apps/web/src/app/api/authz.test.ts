@@ -10,6 +10,9 @@ import { POST as acceptPost } from "./bookings/[id]/accept/route";
 import { POST as cancelPost } from "./bookings/[id]/cancel/route";
 import { POST as offerPost } from "./applications/[id]/offer/route";
 import { POST as adminStatusPost } from "./admin/users/[id]/status/route";
+import { GET as slotApplicantsGet } from "./slots/[id]/applications/route";
+import { PATCH as venuePatch } from "./venues/[id]/route";
+import { POST as presignPost } from "./media/presign/route";
 
 type Handler = (
   req: Request,
@@ -39,6 +42,7 @@ describe("web API authz matrix (audit #5)", () => {
   const uAdmin = newId("user");
   const uStranger = newId("user");
   const venueId = newId("venue");
+  const rivalVenueId = newId("venue");
   const pBand = newId("performer");
   const pRival = newId("performer");
   let bookingSequence = 0;
@@ -56,6 +60,15 @@ describe("web API authz matrix (audit #5)", () => {
       ownerUserId: uVenue,
       kind: "bar",
       name: "Authz Bar",
+      metro: "authz-tv",
+      lat: 43,
+      lng: -88,
+    });
+    await d.insert(schema.venues).values({
+      id: rivalVenueId,
+      ownerUserId: uRival,
+      kind: "bar",
+      name: "Authz Rival Bar",
       metro: "authz-tv",
       lat: 43,
       lng: -88,
@@ -218,5 +231,58 @@ describe("web API authz matrix (audit #5)", () => {
     expect((await post(adminStatusPost, uRival, { status: "suspended" })).status).toBe(200);
     as(uAdmin);
     await post(adminStatusPost, uRival, { status: "active" });
+  });
+
+  describe("boundaries that had no test", () => {
+    it("a rival venue cannot read who applied to someone else's date", async () => {
+      // The guard is correct; it just had nothing pinning it. A competitor's full
+      // applicant list is exactly the read you don't want unguarded.
+      const { slotId } = await offeredBooking();
+      as(uRival);
+      const res = await slotApplicantsGet(new Request("http://test"), {
+        params: Promise.resolve({ id: slotId }),
+      });
+      expect(res.status).toBe(403);
+
+      as(uVenue);
+      const mine = await slotApplicantsGet(new Request("http://test"), {
+        params: Promise.resolve({ id: slotId }),
+      });
+      expect(mine.status).toBe(200);
+    });
+
+    it("a rival cannot rewrite another venue's address or capacity", async () => {
+      as(uRival);
+      const res = await venuePatch(
+        new Request("http://test", {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ name: "Hijacked", capacity: 9 }),
+        }),
+        { params: Promise.resolve({ id: venueId }) },
+      );
+      expect(res.status).toBe(403);
+      const [v] = await db()
+        .select({ name: schema.venues.name })
+        .from(schema.venues)
+        .where(eq(schema.venues.id, venueId));
+      expect(v!.name).toBe("Authz Bar"); // and nothing changed
+    });
+
+    it("a stranger cannot presign an upload against a profile they don't own", async () => {
+      as(uStranger);
+      const res = await presignPost(
+        new Request("http://test", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            subjectType: "venue",
+            contentType: "image/jpeg",
+            bytes: 1000,
+          }),
+        }),
+      );
+      expect(res.status).toBe(403);
+    });
   });
 });

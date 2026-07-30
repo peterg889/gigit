@@ -94,6 +94,16 @@ async function main() {
     });
   }
 
+  // Sentry is the narrative channel for errors CloudWatch can't express. It is
+  // gated on SENTRY_DSN, so an unset value silently disables every
+  // captureMessage in this file — say so rather than looking healthy.
+  if (env().NODE_ENV === "production" && !process.env.SENTRY_DSN)
+    log("sentry.unconfigured", {
+      severity: "warn",
+      consequence:
+        "error reports are dropped; CloudWatch alarms still cover outbox lag, dead letters, and money mismatches",
+    });
+
   const boss = new PgBoss(env().DATABASE_URL);
   boss.on("error", (err) => log("pgboss.error", { err: String(err) }));
   await boss.start();
@@ -171,6 +181,10 @@ async function main() {
   await boss.schedule(RECONCILE_QUEUE, "30 4 * * *");
   await boss.work(RECONCILE_QUEUE, async () => {
     const mismatches = await reconcileMoney();
+    // Emit on BOTH paths: a zero clears the alarm once the books balance again.
+    await emitCountMetric("MoneyMismatches", mismatches.length).catch((err) =>
+      log("reconcile.metric_error", { err: String(err) }),
+    );
     if (mismatches.length > 0) {
       log("reconcile.MISMATCH", { count: mismatches.length, mismatches });
       Sentry.captureMessage(`money reconciliation: ${mismatches.length} mismatches`, "error");
@@ -661,6 +675,34 @@ async function reconcileLoop(boss: PgBoss) {
 // CloudWatch metrics so the stack can PAGE on dead letters and sustained lag —
 // a parked support escalation must not depend on someone reading logs.
 let cloudwatch: CloudWatchClient | undefined;
+/**
+ * Publish one count metric so the stack can alarm on it.
+ *
+ * Money-reconciliation mismatches used to go only to Sentry and a log line, and
+ * SENTRY_DSN is unset in production — Sentry.init is gated on it, so every
+ * captureMessage was a silent no-op. The one nightly check that says "the ledger
+ * does not add up" paged nobody. Dead letters and lag were already safe because
+ * they go through CloudWatch.
+ */
+async function emitCountMetric(metricName: string, value: number): Promise<void> {
+  const stage = process.env.GIGIT_STAGE;
+  if (!stage) return;
+  cloudwatch ??= new CloudWatchClient({});
+  await cloudwatch.send(
+    new PutMetricDataCommand({
+      Namespace: "Gigit",
+      MetricData: [
+        {
+          MetricName: metricName,
+          Value: value,
+          Unit: "Count",
+          Dimensions: [{ Name: "Stage", Value: stage }],
+        },
+      ],
+    }),
+  );
+}
+
 async function emitOutboxMetrics(lagMs: number, deadLettered: number): Promise<void> {
   const stage = process.env.GIGIT_STAGE;
   if (!stage) return;
