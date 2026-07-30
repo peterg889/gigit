@@ -5,6 +5,8 @@
  */
 import { describe, expect, it } from "vitest";
 import { fenceUserData, gearExtract, slotParse, supportTriage } from "./ai.js";
+import { aiConfigured } from "./env.js";
+import { readFileSync } from "node:fs";
 
 const hasKey = !!process.env.GEMINI_API_KEY;
 const evalDescribe = hasKey ? describe : describe.skip;
@@ -140,5 +142,42 @@ describe("prompt fencing (no API key needed)", () => {
       expect(fenced.startsWith("<request>")).toBe(true);
       expect(fenced.endsWith("</request>")).toBe(true);
     }
+  });
+});
+
+/**
+ * The two AI entry points are deliberately NOT symmetric, and the difference
+ * decides which UI controls may render without a key. Pinned because the natural
+ * move on reading this code is to "make them consistent", which would either
+ * strand the profile importer or hide a control that works.
+ */
+describe("AI availability is not uniform", () => {
+  it("profileIngest catches the missing key; slotParse does not even try", () => {
+    // Asserted on the SOURCE rather than by calling profileIngest, which fetches
+    // the page over the network. The shape is the whole point: one has a catch
+    // that reaches heuristicProfileDraft, the other calls geminiJson bare.
+    const src = readFileSync(new URL("./ai.ts", import.meta.url), "utf8");
+    const ingest = src.slice(
+      src.indexOf("export async function profileIngest"),
+      src.indexOf("export const slotDraftSchema"),
+    );
+    expect(ingest).toContain("heuristicProfileDraft(page)");
+    expect(ingest).toMatch(/catch \(err\)/);
+
+    const parse = src.slice(
+      src.indexOf("export async function slotParse"),
+      src.indexOf("export const gearDraftSchema"),
+    );
+    expect(parse).not.toContain("heuristic");
+    expect(parse).not.toMatch(/catch \(/);
+  });
+
+  it("slotParse has no fallback, so its widget must be gated on aiConfigured()", async () => {
+    // If this ever stops throwing, slotParse grew a fallback and the gate in
+    // apps/web/src/app/slots/new/page.tsx can be relaxed.
+    await expect(slotParse("acoustic friday, $300", "usr_fallback")).rejects.toThrow(
+      /GEMINI_API_KEY/,
+    );
+    expect(aiConfigured()).toBe(false);
   });
 });

@@ -82,3 +82,18 @@ export function smsConfigured(): boolean {
 export function emailConfigured(): boolean {
   return !!env().EMAIL_FROM;
 }
+
+/**
+ * AI assists available. Same principle as the two above, which the auth request
+ * route states plainly: don't offer something we cannot deliver.
+ *
+ * This one was missing, so `SlotParseWidget` — the "post a slot in a text
+ * message" control, and the FIRST thing on the slot-posting screen — rendered
+ * whether or not a key existed. With GEMINI_API_KEY empty it takes a venue's
+ * sentence and answers "the assistant isn't available right now". Note the AI
+ * paths are NOT uniform: profileIngest falls back to a heuristic draft and works
+ * without a key, slotParse has no fallback at all.
+ */
+export function aiConfigured(): boolean {
+  return !!env().GEMINI_API_KEY;
+}

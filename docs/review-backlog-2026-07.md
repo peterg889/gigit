@@ -236,9 +236,14 @@ drive-by.
 
 ### Yours
 
-- **`GEMINI_API_KEY`** — empty in prod. The three AI-assist routes degrade to the
-  manual form now, so this is a missing feature rather than a broken one: the
-  natural-language slot poster and the link-to-profile importer are both dark.
+- **`GEMINI_API_KEY`** — empty in prod. Correction to an earlier claim here: the
+  three AI paths are NOT uniform. `profileIngest` catches the missing key and
+  falls back to a heuristic draft, so the link-to-profile importer **works
+  keyless**. `slotParse` calls the model bare with no fallback, so the
+  natural-language slot poster is the only one genuinely dark — and its widget is
+  now hidden unless a key exists, rather than offering a control that answers
+  "the assistant isn't available right now" on the flagship promise. Setting the
+  key turns the poster back on; nothing else is waiting on it.
 - **`SENTRY_DSN`** — empty. CloudWatch alarms on outbox lag, dead letters and
   money mismatches independently, so this is narrative error detail, not paging.
 - **Two OpsAlerts subscription confirmations.** Without these, none of those

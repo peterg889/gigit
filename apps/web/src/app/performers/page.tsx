@@ -97,7 +97,38 @@ export default async function PerformerSearchPage({
         </form>
       </div>
       {acts.length === 0 && (
-        <div className="card">No acts match those filters. Try removing one.</div>
+        <div className="card">
+          {/* This used to be one unconditional line: "No acts match those filters.
+              Try removing one." With no acts on the platform yet, every venue was
+              blamed for filters it never set — and the 48h `slot_quiet` nudge
+              sends venues to exactly this page, so the only proactive touch the
+              platform makes terminated in a dead end with no link out. */}
+          {kind || genre || metro ? (
+            <>
+              <p>
+                No acts match those filters.{" "}
+                <Link href="/performers">Clear them</Link> to see everyone.
+              </p>
+              <p className="muted">
+                It is still early here, so the roster is thin — widening the
+                search is usually the fastest fix.
+              </p>
+            </>
+          ) : (
+            <>
+              <p>No acts have joined yet.</p>
+              <p className="muted">
+                EightGig is new in this scene. Your open dates stay live and we
+                will email you the moment an act who fits posts a profile — you
+                do not need to keep checking.
+              </p>
+              <p className="muted">
+                Know someone who should be on here?{" "}
+                <Link href="/help">Tell us who</Link> and we will invite them.
+              </p>
+            </>
+          )}
+        </div>
       )}
       {acts.map((p) => {
         const rel = performerReliability(

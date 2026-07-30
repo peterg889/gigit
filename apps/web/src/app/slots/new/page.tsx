@@ -1,3 +1,4 @@
+import { aiConfigured } from "@gigit/db";
 import { ApiForm } from "@/components/ApiForm";
 import { SlotParseWidget } from "@/components/AiAssist";
 import { venueOwnedBy } from "@/lib/auth";
@@ -27,9 +28,17 @@ export default async function NewSlotPage() {
     );
   return (
     <div>
-    <SlotParseWidget timeZone={venue.timeZone} />
+    {/* The page's own h1 comes first: SlotParseWidget opens with an h2, so
+        rendering it above the heading inverted the document outline. */}
+    <span className="eyebrow">Post a night</span>
+    <h1>Post an open date</h1>
+    {/* Only offer the shortcut when it can actually work. Without a key this
+        rendered as the first thing on the screen, took the venue's sentence, and
+        answered "the assistant isn't available right now" — on the flagship
+        "post a slot in a text message" promise. The profile importer is NOT
+        gated the same way: it falls back to a heuristic draft and works keyless. */}
+    {aiConfigured() && <SlotParseWidget timeZone={venue.timeZone} />}
     <div className="card">
-      <h1>Post an open date</h1>
       <p className="muted">
         Add the pay up front so acts know what the gig offers before they
         apply.
