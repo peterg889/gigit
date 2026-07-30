@@ -164,7 +164,7 @@ export default async function TechsPage() {
           </strong>{" "}
           <span className="badge">{GEAR_LABELS[t.gear] ?? "Equipment not listed"}</span>{" "}
           {t.reliabilityStrikes > 0 && (
-            <span className="badge">{t.reliabilityStrikes} cancellation{t.reliabilityStrikes === 1 ? "" : "s"}</span>
+            <span className="badge bad">{t.reliabilityStrikes} cancellation{t.reliabilityStrikes === 1 ? "" : "s"}</span>
           )}
           <p className="muted">{t.bio || "No experience summary yet."}</p>
           <p className="muted">

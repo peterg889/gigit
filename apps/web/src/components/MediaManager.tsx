@@ -3,7 +3,7 @@
 /** Upload photos/audio (presign → PUT → complete) and add video embeds. */
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 export function MediaManager({
   subjectType,
@@ -11,6 +11,7 @@ export function MediaManager({
   subjectType: "performer" | "venue" | "tech";
 }) {
   const router = useRouter();
+  const uid = useId();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [embedUrl, setEmbedUrl] = useState("");
@@ -56,8 +57,8 @@ export function MediaManager({
         copyright complaints end an account —{" "}
         <Link href="/dmca">how that works</Link>.
       </p>
-      <label>Add photos or audio (JPG/PNG/WebP, MP3/M4A)</label>
-      <input
+      <label htmlFor={`${uid}-f1`}>Add photos or audio (JPG/PNG/WebP, MP3/M4A)</label>
+      <input id={`${uid}-f1`}
         type="file"
         accept="image/jpeg,image/png,image/webp,audio/mpeg,audio/mp4,audio/x-m4a"
         disabled={busy}
@@ -68,8 +69,8 @@ export function MediaManager({
       />
       {subjectType === "performer" && (
         <>
-          <label>Add a YouTube/Vimeo video</label>
-          <input
+          <label htmlFor={`${uid}-f2`}>Add a YouTube/Vimeo video</label>
+          <input id={`${uid}-f2`}
             placeholder="https://youtube.com/watch?v=…"
             value={embedUrl}
             onChange={(e) => setEmbedUrl(e.target.value)}

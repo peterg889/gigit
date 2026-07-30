@@ -8,6 +8,30 @@ import { GEAR_LABELS } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * A profile is the thing people SHARE — the act sends the link to a venue, the
+ * venue puts it in a group chat. Without this every share unfurled as the generic
+ * site title, which wastes the one moment the product is spreading by itself.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const [row] = await db()
+    .select({ name: schema.techs.name, bio: schema.techs.bio, status: schema.techs.status })
+    .from(schema.techs)
+    .where(eq(schema.techs.id, id));
+  if (!row || row.status !== "live") return { title: "Not found — EightGig" };
+  const description = row.bio?.slice(0, 155) || `${row.name} — live sound engineer on EightGig.`;
+  return {
+    title: `${row.name} — EightGig`,
+    description,
+    openGraph: { title: row.name, description, type: "profile" },
+  };
+}
+
 /** Public sound-tech page (PRD F1.4): gear, rates, travel. */
 export default async function TechPage({
   params,

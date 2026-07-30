@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Big_Shoulders, Libre_Franklin, Spline_Sans_Mono } from "next/font/google";
 import Link from "next/link";
+
+import { NavLink } from "@/components/NavLink";
 import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import "./globals.css";
@@ -49,26 +51,26 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             EightGig
           </Link>
           <nav aria-label="Main navigation">
-            <Link href="/slots">Open gigs</Link>
-            <Link href="/performers">Find an act</Link>
-            <Link href="/techs">Sound techs</Link>
-            {venue && <Link href="/slots/new">Post an open date</Link>}
+            <NavLink href="/slots">Open gigs</NavLink>
+            <NavLink href="/performers">Find an act</NavLink>
+            <NavLink href="/techs">Sound techs</NavLink>
+            {venue && <NavLink href="/slots/new">Post an open date</NavLink>}
             {userId ? (
               <>
-                <Link href="/bookings">Bookings</Link>
-                <Link href="/inbox">Inbox</Link>
-                <Link href={hasProfile ? "/me" : "/onboarding"}>
+                <NavLink href="/bookings">Bookings</NavLink>
+                <NavLink href="/inbox">Inbox</NavLink>
+                <NavLink href={hasProfile ? "/me" : "/onboarding"}>
                   {hasProfile ? "Profiles" : "Get started"}
-                </Link>
-                <Link href="/account">Account</Link>
+                </NavLink>
+                <NavLink href="/account">Account</NavLink>
                 <form className="nav-form" action="/api/auth/logout" method="post">
                   <button className="nav-button" type="submit">Sign out</button>
                 </form>
               </>
             ) : (
               <>
-                <Link href="/onboarding?role=venue">For venues</Link>
-                <Link href="/login">Sign in</Link>
+                <NavLink href="/onboarding?role=venue">For venues</NavLink>
+                <NavLink href="/login">Sign in</NavLink>
               </>
             )}
           </nav>

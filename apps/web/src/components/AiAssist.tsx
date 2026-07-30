@@ -5,7 +5,7 @@
  * Both degrade gracefully when GEMINI_API_KEY isn't configured.
  */
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { ACT_KIND_LABEL, GIG_FORMAT_LABEL } from "@/lib/labels";
 import { formatVenueDateTime } from "@/lib/date-time";
@@ -25,6 +25,7 @@ async function post(url: string, body: unknown, method: "POST" | "PATCH" = "POST
 export function ProfileIngestWidget() {
   const router = useRouter();
   const [url, setUrl] = useState("");
+  const uid = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<{
@@ -72,13 +73,13 @@ export function ProfileIngestWidget() {
             poster.
           </p>
           <p className="muted">{draft.confidenceNote}</p>
-          <label>Act name</label>
-          <input
+          <label htmlFor={`${uid}-f1`}>Act name</label>
+          <input id={`${uid}-f1`}
             value={draft.name}
             onChange={(e) => setDraft({ ...draft, name: e.target.value })}
           />
-          <label>Type</label>
-          <select
+          <label htmlFor={`${uid}-f2`}>Type</label>
+          <select id={`${uid}-f2`}
             value={draft.kind}
             onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
           >
@@ -86,14 +87,14 @@ export function ProfileIngestWidget() {
               <option key={k} value={k}>{ACT_KIND_LABEL[k]}</option>
             ))}
           </select>
-          <label>Bio</label>
-          <textarea
+          <label htmlFor={`${uid}-f3`}>Bio</label>
+          <textarea id={`${uid}-f3`}
             rows={3}
             value={draft.bio}
             onChange={(e) => setDraft({ ...draft, bio: e.target.value })}
           />
-          <label>Genres (comma-separated)</label>
-          <input
+          <label htmlFor={`${uid}-f4`}>Genres (comma-separated)</label>
+          <input id={`${uid}-f4`}
             value={draft.genreTags.join(", ")}
             onChange={(e) =>
               setDraft({
@@ -102,8 +103,8 @@ export function ProfileIngestWidget() {
               })
             }
           />
-          <label>Home city or metro area</label>
-          <input
+          <label htmlFor={`${uid}-f5`}>Home city or metro area</label>
+          <input id={`${uid}-f5`}
             placeholder="e.g. Milwaukee"
             value={homeMetro}
             onChange={(e) => setHomeMetro(e.target.value)}
@@ -140,6 +141,7 @@ export function ProfileIngestWidget() {
 export function SlotParseWidget({ timeZone }: { timeZone: string }) {
   const router = useRouter();
   const [text, setText] = useState("");
+  const uid = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<{
@@ -229,6 +231,7 @@ export function GearExtractWidget({ venueId }: { venueId: string }) {
   const router = useRouter();
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const uid = useId();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<{
@@ -292,8 +295,8 @@ export function GearExtractWidget({ venueId }: { venueId: string }) {
           <p className="muted">
             Check the counts — the sound plan is only as good as these numbers.
           </p>
-          <label>House PA available?</label>
-          <select
+          <label htmlFor={`${uid}-f6`}>House PA available?</label>
+          <select id={`${uid}-f6`}
             value={String(draft.hasPA)}
             onChange={(e) => setDraft({ ...draft, hasPA: e.target.value === "true" })}
           >
@@ -302,22 +305,22 @@ export function GearExtractWidget({ venueId }: { venueId: string }) {
           </select>
           {(["mixerChannels", "micsAvailable", "monitors"] as const).map((k) => (
             <div key={k}>
-              <label>
+              <label htmlFor={`${uid}-${k}`}>
                 {k === "mixerChannels"
                   ? "Mixer channels"
                   : k === "micsAvailable"
                     ? "Microphones available"
                     : "Stage monitors"}
               </label>
-              <input
+              <input id={`${uid}-${k}`}
                 type="number"
                 value={draft[k]}
                 onChange={(e) => setDraft({ ...draft, [k]: Number(e.target.value) })}
               />
             </div>
           ))}
-          <label>Sound operator included?</label>
-          <select
+          <label htmlFor={`${uid}-f8`}>Sound operator included?</label>
+          <select id={`${uid}-f8`}
             value={String(draft.hasOperator)}
             onChange={(e) => setDraft({ ...draft, hasOperator: e.target.value === "true" })}
           >

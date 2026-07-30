@@ -250,7 +250,7 @@ export default async function BookingPage({
                 endpoint={`/api/bookings/${id}/confirm`}
                 label={paymentsEnabled() ? "Confirm & release pay" : "Confirm it played"}
               />{" "}
-              <span className="muted">
+              <span className="notice warn">
                 {paymentsEnabled()
                   ? `Or the pay releases automatically ${AUTO_CONFIRM_HOURS} hours after the set ends, unless you open a dispute.`
                   : `Or this auto-confirms ${AUTO_CONFIRM_HOURS} hours after the set ends, unless you open a dispute. You and the act settle pay directly.`}

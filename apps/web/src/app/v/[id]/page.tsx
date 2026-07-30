@@ -8,6 +8,30 @@ import { formatAddress, formatVenueDateTime, shortTimeZoneName } from "@/lib/dat
 
 export const dynamic = "force-dynamic";
 
+/**
+ * A profile is the thing people SHARE — the act sends the link to a venue, the
+ * venue puts it in a group chat. Without this every share unfurled as the generic
+ * site title, which wastes the one moment the product is spreading by itself.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const [row] = await db()
+    .select({ name: schema.venues.name, bio: schema.venues.bio, status: schema.venues.status })
+    .from(schema.venues)
+    .where(eq(schema.venues.id, id));
+  if (!row || row.status !== "live") return { title: "Not found — EightGig" };
+  const description = row.bio?.slice(0, 155) || `${row.name} — books live music on EightGig.`;
+  return {
+    title: `${row.name} — EightGig`,
+    description,
+    openGraph: { title: row.name, description, type: "profile" },
+  };
+}
+
 import { GIG_FORMAT_LABEL, VENUE_KIND_LABEL } from "@/lib/labels";
 
 /** Public venue page: room, PA inventory, photos, open slots. */
@@ -74,7 +98,7 @@ export default async function VenuePage({
             </span>
           )}
           {v.reliabilityStrikes > 0 && (
-            <> <span className="badge">{v.reliabilityStrikes} cancellation{v.reliabilityStrikes === 1 ? "" : "s"}</span></>
+            <> <span className="badge bad">{v.reliabilityStrikes} cancellation{v.reliabilityStrikes === 1 ? "" : "s"}</span></>
           )}
           {avg !== null && (
             <span className="badge">

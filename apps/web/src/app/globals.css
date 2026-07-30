@@ -74,8 +74,10 @@ header.site .brand {
 header.site nav {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 16px;
-  align-items: baseline;
+  /* Was `4px 16px` with 2px of padding: eight items wrapped to four rows of
+     ~20px targets, eating ~110px of a 390px phone before any content. */
+  gap: 2px 18px;
+  align-items: center;
 }
 header.site nav a {
   font-family: var(--font-mono);
@@ -85,9 +87,16 @@ header.site nav a {
   color: var(--ink);
   text-decoration: none;
   border-bottom: 1px solid transparent;
-  padding-bottom: 2px;
+  /* A real tap target, without the row height ballooning on desktop. */
+  padding: 10px 0 8px;
 }
 header.site nav a:hover { color: var(--amber-hot); border-bottom-color: var(--amber); }
+/* Touch has no hover, so :hover was the ONLY nav state — there was no way to
+   tell where you were. aria-current also announces it. */
+header.site nav a[aria-current="page"] {
+  color: var(--amber);
+  border-bottom-color: var(--amber);
+}
 
 /* ── Footer: the fine print on the poster ── */
 footer.site {
@@ -420,6 +429,34 @@ pre {
   color: var(--muted);
 }
 .notice.success { color: var(--ink); }
+/* brand.md §5.5: cancellations and disputes get the calmest, clearest copy in
+   the product — "that's where the brand is actually earned". That copy was
+   14px .muted, i.e. the WEAKEST treatment here. And .badge had one amber rule,
+   so "Cancelled by venue" and "3 cancellations" rendered in the money colour. */
+.notice.warn {
+  border-left-color: var(--amber-hot);
+  background: rgba(255, 201, 102, 0.09);
+  color: var(--ink);
+}
+.notice.danger {
+  border-left-color: var(--red);
+  background: rgba(255, 107, 74, 0.09);
+  color: var(--ink);
+}
+
+.badge.bad {
+  color: var(--red);
+  border-color: var(--red);
+  background: rgba(255, 107, 74, 0.1);
+}
+.badge.warn {
+  color: var(--amber-hot);
+  border-color: var(--amber-hot);
+}
+.badge.good {
+  color: var(--ink);
+  border-color: var(--line-strong);
+}
 
 .check-row {
   display: flex;
@@ -502,4 +539,21 @@ button.danger[disabled]:hover { background: #8f2f24; }
 summary {
   cursor: pointer;
   padding: 6px 0;
+}
+
+/* An inbox row: the whole card is the target, and the preview stays one line. */
+a.thread-row { display: block; text-decoration: none; color: inherit; }
+a.thread-row:hover strong { color: var(--amber-hot); }
+.thread-preview {
+  margin: 6px 0 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* h3 was styled for family and transform but never given a size, so it fell to
+   the UA default (~18px) — SMALLER than h2's 20px, and without h2's tracking. */
+h3 {
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
 }

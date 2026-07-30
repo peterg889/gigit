@@ -13,6 +13,30 @@ import { ACT_KIND_LABEL } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * A profile is the thing people SHARE — the act sends the link to a venue, the
+ * venue puts it in a group chat. Without this every share unfurled as the generic
+ * site title, which wastes the one moment the product is spreading by itself.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const [row] = await db()
+    .select({ name: schema.performers.name, bio: schema.performers.bio, status: schema.performers.status })
+    .from(schema.performers)
+    .where(eq(schema.performers.id, id));
+  if (!row || row.status !== "live") return { title: "Not found — EightGig" };
+  const description = row.bio?.slice(0, 155) || `${row.name} — live act on EightGig.`;
+  return {
+    title: `${row.name} — EightGig`,
+    description,
+    openGraph: { title: row.name, description, type: "profile" },
+  };
+}
+
 const MEDIA_PROVIDER_LABEL: Record<string, string> = {
   youtube: "YouTube",
   vimeo: "Vimeo",
