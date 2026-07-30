@@ -128,7 +128,13 @@ export default async function FeedPage({
             <strong>
               <Link href={`/slots/${slot.id}`}>{venueName}</Link>
             </strong>{" "}
-            <span className="muted">({VENUE_KIND_LABEL[venueKind] ?? "Venue"})</span>
+            {/* The room itself was reachable from exactly one place in the whole
+                product — the venue's own "view public page" link. So an act could
+                never read the PA specs, the capacity, or the reviews of the room
+                they were about to apply to. */}
+            <Link className="muted" href={`/v/${slot.venueId}`}>
+              ({VENUE_KIND_LABEL[venueKind] ?? "Venue"} · about this room)
+            </Link>
           </div>
           <div>
             {formatVenueDateTime(slot.startsAt, venueTimeZone)}{" "}

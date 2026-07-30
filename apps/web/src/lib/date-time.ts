@@ -170,3 +170,14 @@ export function formatOpsTimestamp(value: DateValue): string {
     }).format(new Date(value)) + " UTC"
   );
 }
+
+/**
+ * A stored metro slug → something you'd say out loud: "milwaukee" → "Milwaukee".
+ *
+ * Metros are lowercased on the way in (metroSchema), so every surface that shows
+ * one has to title-case it. This lived as a private helper in the act profile
+ * page, which is why the rooms directory nearly got a fourth copy.
+ */
+export function formatAreaName(value: string): string {
+  return value.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase("en-US"));
+}

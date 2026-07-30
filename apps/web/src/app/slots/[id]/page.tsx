@@ -15,6 +15,7 @@ import {
 export const dynamic = "force-dynamic";
 
 import {
+  SOUND_VERDICT_LABELS,
   ACT_KIND_LABEL,
   APPLICATION_STATUS_LABELS,
   GIG_FORMAT_LABEL,
@@ -233,12 +234,16 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               <span className="badge">
                 {friendlyLabel(APPLICATION_STATUS_LABELS, application.status)}
               </span>{" "}
-              <span className="badge">
-                {plan.verdict === "covered"
-                  ? "sound: covered"
-                  : plan.verdict === "tech_needed"
-                    ? "sound: tech needed"
-                    : "sound: tech + rig needed"}
+              <span
+                className={
+                  plan.verdict === "covered"
+                    ? "badge good"
+                    : plan.verdict === "unknown"
+                      ? "badge warn"
+                      : "badge"
+                }
+              >
+                {friendlyLabel(SOUND_VERDICT_LABELS, plan.verdict)}
               </span>
               {plan.gaps.length > 0 && (
                 <p className="muted">Sound gaps: {plan.gaps.join("; ")}</p>

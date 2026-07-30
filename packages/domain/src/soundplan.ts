@@ -21,7 +21,20 @@ export interface PerformerNeeds {
   canPlayUnamplified?: boolean;
 }
 
-export type SoundVerdict = "covered" | "tech_needed" | "tech_and_rig_needed";
+/**
+ * `unknown` exists because "nobody has said" is not the same as "no".
+ *
+ * `hasOperator` is optional and `inputs` defaults to 0 on the forms, and the
+ * plan used to read both as a definite no — so a default-configured booking
+ * came back `tech_needed` with the single gap "no one to run sound", on every
+ * gig, in a metro with no techs yet. The differentiator cried wolf 100% of the
+ * time and then couldn't deliver. Say "we don't know yet" instead.
+ */
+export type SoundVerdict =
+  | "covered"
+  | "unknown"
+  | "tech_needed"
+  | "tech_and_rig_needed";
 
 export interface SoundPlan {
   version: number;
@@ -53,7 +66,22 @@ export function soundPlan(venue: VenuePA, needs: PerformerNeeds): SoundPlan {
     gaps.push(
       `venue has ${venue.monitors ?? 0} monitors, act needs ${needs.monitorsNeeded}`,
     );
-  if (!venue.hasOperator) gaps.push("no one to run sound");
+  // Only a stated `false` means "there is nobody" — undefined means unanswered.
+  if (venue.hasOperator === false) gaps.push("no one to run sound");
+
+  // Unanswered essentials outrank a clean gap list: claiming "covered" when the
+  // act never said how many inputs it needs, or the room never said whether
+  // anyone runs the desk, is a guess dressed as an answer.
+  const unanswered: string[] = [];
+  if (!(needs.inputs > 0)) unanswered.push("the act hasn't listed its input count");
+  if (venue.hasOperator === undefined)
+    unanswered.push("the room hasn't said whether anyone runs sound");
+  if (unanswered.length > 0)
+    return {
+      version: SOUND_PLAN_VERSION,
+      verdict: "unknown",
+      gaps: [...gaps, ...unanswered],
+    };
 
   if (gaps.length === 0)
     return { version: SOUND_PLAN_VERSION, verdict: "covered", gaps };

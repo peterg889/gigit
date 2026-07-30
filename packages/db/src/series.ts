@@ -46,8 +46,11 @@ export async function findRebookTarget(
        join lateral (
          select s.id, s.starts_at, s.duration_minutes, s.budget_cents, s.provides, s.notes
            from slots s
-          where s.series_id = orig.series_id
-            and orig.series_id is not null
+          -- Same ROOM, not same series. Requiring a series meant a venue that
+          -- posted a one-off and loved the act had no rebook path at all — and
+          -- the one-off venue is the majority at launch. A residency still
+          -- prefers its own series via the ordering below.
+          where s.venue_id = orig.venue_id
             and s.status = 'open'
             and s.starts_at > now()
             and not exists (
@@ -59,7 +62,9 @@ export async function findRebookTarget(
               select 1 from applications a
                where a.slot_id = s.id and a.performer_id = b.performer_id
             )
-          order by s.starts_at asc
+          order by
+            (orig.series_id is not null and s.series_id = orig.series_id) desc,
+            s.starts_at asc
           limit 1
        ) tgt on true
       where b.id = $1

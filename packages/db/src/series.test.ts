@@ -152,4 +152,79 @@ describe("slot series (integration)", () => {
     const offered = await mkBooking(occ[2].id, occ[2].startsAt, "offered");
     expect(await findRebookTarget(offered)).toBeNull();
   });
+
+  it("findRebookTarget: a one-off booking rebooks onto the room's next open night", async () => {
+    const d = db();
+    // Requiring a series meant a venue that posted a ONE-OFF and loved the act
+    // had no rebook path at all — and at launch the one-off venue is the
+    // majority. This is the case that had no coverage.
+    const oneOffOwner = newId("user");
+    const oneOffVenue = newId("venue");
+    const soloAct = newId("performer");
+    const actOwner = newId("user");
+    await d.insert(users).values([
+      { id: oneOffOwner, email: `${oneOffOwner}@t.test` },
+      { id: actOwner, email: `${actOwner}@t.test` },
+    ]);
+    await d.insert(venues).values({
+      id: oneOffVenue, ownerUserId: oneOffOwner, kind: "bar",
+      name: "One Off Room", metro: "testville", lat: 43, lng: -87,
+    });
+    await d.insert(performers).values({
+      id: soloAct, ownerUserId: actOwner, kind: "solo",
+      name: "One Off Act", homeMetro: "testville", techNeeds: { inputs: 2 },
+    });
+
+    const mkSlot = async (daysOut: number, status = "open") => {
+      const id = newId("slot");
+      const startsAt = new Date(Date.now() + daysOut * 86_400_000);
+      await d.insert(slots).values({
+        id, venueId: oneOffVenue, metro: "testville", startsAt,
+        durationMinutes: 120, format: "music", budgetCents: 28_000, status,
+      });
+      return { id, startsAt };
+    };
+
+    // the played night, and two later open nights with no series between them
+    const played = await mkSlot(3, "filled");
+    const next = await mkSlot(17);
+    const later = await mkSlot(31);
+
+    const bookingId = newId("booking");
+    await d.insert(bookings).values({
+      id: bookingId, slotId: played.id, performerId: soloAct, venueId: oneOffVenue,
+      state: "released",
+      terms: {
+        amountCents: 28_000,
+        startsAt: played.startsAt.toISOString(),
+        endsAt: new Date(played.startsAt.getTime() + 120 * 60_000).toISOString(),
+      },
+      offerExpiresAt: new Date(Date.now() + 72 * 3_600_000),
+      agreementTemplateVer: "v1",
+    });
+
+    // the SOONEST open night at that room, not the later one
+    expect((await findRebookTarget(bookingId))?.slotId).toBe(next.id);
+
+    // ...and once the act has applied there, it moves on to the next
+    await d.insert(applications).values({
+      id: newId("application"), slotId: next.id, performerId: soloAct,
+    });
+    expect((await findRebookTarget(bookingId))?.slotId).toBe(later.id);
+
+    // a different room's open night is never a target
+    const otherRoom = newId("venue");
+    const otherOwner = newId("user");
+    await d.insert(users).values({ id: otherOwner, email: `${otherOwner}@t.test` });
+    await d.insert(venues).values({
+      id: otherRoom, ownerUserId: otherOwner, kind: "bar",
+      name: "Someone Else's Room", metro: "testville", lat: 43, lng: -87,
+    });
+    await d.insert(slots).values({
+      id: newId("slot"), venueId: otherRoom, metro: "testville",
+      startsAt: new Date(Date.now() + 5 * 86_400_000),
+      durationMinutes: 120, format: "music", budgetCents: 28_000, status: "open",
+    });
+    expect((await findRebookTarget(bookingId))?.slotId).toBe(later.id);
+  });
 });

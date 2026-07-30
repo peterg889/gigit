@@ -91,3 +91,15 @@ export const APPLICATION_STATUS_LABELS: Record<string, string> = {
 export function friendlyLabel(labels: Record<string, string>, value: string) {
   return labels[value] ?? value.replaceAll("_", " ");
 }
+
+/**
+ * The sound verdict, in one vocabulary. It was written out twice with different
+ * words — "sound: covered" on the slot page, "covered by house PA" on the
+ * booking page — for the same three-state enum.
+ */
+export const SOUND_VERDICT_LABELS: Record<string, string> = {
+  covered: "Sound covered",
+  unknown: "Sound not confirmed",
+  tech_needed: "Needs a tech",
+  tech_and_rig_needed: "Needs a tech and a rig",
+};

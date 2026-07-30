@@ -53,6 +53,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <nav aria-label="Main navigation">
             <NavLink href="/slots">Open gigs</NavLink>
             <NavLink href="/performers">Find an act</NavLink>
+            <NavLink href="/venues">Rooms</NavLink>
             <NavLink href="/techs">Sound techs</NavLink>
             {venue && <NavLink href="/slots/new">Post an open date</NavLink>}
             {userId ? (

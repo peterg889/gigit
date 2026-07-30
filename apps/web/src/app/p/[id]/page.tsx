@@ -10,6 +10,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
 import { ACT_KIND_LABEL } from "@/lib/labels";
+import { formatAreaName } from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
 
@@ -43,10 +44,6 @@ const MEDIA_PROVIDER_LABEL: Record<string, string> = {
   bandcamp: "Bandcamp",
   soundcloud: "SoundCloud",
 };
-
-function formatAreaName(value: string) {
-  return value.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase("en-US"));
-}
 
 /** Public performer EPK: bio, photos, audio, video embeds, reviews. */
 export default async function PerformerPage({

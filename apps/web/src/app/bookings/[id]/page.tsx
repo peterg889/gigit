@@ -22,6 +22,7 @@ import {
 export const dynamic = "force-dynamic";
 
 import {
+  SOUND_VERDICT_LABELS,
   BOOKING_STATE_LABELS,
   GEAR_LABELS,
   PARTY_LABELS,
@@ -281,12 +282,16 @@ export default async function BookingPage({
         <div className="card">
           <h2>Sound</h2>
           <p>
-            <span className="badge">
-              {plan.verdict === "covered"
-                ? "covered by house PA"
-                : plan.verdict === "tech_needed"
-                  ? "tech needed"
-                  : "tech + rig needed"}
+            <span
+              className={
+                plan.verdict === "covered"
+                  ? "badge good"
+                  : plan.verdict === "unknown"
+                    ? "badge warn"
+                    : "badge"
+              }
+            >
+              {friendlyLabel(SOUND_VERDICT_LABELS, plan.verdict)}
             </span>
             {plan.gaps.length > 0 && (
               <span className="muted"> / {plan.gaps.join("; ")}</span>
