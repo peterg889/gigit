@@ -50,14 +50,6 @@ export default async function HomePage() {
           before asking anyone to pay.{" "}
           <Link href="/help">See the details.</Link>
         </p>
-        <div className="button-row">
-          <Link className="btn" href="/onboarding?role=performer">
-            Join as an act
-          </Link>
-          <Link className="btn secondary" href="/onboarding?role=venue">
-            Join as a venue
-          </Link>
-        </div>
       </section>
 
       {userId && (
@@ -91,7 +83,9 @@ export default async function HomePage() {
               Bars, restaurants, breweries, coffee shops, and small rooms post
               a date, clear pay, and the practical details acts need.
             </p>
-            <Link href="/onboarding?role=venue">Set up a venue</Link>
+            <Link className="btn" href="/onboarding?role=venue">
+              Set up a venue
+            </Link>
           </div>
           <div className="card role-card">
             <span className="badge">Acts</span>
@@ -100,7 +94,9 @@ export default async function HomePage() {
               Create one profile, discover nearby paid gigs, apply, and
               keep the agreement and conversation together.
             </p>
-            <Link href="/onboarding?role=performer">Set up an act</Link>
+            <Link className="btn" href="/onboarding?role=performer">
+              Set up an act
+            </Link>
           </div>
           <div className="card role-card">
             <span className="badge">Sound techs</span>
@@ -109,7 +105,9 @@ export default async function HomePage() {
               List your experience, rates, equipment, and travel range so venues
               and acts can find the right person for the night.
             </p>
-            <Link href="/onboarding?role=tech">Set up a sound profile</Link>
+            <Link className="btn" href="/onboarding?role=tech">
+              Set up a sound profile
+            </Link>
           </div>
         </div>
       </section>

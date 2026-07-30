@@ -61,7 +61,7 @@ export async function postSlot(
   await form.getByLabel("Date & start time").fill(dtLocal);
   await form.getByLabel("Duration (minutes)").fill("120");
   await form.getByLabel("Format", { exact: true }).selectOption("music");
-  await form.getByLabel("Budget (USD)").fill(budgetUsd);
+  await form.getByLabel("Pay for the night, in dollars").fill(budgetUsd);
   await form.getByLabel(/About the night/).fill(marker);
   await form.getByRole("button", { name: "Post open date" }).click();
   await page.waitForURL("**/slots");

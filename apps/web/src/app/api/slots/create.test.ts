@@ -1,11 +1,12 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { closeDb, db, makePerformer, makeVenue, schema } from "@gigit/db";
+import { closeDb, db, makePerformer, makeUser, makeVenue, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
 
 import { POST as createSlot } from "./route";
+import { POST as createVenue } from "../venues/route";
 
 const as = (uid: string | null) => sessionUserId.mockResolvedValue(uid);
 const post = (body: unknown) =>
@@ -105,5 +106,61 @@ describe("posting an open date", () => {
   it("refuses an anonymous caller", async () => {
     as(null);
     expect((await post({})).status).toBe(401);
+  });
+});
+
+/**
+ * A venue used to be asked for its city twice — "City" and "City or metro area",
+ * both required, separated by ZIP CODE. The metro is derived from the city now,
+ * and stays overridable so a suburb room can be listed in the Milwaukee scene.
+ */
+describe("venue metro derivation", () => {
+  const create = (body: unknown) =>
+    createVenue(
+      new Request("http://test/api/venues", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+    );
+
+  const baseVenue = {
+    kind: "bar",
+    addressLine1: "12 Derive St",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
+  };
+
+  it("derives the metro from the city, normalized the way the feed matches it", async () => {
+    const owner = await makeUser();
+    as(owner);
+    const res = await create({ ...baseVenue, name: "Derived Room", city: "Wauwatosa" });
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const [v] = await db()
+      .select({ metro: schema.venues.metro })
+      .from(schema.venues)
+      .where(eq(schema.venues.id, id));
+    // lowercased, because that is what the feed filter and the alert matcher compare
+    expect(v!.metro).toBe("wauwatosa");
+  });
+
+  it("still lets a venue name a different scene than its city", async () => {
+    const owner = await makeUser();
+    as(owner);
+    const res = await create({
+      ...baseVenue,
+      name: "Suburb Room",
+      city: "Wauwatosa",
+      metro: "Milwaukee",
+    });
+    expect(res.status).toBe(201);
+    const { id } = await res.json();
+    const [v] = await db()
+      .select({ metro: schema.venues.metro, city: schema.venues.city })
+      .from(schema.venues)
+      .where(eq(schema.venues.id, id));
+    expect(v).toEqual({ metro: "milwaukee", city: "Wauwatosa" });
   });
 });

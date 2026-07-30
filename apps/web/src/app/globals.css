@@ -315,7 +315,15 @@ input, select, textarea {
   color: var(--ink);
   font: inherit;
 }
-input::placeholder, textarea::placeholder { color: rgba(169, 152, 111, 0.8); }
+/* A placeholder has to differ from entered text in SHAPE, not just in shade. At
+   0.8 alpha a tan "53212" in a ZIP field read as a filled value — verified in a
+   real browser against staging — and a venue could plausibly submit believing the
+   field was set. Italic reads instantly as "this is a hint", and entered text is
+   near-white cream against this. */
+input::placeholder, textarea::placeholder {
+  color: rgba(169, 152, 111, 0.62);
+  font-style: italic;
+}
 /* `outline: none` on input:focus (0,1,1) out-specifies the global
    :focus-visible ring (0,1,0), so fields got a ~1.5:1 1px hint while every
    other control got a 3px amber ring. Keep the ring here too. */
@@ -417,6 +425,12 @@ pre {
   margin-top: 14px;
 }
 .role-card h2::after { display: none; }
+/* The role CTA is the per-role conversion, so it sits at the bottom of the card
+   and lines up across the grid however long the descriptions run. It used to be
+   an inline text link while the Founding card above used buttons for the same
+   destinations — same action, two treatments, and the weaker one was here. */
+.role-card p { flex: 1; }
+.role-card .btn { margin-top: 4px; }
 .role-card p { flex: 1; }
 
 .how-it-works { margin: 48px 0; }

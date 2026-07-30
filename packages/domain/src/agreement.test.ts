@@ -73,7 +73,8 @@ describe("renderAgreement — discovery-first (payments off, the default)", () =
     expect(text).toContain("The Bishops");
     expect(text).toContain("$400.00");
     expect(text).toContain("set length 90 minutes");
-    expect(text).toContain("house PA system");
+    // Sentence-cased after the clause heading; see "agreement sentence casing".
+    expect(text).toContain("House PA system");
     expect(text).toContain("load in at 7");
   });
 });
@@ -91,5 +92,38 @@ describe("renderAgreement — payments on (the deferred configuration)", () => {
     expect(text).toContain("held by the platform");
     expect(text).toMatch(/50% of the fee/);
     expect(text).toMatch(/100% of the fee/);
+  });
+});
+
+/**
+ * The binding document a user reads before accepting shouldn't look unfinished.
+ * Clause 3 interpolated lowercase text into both branches, so it rendered
+ * "PROVIDED BY VENUE. nothing beyond the performance space." — spotted in a real
+ * browser against staging, not by any test.
+ */
+describe("agreement sentence casing", () => {
+  it("capitalizes what follows the PROVIDED BY VENUE heading", () => {
+    const withNothing = renderAgreement({
+      ...base,
+      terms: { ...terms, provides: {} },
+    });
+    expect(withNothing).toContain("PROVIDED BY VENUE. Nothing beyond");
+    expect(withNothing).not.toContain("VENUE. nothing");
+
+    const withPa = renderAgreement({
+      ...base,
+      terms: { ...terms, provides: { pa: true, parking: true } },
+    });
+    expect(withPa).toContain("PROVIDED BY VENUE. House PA system");
+    expect(withPa).not.toContain("VENUE. house");
+  });
+
+  it("leaves the user's own notes verbatim", () => {
+    // Their words in a binding document — we don't silently rewrite them.
+    const out = renderAgreement({
+      ...base,
+      terms: { ...terms, notes: "two sets, load in at 7" },
+    });
+    expect(out).toContain("NOTES. two sets, load in at 7");
   });
 });

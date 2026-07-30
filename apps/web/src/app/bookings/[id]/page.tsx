@@ -326,8 +326,21 @@ export default async function BookingPage({
                 endpoint={`/api/bookings/${id}/tech-subslot`}
                 submitLabel="Post the sound job"
                 fields={[
-                  { name: "payer", label: "Who pays the tech", type: "select", options: ["venue", "performer"], required: true },
-                  { name: "budgetCents", label: "Tech pay (USD)", type: "number", required: true, placeholder: "250" },
+                  {
+                    // Default to whoever is filling this in. It was always
+                    // "venue", so an ACT's default action committed the venue to
+                    // paying a tech — a bill they never agreed to. Either side
+                    // can still choose the other explicitly.
+                    name: "payer",
+                    label: "Who pays the tech",
+                    type: "select",
+                    options: asPerformer
+                      ? ["performer", "venue"]
+                      : ["venue", "performer"],
+                    defaultValue: asPerformer ? "performer" : "venue",
+                    required: true,
+                  },
+                  { name: "budgetCents", label: "Tech pay, in dollars", type: "number", required: true },
                   { name: "notes", label: "Anything the tech should know", type: "textarea" },
                 ]}
               />

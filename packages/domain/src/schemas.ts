@@ -25,6 +25,11 @@ const timeZoneSchema = z
   .max(80)
   .refine(isValidTimeZone, "must be a valid IANA timezone");
 
+/** The same normalization metroSchema applies, for deriving a metro from a city. */
+export function normalizeMetro(value: string): string {
+  return value.trim().toLocaleLowerCase("en-US").slice(0, 80);
+}
+
 const metroSchema = z
   .string()
   .trim()
@@ -62,7 +67,11 @@ export const venueCreateSchema = z.object({
   kind: z.enum(venueKinds),
   name: z.string().min(1).max(120),
   bio: z.string().max(4000).default(""),
-  metro: metroSchema,
+  // Optional: derived from `city` when not given. Asking for both up front made
+  // a venue type "Milwaukee" into two differently-labelled required boxes with
+  // ZIP CODE between them. It stays overridable because a suburb venue may want
+  // to be found in the Milwaukee scene rather than its own.
+  metro: metroSchema.optional(),
   addressLine1: z.string().min(1).max(160),
   addressLine2: z.string().max(160).optional(),
   city: z.string().min(1).max(100),

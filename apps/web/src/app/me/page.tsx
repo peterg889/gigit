@@ -97,8 +97,8 @@ export default async function MePage() {
                 { name: "name", label: "Act name", defaultValue: performer.name },
                 { name: "bio", label: "Bio", type: "textarea", defaultValue: performer.bio ?? "" },
                 { name: "genreTags", label: "Genres (comma-separated)", defaultValue: (performer.genreTags ?? []).join(", ") },
-                { name: "rateMinCents", label: "Typical rate from ($)", type: "number", defaultValue: performer.rateMinCents != null ? performer.rateMinCents / 100 : undefined },
-                { name: "rateMaxCents", label: "Typical rate to ($)", type: "number", defaultValue: performer.rateMaxCents != null ? performer.rateMaxCents / 100 : undefined },
+                { name: "rateMinCents", label: "Typical rate from, in dollars", type: "number", defaultValue: performer.rateMinCents != null ? performer.rateMinCents / 100 : undefined },
+                { name: "rateMaxCents", label: "Typical rate to, in dollars", type: "number", defaultValue: performer.rateMaxCents != null ? performer.rateMaxCents / 100 : undefined },
                 { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: performer.travelRadiusMiles },
                 { name: "setLengthsMinutes", label: "Set lengths in minutes (comma-separated)", defaultValue: (performer.setLengthsMinutes ?? []).join(", ") },
                 { name: "inputs", label: "Audio inputs needed", type: "number", defaultValue: performer.techNeeds.inputs },
@@ -123,11 +123,21 @@ export default async function MePage() {
               { name: "homeMetro", label: "Home city or metro area", required: true, placeholder: "e.g. Milwaukee" },
               { name: "bio", label: "Bio", type: "textarea" },
               { name: "genreTags", label: "Genres (comma-separated)" },
-              { name: "rateMinCents", label: "Typical rate from ($)", type: "number" },
-              { name: "rateMaxCents", label: "Typical rate to ($)", type: "number" },
+              { name: "rateMinCents", label: "Typical rate from, in dollars", type: "number" },
+              { name: "rateMaxCents", label: "Typical rate to, in dollars", type: "number" },
               { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: 30 },
               { name: "setLengthsMinutes", label: "Set lengths in minutes (comma-separated)", placeholder: "45, 60, 120" },
-              { name: "inputs", label: "Audio inputs needed", type: "number", defaultValue: 0 },
+              {
+                name: "inputs",
+                // No default. `0` asserted "this act needs no inputs", which is
+                // never true for an amplified act — and it made the sound plan's
+                // `unknown` verdict the answer for literally every booking,
+                // which is barely more useful than the old always-tech_needed.
+                // Blank submits nothing, which reads as unanswered.
+                label: "Audio inputs needed (vocals + instruments + DI)",
+                type: "number",
+                placeholder: "e.g. 2 for a solo, 8 for a band",
+              },
               { name: "micsNeeded", label: "Microphones needed", type: "number", defaultValue: 0 },
               { name: "monitorsNeeded", label: "Stage monitors needed", type: "number", defaultValue: 0 },
               { name: "canPlayUnamplified", label: "Can you play unamplified?", type: "select", options: ["false", "true"], defaultValue: "false" },
@@ -235,6 +245,13 @@ export default async function MePage() {
                 { name: "addressLine1", label: "Street address", defaultValue: venue.addressLine1 },
                 { name: "addressLine2", label: "Suite / unit (optional)", defaultValue: venue.addressLine2 ?? "" },
                 { name: "city", label: "City", defaultValue: venue.city },
+                {
+                  // The edit form had no metro field at all, so a venue derived
+                  // into the wrong scene could never move itself out of it.
+                  name: "metro",
+                  label: "Scene to be listed in",
+                  defaultValue: venue.metro,
+                },
                 { name: "region", label: "State", defaultValue: venue.region },
                 { name: "postalCode", label: "ZIP code", defaultValue: venue.postalCode },
                 {
@@ -252,7 +269,31 @@ export default async function MePage() {
                 { name: "mixerChannels", label: "Mixer channels", type: "number", defaultValue: venue.paInventory.mixerChannels ?? undefined },
                 { name: "micsAvailable", label: "Microphones available", type: "number", defaultValue: venue.paInventory.micsAvailable ?? undefined },
                 { name: "monitors", label: "Stage monitors", type: "number", defaultValue: venue.paInventory.monitors ?? undefined },
-                { name: "hasOperator", label: "Is there someone who runs sound?", type: "select", options: ["false", "true"], defaultValue: String(venue.paInventory.hasOperator ?? false) },
+                {
+                  // "Not sure yet" is the DEFAULT and it submits nothing, so the
+                  // sound plan sees `undefined` and returns its `unknown` verdict.
+                  // This used to default to "false", which meant every venue that
+                  // skipped the question asserted "there is nobody" on its own
+                  // behalf — so the unknown verdict could never fire from the real
+                  // form, and the booking page showed "Sound not confirmed" beside
+                  // a gap claiming "no one to run sound" as fact.
+                  name: "hasOperator",
+                  label: "Is there someone who runs sound?",
+                  type: "select",
+                  options: [
+                    { value: "", label: "Not sure yet" },
+                    { value: "true", label: "Yes" },
+                    { value: "false", label: "No" },
+                  ],
+                  // Round-trips the stored answer. Without this, "Not sure yet"
+                  // would be the default on every edit and the venueGear
+                  // transform would rebuild paInventory without hasOperator —
+                  // silently erasing an answer the venue had already given.
+                  defaultValue:
+                    venue.paInventory.hasOperator === undefined
+                      ? ""
+                      : String(venue.paInventory.hasOperator),
+                },
               ]}
             />
           </details>
@@ -276,9 +317,17 @@ export default async function MePage() {
               { name: "addressLine1", label: "Street address", required: true, placeholder: "1872 N Commerce St" },
               { name: "addressLine2", label: "Suite / unit (optional)" },
               { name: "city", label: "City", required: true, placeholder: "Milwaukee" },
+                {
+                  // Sits right after City, optional, and says what it is FOR.
+                  // It used to be required, labelled "City or metro area", and
+                  // separated from City by ZIP CODE — so a venue typed Milwaukee
+                  // twice into two boxes that looked like the same question.
+                  name: "metro",
+                  label: "Scene to be listed in (optional — defaults to your city)",
+                  placeholder: "e.g. Milwaukee, if you are just outside it",
+                },
               { name: "region", label: "State", required: true, placeholder: "WI" },
               { name: "postalCode", label: "ZIP code", required: true, placeholder: "53212" },
-              { name: "metro", label: "City or metro area", required: true, placeholder: "e.g. Milwaukee" },
               {
                 name: "timeZone",
                 label: "Timezone",
@@ -292,7 +341,23 @@ export default async function MePage() {
               { name: "mixerChannels", label: "Mixer channels (if you know)", type: "number", placeholder: "8" },
               { name: "micsAvailable", label: "Microphones available", type: "number", placeholder: "2" },
               { name: "monitors", label: "Stage monitors", type: "number", placeholder: "1" },
-              { name: "hasOperator", label: "Is there someone who runs sound?", type: "select", options: ["false", "true"], defaultValue: "false" },
+              {
+                  // "Not sure yet" is the DEFAULT and it submits nothing, so the
+                  // sound plan sees `undefined` and returns its `unknown` verdict.
+                  // This used to default to "false", which meant every venue that
+                  // skipped the question asserted "there is nobody" on its own
+                  // behalf — so the unknown verdict could never fire from the real
+                  // form, and the booking page showed "Sound not confirmed" beside
+                  // a gap claiming "no one to run sound" as fact.
+                  name: "hasOperator",
+                  label: "Is there someone who runs sound?",
+                  type: "select",
+                  options: [
+                    { value: "", label: "Not sure yet" },
+                    { value: "true", label: "Yes" },
+                    { value: "false", label: "No" },
+                  ],
+                },
             ]}
             />
           </>
@@ -319,8 +384,8 @@ export default async function MePage() {
                 { name: "name", label: "Name", defaultValue: tech.name },
                 { name: "gear", label: "Gear", type: "select", options: ["none", "partial", "full_rig"], defaultValue: tech.gear },
                 { name: "bio", label: "Experience", type: "textarea", defaultValue: tech.bio ?? "" },
-                { name: "rateLaborCents", label: "Labor rate ($)", type: "number", defaultValue: tech.rateLaborCents != null ? tech.rateLaborCents / 100 : undefined },
-                { name: "rateWithRigCents", label: "Rate with rig ($)", type: "number", defaultValue: tech.rateWithRigCents != null ? tech.rateWithRigCents / 100 : undefined },
+                { name: "rateLaborCents", label: "Labor rate, in dollars", type: "number", defaultValue: tech.rateLaborCents != null ? tech.rateLaborCents / 100 : undefined },
+                { name: "rateWithRigCents", label: "Rate with rig, in dollars", type: "number", defaultValue: tech.rateWithRigCents != null ? tech.rateWithRigCents / 100 : undefined },
                 { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: tech.travelRadiusMiles },
               ]}
             />
@@ -335,8 +400,8 @@ export default async function MePage() {
               { name: "name", label: "Name", required: true },
               { name: "gear", label: "Gear", type: "select", options: ["none", "partial", "full_rig"], required: true },
               { name: "bio", label: "Experience", type: "textarea" },
-              { name: "rateLaborCents", label: "Labor rate ($)", type: "number" },
-              { name: "rateWithRigCents", label: "Rate with rig ($)", type: "number" },
+              { name: "rateLaborCents", label: "Labor rate, in dollars", type: "number" },
+              { name: "rateWithRigCents", label: "Rate with rig, in dollars", type: "number" },
               { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: 30 },
             ]}
           />

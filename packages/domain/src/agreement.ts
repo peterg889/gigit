@@ -22,6 +22,11 @@ function formatTermTime(value: string, timeZone?: string): string {
  * the acceptance event records the template version. Not legal advice;
  * template to be reviewed by counsel before launch (PRD risk table).
  */
+/** Capitalize the first letter, leaving the rest of the string alone. */
+function sentenceCase(value: string): string {
+  return value.charAt(0).toLocaleUpperCase("en-US") + value.slice(1);
+}
+
 export function renderAgreement(input: {
   venueName: string;
   performerName: string;
@@ -97,7 +102,13 @@ export function renderAgreement(input: {
       (terms.setLengthMinutes ? `, set length ${terms.setLengthMinutes} minutes` : "") +
       `.`,
     compensation,
-    `3. PROVIDED BY VENUE. ${provides.length ? provides.join(", ") : "nothing beyond the performance space"}.`,
+    // Sentence-case what follows the heading: both branches interpolated
+    // lowercase text, so the binding document read "PROVIDED BY VENUE. nothing
+    // beyond the performance space." Clause 6 is deliberately left verbatim —
+    // those are the user's own words and we don't silently rewrite them.
+    `3. PROVIDED BY VENUE. ${sentenceCase(
+      provides.length ? provides.join(", ") : "nothing beyond the performance space",
+    )}.`,
     venueCancellation,
     performerCancellation,
     `6. NOTES. ${terms.notes ?? "—"}`,

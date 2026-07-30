@@ -1,4 +1,5 @@
-import { newId, venueCreateSchema } from "@gigit/domain";
+import {
+  normalizeMetro, newId, venueCreateSchema } from "@gigit/domain";
 import { appendEvent, assignFounding, db, schema } from "@gigit/db";
 import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
@@ -12,13 +13,18 @@ export async function POST(req: Request) {
     if ("response" in parsed) return parsed.response;
     const id = newId("venue");
     const { lat, lng, ...profile } = parsed.data;
-    const fallback = metroCentroid(parsed.data.metro);
+    // A venue that didn't name a scene is in the scene of its own city. Keeping
+    // the field optional means one question instead of two identical ones, and a
+    // suburb venue can still say "milwaukee" explicitly.
+    const metro = profile.metro ?? normalizeMetro(profile.city);
+    const fallback = metroCentroid(metro);
     const founding = await db().transaction(async (tx) => {
       const rank = await assignFounding(tx, "venue");
       await tx.insert(schema.venues).values({
         id,
         ownerUserId: userId,
         ...profile,
+        metro,
         // Approximate metro coordinates preserve radius-search behavior until
         // address geocoding is added. Owners never have to enter coordinates.
         // Metros without a known centroid store null ("location unknown") —

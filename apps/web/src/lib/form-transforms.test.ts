@@ -81,3 +81,30 @@ describe("form transforms", () => {
     expect(body).toEqual({ hasPA: "true", inputs: 3 });
   });
 });
+
+/**
+ * The house-sound question can now be left unanswered ("Not sure yet"), which
+ * ApiForm submits as nothing. That is what lets the sound plan return `unknown`
+ * instead of asserting "there is nobody" on the venue's behalf — the form used to
+ * default to "false" and so the unknown verdict could never fire from real input.
+ */
+describe("venueGear leaves unanswered questions out", () => {
+  it("omits hasOperator entirely when it was not answered", () => {
+    const body: Record<string, unknown> = { hasPA: "true", mixerChannels: 8 };
+    applyTransform(body, "venueGear");
+    expect(body.paInventory).toEqual({ hasPA: true, mixerChannels: 8 });
+    expect(Object.keys(body.paInventory as object)).not.toContain("hasOperator");
+  });
+
+  it("keeps an explicit No, which is a real answer and not the same thing", () => {
+    const body: Record<string, unknown> = { hasPA: "true", hasOperator: "false" };
+    applyTransform(body, "venueGear");
+    expect(body.paInventory).toEqual({ hasPA: true, hasOperator: false });
+  });
+
+  it("keeps an explicit Yes", () => {
+    const body: Record<string, unknown> = { hasPA: "true", hasOperator: "true" };
+    applyTransform(body, "venueGear");
+    expect(body.paInventory).toEqual({ hasPA: true, hasOperator: true });
+  });
+});

@@ -98,7 +98,7 @@ export default async function AdminSearchPage({
             submitLabel="Record adjustment"
             fields={[
               { name: "direction", label: "Direction", type: "select", options: ["refund_venue", "pay_performer"], required: true },
-              { name: "amountCents", label: "Amount (USD)", type: "number", required: true },
+              { name: "amountCents", label: "Amount, in dollars", type: "number", required: true },
               { name: "reason", label: "Reason (goes in the record)", type: "textarea", required: true },
             ]}
           />

@@ -198,7 +198,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               method="PATCH"
               submitLabel="Save changes"
               fields={[
-                { name: "budgetCents", label: "Budget ($)", type: "number", defaultValue: slot.budgetCents / 100 },
+                { name: "budgetCents", label: "Pay for the night, in dollars", type: "number", defaultValue: slot.budgetCents / 100 },
                 { name: "durationMinutes", label: "Duration (min)", type: "number", defaultValue: slot.durationMinutes },
                 { name: "notes", label: "About the night", type: "textarea", defaultValue: slot.notes ?? "" },
               ]}

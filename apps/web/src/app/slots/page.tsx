@@ -90,8 +90,22 @@ export default async function FeedPage({
       </div>
       {rows.length === 0 && (formatFilter || metroFilter) && (
         <div className="card">
-          No open gigs match these filters. <Link href="/slots">Clear filters</Link>{" "}
-          or save an alert below and we&apos;ll email you when one fits.
+          <p>
+            No open gigs match these filters.{" "}
+            <Link href="/slots">Clear filters</Link> to see everything.
+          </p>
+          {/* The alerts card is gated on `performer`, so promising "save an alert
+              below" to a venue or a signed-out visitor pointed at nothing. */}
+          {performer ? (
+            <p className="muted">
+              Or save an alert below and we&apos;ll email you when one fits.
+            </p>
+          ) : (
+            <p className="muted">
+              <Link href="/venues">Browse the rooms</Link> in the meantime — pay,
+              capacity, and PA specs are listed whether or not they have a date up.
+            </p>
+          )}
         </div>
       )}
       {rows.length === 0 && !formatFilter && !metroFilter && (
@@ -102,10 +116,36 @@ export default async function FeedPage({
               — it takes about three minutes.
             </>
           ) : performer ? (
-            <>No open gigs yet. Create an alert below and we&apos;ll let you know when one fits.</>
-          ) : (
             <>
-              No open gigs yet. Venues can <Link href="/onboarding?role=venue">post an open date</Link>.
+              <p>
+                No open gigs yet — EightGig is new here, so the board fills up as
+                rooms come on.
+              </p>
+              <p className="muted">
+                Save an alert below and we&apos;ll email you the moment one fits.
+                Meanwhile <Link href="/venues">have a look at the rooms</Link> —
+                capacity, house PA, and curfew are listed for each.
+              </p>
+            </>
+          ) : (
+            /* The fallback branch. It used to say "Venues can post an open date",
+               which addresses a venue — but this is the page an ACT lands on, and
+               an act cannot post one. Offer the thing they can actually do. */
+            <>
+              <p>
+                No open gigs yet — EightGig is new here, so the board fills up as
+                rooms come on.
+              </p>
+              <p className="muted">
+                <Link href="/venues">Browse the rooms</Link> to see who books live
+                music near you, or{" "}
+                <Link href="/onboarding?role=performer">set up your act</Link> and
+                we&apos;ll email you when a gig fits.
+              </p>
+              <p className="muted">
+                Run a room?{" "}
+                <Link href="/onboarding?role=venue">Post your first open date</Link>.
+              </p>
             </>
           )}
         </div>
@@ -188,7 +228,7 @@ export default async function FeedPage({
             fields={[
               { name: "format", label: "Format", type: "select", options: ["", "music", "comedy", "either"] },
               { name: "metro", label: "City or metro area", placeholder: "e.g. Milwaukee" },
-              { name: "minBudgetCents", label: "Minimum pay (USD)", type: "number", placeholder: "200" },
+              { name: "minBudgetCents", label: "Lowest pay you want to hear about, in dollars", type: "number" },
             ]}
           />
         </div>
