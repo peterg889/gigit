@@ -40,7 +40,10 @@ test("sound gap: venue posts sound job, tech applies, payer books the tech", asy
 
   // ── venue posts the sound job from the booking page ──
   await vp.goto(bookingUrl);
-  await expect(vp.getByText(/tech needed|tech \+ rig needed/i).first()).toBeVisible();
+  // SOUND_VERDICT_LABELS is the single vocabulary now ("Needs a tech" / "Needs a
+  // tech and a rig"); this used to match two hardcoded phrasings that differed
+  // between the slot page and the booking page.
+  await expect(vp.getByText(/Needs a tech/i).first()).toBeVisible();
   await vp.getByLabel("Who pays the tech").selectOption("venue");
   await vp.getByLabel("Tech pay (USD)").fill(techPay);
   await vp.getByRole("button", { name: "Post the sound job" }).click();

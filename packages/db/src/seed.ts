@@ -58,7 +58,16 @@ async function main() {
     lat: 43.0389,
     lng: -87.9065,
     capacity: 120,
-    paInventory: { hasPA: true, mixerChannels: 8, micsAvailable: 2, monitors: 1 },
+    // hasOperator stated explicitly: omitting it now means "nobody has said",
+    // which is a different verdict. A room with a PA and no house tech is the
+    // scenario the sound-tech feature exists for, so say it.
+    paInventory: {
+      hasPA: true,
+      mixerChannels: 8,
+      micsAvailable: 2,
+      monitors: 1,
+      hasOperator: false,
+    },
     noiseCurfew: "23:00",
   });
 
