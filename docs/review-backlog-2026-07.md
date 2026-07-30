@@ -221,63 +221,51 @@ the invariant that actually runs, has one seeded scenario).
 
 ## Still open
 
-Updated 2026-07-30, after the sweep. Everything previously listed here is done
-except the following. Nothing here is a live functional bug.
+Updated 2026-07-30. The code review is closed — everything it found is either
+fixed or listed below with a reason. What remains is yours, plus one deliberate
+limit.
 
-### Tests
+### Deliberate limit
 
-- **`reconcileMoney()` has one seeded scenario.** Now that `adjustment` is in
-  scope for the balance check, add a clean-check per terminal path plus a case
-  whose only imbalance is an adjustment.
-- **Three remaining tests that can't fail:** `postgig.test.ts:136` is titled
-  "either party… strangers cannot" and tests only one party;
-  `support/route.test.ts:93` seeds 100 rows into a table the quota query doesn't
-  read; and no test anywhere accepts a *valid* Stripe or Twilio signature — both
-  signature suites pass for the same environmental reason (no keys configured),
-  so breaking the payload construction would 403 every real webhook and every
-  inbound STOP with the suite green. The health route's 503 branch is also
-  untested, and that endpoint is the ALB target check and the staging deploy gate.
-- **e2e still pins `.card`/`.badge`/`.money` class names ~20 times**, so a
-  stylesheet rename silently returns zero matches in the suite that gates the
-  staging deploy. (`booking-journey.spec.ts` is now on the shared helpers, which
-  removes the duplicate copies but not the coupling.)
-
-### Cleanup
-
-- The 12-line booking-load preamble (booking + dual-profile resolution) is
-  byte-identical in `bookings/[id]/{cancel,dispute,tech-subslot}` — the same
-  treatment `loadSubslotForActor()` just got for sound jobs.
-
-### Product, deliberately not built
-
-Judged not worth it now, recorded so the reasoning isn't lost: two-way calendar
-sync (iCal-out has no UI entry point yet), review dimensions, read receipts,
-notification preferences, PWA push (make SMS+email reliable first), badges,
-lineups (`bookings_active_slot_uq` forecloses it and it shouldn't be reopened
-before liquidity), and POS/ROI (F8.5 — `venue_night_facts` stores no revenue yet,
-so there is nothing to join against, and ranking acts by revenue lift is one step
-from pay-to-rank by proxy).
-
-Metro canonicalization is real but a month-three problem: at ~25 hand-signed
-anchor venues the founder is typing the metro strings.
+The e2e specs still navigate by CSS class (`.card`, `.badge`, `.money`). They're
+named once in `e2e/helpers.ts` now with a guard that fails legibly on a rename,
+which removes 19 scattered magic strings — but that is not true decoupling. Doing
+it properly means adding test ids to the markup on dozens of elements, and that's
+a change worth making when someone is already in those components, not as a
+drive-by.
 
 ### Yours
 
-- **`GEMINI_API_KEY`** — empty in prod. The three AI-assist routes now degrade to
-  the manual form instead of showing a variable name, so this is a missing
-  feature rather than a broken one.
-- **`SENTRY_DSN`** — empty. CloudWatch now alarms on outbox lag, dead letters and
+- **`GEMINI_API_KEY`** — empty in prod. The three AI-assist routes degrade to the
+  manual form now, so this is a missing feature rather than a broken one: the
+  natural-language slot poster and the link-to-profile importer are both dark.
+- **`SENTRY_DSN`** — empty. CloudWatch alarms on outbox lag, dead letters and
   money mismatches independently, so this is narrative error detail, not paging.
+- **Two OpsAlerts subscription confirmations.** Without these, none of those
+  alarms reach a human — this is the highest-value item on the list.
 - **DMCA agent registration** (~$6, needs a real postal address). The procedure is
-  published; the statutory designation isn't, and §512 eligibility doesn't backdate.
+  published at `/dmca`; the statutory designation isn't, and §512 eligibility is
+  judged as of the infringement, so it doesn't backdate.
 - **Governing law** — set to Wisconsin / Milwaukee County on the assumption the
-  entity is organized there.
+  operating entity is organized there. One-line change if not.
 - **`eightgig.com` mailbox** (Workspace + SPF/DKIM/DMARC + warmup), still blocking
   Reachout sending. **CAN-SPAM postal address** for that tenant.
 - **Domain registration transfer** — window opens ~Sept 14.
-- **Two OpsAlerts subscription confirmations**, without which none of the alarms
-  above reach a human.
 - Optional: create the GitHub `production` environment with yourself as required
   reviewer, then set `PROD_DEPLOY_ENABLED=true`. That turns promotion into a
-  one-click approval. I left it unset because the workflow claims a reviewer gate
-  that does not exist, so enabling it today would make every merge deploy to prod.
+  one-click approval instead of the manual retag-and-deploy. I left it unset
+  because the workflow claims a reviewer gate that does not exist, so enabling it
+  today would make every merge deploy straight to production.
+
+### Product, deliberately not built
+
+Recorded so the reasoning isn't lost: two-way calendar sync (iCal-out still has no
+UI entry point), review dimensions, read receipts, notification preferences, PWA
+push (make SMS+email reliable first), badges, lineups
+(`bookings_active_slot_uq` forecloses it and it shouldn't be reopened before
+liquidity), and POS/ROI (F8.5 — `venue_night_facts` stores no revenue yet, so
+there's nothing to join against, and ranking acts by revenue lift is one step from
+pay-to-rank by proxy).
+
+Metro canonicalization is real but a month-three problem: at ~25 hand-signed
+anchor venues the founder is typing the metro strings.
