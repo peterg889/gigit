@@ -221,63 +221,73 @@ the invariant that actually runs, has one seeded scenario).
 
 ## Still open
 
-Ordered by value. Nothing here is a live functional bug.
+Updated 2026-07-30, after the sweep. Everything previously listed here is done
+except the following. Nothing here is a live functional bug.
 
-**Tests**
-- `reconcileMoney()` has one seeded scenario; add a clean-check per terminal path
-  and a case whose only imbalance is an `adjustment` (now in scope for the
-  balance check, so it should be caught).
-- No `cancellation.test.ts`. `Math.round(amountCents / 2)` is the only percentage
-  split in the product and every money literal in the suite is a whole dollar.
-  Conservation currently holds only because the second leg is derived by
-  subtraction. Table it over 1, 3, 99, 12_345, 100_001.
-- Fall-back DST is untested everywhere (spring-forward is well covered).
-  `zonedDateTimeToDate` has no defined behaviour for a wall time that occurs
-  twice, and a flip to the second instant breaks `materializeSeries`
-  idempotency. Both `series.test.ts` cases also use the legacy `startTimeUtc`
-  shape, so the venue-local branch never runs against the DB.
-- No `makeVenue()` factory: 30 hand-rolled fixtures, every one omitting
-  `timeZone`, so all suite venues are UTC and `venueLocationIsComplete` is false
-  for all of them — which is *why* the venue-local scheduling code is untested.
-- `apps/web/vitest.config.ts` has neither `globalSetup` nor
-  `fileParallelism: false`, so `--workspace-concurrency=1` in the root script is
-  load-bearing. Nothing truncates between runs; `founding.test.ts` and
-  `ratelimit.test.ts` are non-idempotent against a persistent database.
-- `booking-journey.spec.ts` re-inlines all five `e2e/helpers.ts` functions
-  verbatim. The e2e specs also pin `.card`/`.badge`/`.money` class names ~20
-  times, so a stylesheet rename silently returns zero matches in the suite that
-  gates the staging deploy.
-- Ownership checks with no 403 test: `slots/[id]/applications` (any venue can
-  enumerate a competitor's applicant list), `venues/[id]` and `techs/[id]` PATCH,
-  `series/*`, `tech-subslots/[id]/{book,cancel}`, `media/presign`.
+### Tests
 
-**Product** — see the fuller reasoning above; these are still the top five:
-booking-scoped thread; structured invite-to-slot; make rooms discoverable to
-acts (`/v/[id]` is linked from one place and there is no `/venues`);
-sound-plan defaults that flag every gig as needing a tech; rebook outside a
-series.
+- **`reconcileMoney()` has one seeded scenario.** Now that `adjustment` is in
+  scope for the balance check, add a clean-check per terminal path plus a case
+  whose only imbalance is an adjustment.
+- **No `makeVenue()` fixture factory.** ~30 hand-rolled venue inserts, every one
+  omitting `timeZone`, so all suite venues are UTC and `venueLocationIsComplete`
+  is false for all of them — which is why the venue-local scheduling paths are
+  still untested end-to-end. I deliberately did *not* retrofit all 30: flipping
+  them to a real timezone changes formatted-time assertions across the suite, and
+  that churn deserves its own change rather than riding along with unrelated
+  fixes. The DST math itself is now covered directly at the domain level.
+- **Three remaining tests that can't fail:** `postgig.test.ts:136` is titled
+  "either party… strangers cannot" and tests only one party;
+  `support/route.test.ts:93` seeds 100 rows into a table the quota query doesn't
+  read; and no test anywhere accepts a *valid* Stripe or Twilio signature — both
+  signature suites pass for the same environmental reason (no keys configured),
+  so breaking the payload construction would 403 every real webhook and every
+  inbound STOP with the suite green. The health route's 503 branch is also
+  untested, and that endpoint is the ALB target check and the staging deploy gate.
+- **e2e still pins `.card`/`.badge`/`.money` class names ~20 times**, so a
+  stylesheet rename silently returns zero matches in the suite that gates the
+  staging deploy. (`booking-journey.spec.ts` is now on the shared helpers, which
+  removes the duplicate copies but not the coupling.)
 
-**Design**
-- `/inbox` still shows no counterparty and no preview — a dozen rows reading
-  `ACT INQUIRY · 3 days ago`. The data is already resolved in `inbox/[id]`.
-- The nav is four rows of ~20px tap targets on a 390px phone (~110px before any
-  content), with no current-page indicator and `:hover` as its only state.
-  Buttons are ~38px, filter chips ~29px.
-- Ten unassociated `<label>`s in `AiAssist.tsx` / `MediaManager.tsx` — the forms
-  where a human is meant to verify AI output. (`ApiForm` is fixed.)
-- The type scale has a 2.5× cliff from h1 to h2 then eight sizes inside a 10px
-  band; `h3` has no size and falls to ~18px, smaller than `h2`.
-- `.notice` and `.badge` can't express valence, so cancellation copy is 14px
-  `.muted` and "3 cancellations" renders in the money amber.
-  `performerReliability` already returns a `tier` that every call site discards.
-- No `generateMetadata` outside the legal pages: an act sharing their profile
-  gets a generic unfurl.
+### Cleanup
 
-**Duplication**
-- `loadSubslotForActor()`: the sub-slot party predicate is duplicated 4×, and
-  it's an authorization predicate.
-- The 12-line booking-load preamble is byte-identical in three routes.
-- Dead code: `SUBSLOT_TERMINAL`, `resetGateway`, `venueLocalInputValue`, 13
-  unreferenced branded-ID aliases, three `void db()` no-ops.
-- `docs/prd-coverage.md` claims all 14 gaps closed while its own tables mark
-  four as ❌. Rewrite or delete.
+- The 12-line booking-load preamble (booking + dual-profile resolution) is
+  byte-identical in `bookings/[id]/{cancel,dispute,tech-subslot}` — the same
+  treatment `loadSubslotForActor()` just got for sound jobs.
+- The type scale still has a 2.5× cliff from h1 to h2 and then six sizes inside a
+  ~5px band. `h3` is fixed; collapsing the 10.5–12.5px cluster and opening a
+  24–28px step for money and dates is a deliberate design pass, not a tweak.
+
+### Product, deliberately not built
+
+Judged not worth it now, recorded so the reasoning isn't lost: two-way calendar
+sync (iCal-out has no UI entry point yet), review dimensions, read receipts,
+notification preferences, PWA push (make SMS+email reliable first), badges,
+lineups (`bookings_active_slot_uq` forecloses it and it shouldn't be reopened
+before liquidity), and POS/ROI (F8.5 — `venue_night_facts` stores no revenue yet,
+so there is nothing to join against, and ranking acts by revenue lift is one step
+from pay-to-rank by proxy).
+
+Metro canonicalization is real but a month-three problem: at ~25 hand-signed
+anchor venues the founder is typing the metro strings.
+
+### Yours
+
+- **`GEMINI_API_KEY`** — empty in prod. The three AI-assist routes now degrade to
+  the manual form instead of showing a variable name, so this is a missing
+  feature rather than a broken one.
+- **`SENTRY_DSN`** — empty. CloudWatch now alarms on outbox lag, dead letters and
+  money mismatches independently, so this is narrative error detail, not paging.
+- **DMCA agent registration** (~$6, needs a real postal address). The procedure is
+  published; the statutory designation isn't, and §512 eligibility doesn't backdate.
+- **Governing law** — set to Wisconsin / Milwaukee County on the assumption the
+  entity is organized there.
+- **`eightgig.com` mailbox** (Workspace + SPF/DKIM/DMARC + warmup), still blocking
+  Reachout sending. **CAN-SPAM postal address** for that tenant.
+- **Domain registration transfer** — window opens ~Sept 14.
+- **Two OpsAlerts subscription confirmations**, without which none of the alarms
+  above reach a human.
+- Optional: create the GitHub `production` environment with yourself as required
+  reviewer, then set `PROD_DEPLOY_ENABLED=true`. That turns promotion into a
+  one-click approval. I left it unset because the workflow claims a reviewer gate
+  that does not exist, so enabling it today would make every merge deploy to prod.
