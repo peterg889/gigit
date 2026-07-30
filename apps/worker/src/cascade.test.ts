@@ -42,6 +42,11 @@ describe("worker parent→subslot cascade for dispute outcomes (audit #1)", () =
       { id: userT, email: `${userT}@t.test` },
     ]);
     await d.insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: userV,
       kind: "bar",

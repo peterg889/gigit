@@ -25,6 +25,11 @@ describe("profile visibility follows the account", () => {
       id: performerId, ownerUserId: userId, kind: "band", name: "Vis Act", homeMetro: "vis-tv",
     });
     await db().insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId, ownerUserId: userId, kind: "bar", name: "Vis Room", metro: "vis-tv",
       addressLine1: "123 Private St", city: "Milwaukee", region: "WI", postalCode: "53202",
     });

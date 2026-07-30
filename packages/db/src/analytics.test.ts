@@ -31,6 +31,11 @@ describe("night facts + saved-search matching (integration)", () => {
     const d = db();
     await d.insert(users).values({ id: userId, email: `${userId}@t.test` });
     await d.insert(venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: userId,
       kind: "brewery",
@@ -219,6 +224,11 @@ describe("night facts + saved-search matching (integration)", () => {
     const vId = newId("venue");
     await d.insert(users).values({ id: vOwner, email: `${vOwner}@t.test` });
     await d.insert(venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: vId,
       ownerUserId: vOwner,
       kind: "brewery",

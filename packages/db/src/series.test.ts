@@ -28,6 +28,11 @@ describe("slot series (integration)", () => {
     const d = db();
     await d.insert(users).values({ id: userId, email: `${userId}@t.test` });
     await d.insert(venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: userId,
       kind: "brewery",
@@ -167,6 +172,11 @@ describe("slot series (integration)", () => {
       { id: actOwner, email: `${actOwner}@t.test` },
     ]);
     await d.insert(venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: oneOffVenue, ownerUserId: oneOffOwner, kind: "bar",
       name: "One Off Room", metro: "testville", lat: 43, lng: -87,
     });
@@ -217,6 +227,11 @@ describe("slot series (integration)", () => {
     const otherOwner = newId("user");
     await d.insert(users).values({ id: otherOwner, email: `${otherOwner}@t.test` });
     await d.insert(venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: otherRoom, ownerUserId: otherOwner, kind: "bar",
       name: "Someone Else's Room", metro: "testville", lat: 43, lng: -87,
     });
@@ -226,5 +241,62 @@ describe("slot series (integration)", () => {
       durationMinutes: 120, format: "music", budgetCents: 28_000, status: "open",
     });
     expect((await findRebookTarget(bookingId))?.slotId).toBe(later.id);
+  });
+
+  it("materializes a venue-local pattern that holds its wall time across DST", async () => {
+    const d = db();
+    // Every venue fixture used to default to UTC, so `venueLocationIsComplete`
+    // was false everywhere and this branch — the one real venues take — never ran
+    // against the database. Both existing cases here use the legacy startTimeUtc
+    // shape, so `(pattern.startTimeUtc ?? "00:00")` could have swallowed a broken
+    // local pattern and materialized every night at midnight UTC.
+    const seriesId = await createSeries({
+      venueId,
+      metro: "testville",
+      actor: userId,
+      pattern: {
+        freq: "weekly",
+        dayOfWeek: 6, // Saturday
+        startTimeLocal: "21:00",
+        timeZone: "America/Chicago",
+        durationMinutes: 120,
+      },
+      defaults: {
+        format: "music",
+        genrePrefs: [],
+        budgetCents: 30_000,
+        provides: { pa: true },
+      },
+    });
+
+    const occurrences = await d
+      .select({ startsAt: slots.startsAt })
+      .from(slots)
+      .where(eq(slots.seriesId, seriesId))
+      .orderBy(slots.startsAt);
+    expect(occurrences.length).toBeGreaterThanOrEqual(3);
+
+    // Every night is 9pm in the ROOM, whatever the UTC offset happens to be.
+    for (const o of occurrences) {
+      const local = new Intl.DateTimeFormat("en-US", {
+        timeZone: "America/Chicago",
+        hour: "numeric",
+        minute: "2-digit",
+        weekday: "short",
+        hour12: false,
+      }).format(o.startsAt);
+      expect(local).toContain("21:00");
+      expect(local).toContain("Sat");
+    }
+
+    // ...and re-materializing is idempotent, which is what the unique index on
+    // the resolved instant depends on.
+    const before = occurrences.length;
+    await materializeSeries(seriesId, "worker");
+    const after = await d
+      .select({ id: slots.id })
+      .from(slots)
+      .where(eq(slots.seriesId, seriesId));
+    expect(after.length).toBe(before);
   });
 });

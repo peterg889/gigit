@@ -35,6 +35,11 @@ describe("booking conversation", () => {
       { id: uAct, email: `${uAct}@t.test` },
     ]);
     await d.insert(venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId, ownerUserId: uVenue, kind: "bar",
       name: "Thread Room", metro: "bt-tv", lat: 43, lng: -88,
     });

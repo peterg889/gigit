@@ -74,6 +74,11 @@ describe("sound booking reviews", () => {
       [uVenue, uBand, uTech, uOther].map((id) => ({ id, email: id + "@review.test" })),
     );
     await db().insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: uVenue,
       kind: "bar",

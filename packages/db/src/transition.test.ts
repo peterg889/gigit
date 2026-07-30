@@ -41,6 +41,11 @@ describe("booking transition runner (integration)", () => {
       { id: userRival, email: `${userRival}@t.test` },
     ]);
     await d.insert(venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: userVenue,
       kind: "bar",
@@ -429,7 +434,10 @@ describe("booking transition runner (integration)", () => {
       .from(applications)
       .where(eq(applications.id, rivalAppId));
     expect(firstRow!.state).toBe("offered");
-    expect(firstRow!.terms.timeZone).toBe("UTC");
+    // The offer locks the VENUE's timezone into the terms. This asserted "UTC",
+    // which was only ever true because the fixture had no timezone — the thing
+    // worth pinning is that the room's own zone is what gets captured.
+    expect(firstRow!.terms.timeZone).toBe("America/Chicago");
     expect(rivalApplication!.status).toBe("submitted");
   });
 

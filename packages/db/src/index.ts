@@ -17,3 +17,6 @@ export * from "./support.js";
 export * from "./account.js";
 export * from "./reviews.js";
 export * from "./founding.js";
+// Test fixtures. Exported from the package so all three suites share one
+// definition of "a bookable venue" — the divergence was the bug.
+export * from "./test/factories.js";

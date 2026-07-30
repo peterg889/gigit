@@ -30,6 +30,11 @@ describe("worker notification routing", () => {
       .insert(schema.users)
       .values([venueOwner, bandOwner].map((id) => ({ id, email: `${id}@t.test` })));
     await d.insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: venueOwner,
       kind: "bar",

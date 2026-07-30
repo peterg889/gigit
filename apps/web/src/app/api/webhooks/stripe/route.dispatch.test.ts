@@ -51,7 +51,12 @@ describe("stripe webhook → booking state machine dispatch", () => {
       .onConflictDoNothing();
     await d
       .insert(schema.venues)
-      .values({ id: venueId, ownerUserId: uVenue, kind: "bar", name: "WH Bar", metro: "wh-tv", lat: 43, lng: -88 })
+      .values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago", id: venueId, ownerUserId: uVenue, kind: "bar", name: "WH Bar", metro: "wh-tv", lat: 43, lng: -88 })
       .onConflictDoNothing();
     await d
       .insert(schema.performers)

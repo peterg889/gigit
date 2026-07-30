@@ -54,6 +54,11 @@ describe("threads and messages", () => {
         [uVenue, uBand, uTech, uStranger].map((id) => ({ id, email: `${id}@t.test` })),
       );
     await d.insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: uVenue,
       kind: "bar",
@@ -116,6 +121,11 @@ describe("threads and messages", () => {
     const bothPerformer = newId("performer");
     await d.insert(schema.users).values({ id: uBoth, email: `${uBoth}@t.test` });
     await d.insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: bothVenue, ownerUserId: uBoth, kind: "bar", name: "Both Bar",
       metro: "thread-tv", lat: 43, lng: -88,
     });

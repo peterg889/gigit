@@ -25,6 +25,11 @@ describe("reconcile sweep", () => {
       { id: userP, email: `${userP}@t.test` },
     ]);
     await d.insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId, ownerUserId: userV, kind: "bar", name: "Reconcile Bar",
       metro: "reconcile-tv", lat: 43, lng: -88,
     });

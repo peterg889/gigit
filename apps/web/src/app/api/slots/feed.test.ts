@@ -35,6 +35,11 @@ describe("open slot feed filters", () => {
     ]);
     await d.insert(schema.venues).values([
       {
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
         id: vMke,
         ownerUserId: owner,
         kind: "bar",
@@ -44,6 +49,11 @@ describe("open slot feed filters", () => {
         lng: -87.9065,
       },
       {
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
         id: vNoCoords,
         ownerUserId: owner2,
         kind: "brewery",

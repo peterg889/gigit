@@ -46,6 +46,11 @@ describe("admin money routes", () => {
       .values([uAdmin, uVenue, uBand].map((id) => ({ id, email: `${id}@t.test` })));
     await d.insert(schema.actorRoles).values({ id: newId("role"), userId: uAdmin, kind: "admin" });
     await d.insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: uVenue,
       kind: "bar",

@@ -36,6 +36,11 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
     ]);
     await d.insert(schema.venues).values([
       {
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
         id: venueId,
         ownerUserId: owner,
         kind: "bar",
@@ -47,6 +52,11 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
       // stranger owns a DIFFERENT venue, so the non-owner test exercises the real
       // cross-venue guard (slot.venueId !== venue.id), not "no venue profile".
       {
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
         id: newId("venue"),
         ownerUserId: stranger,
         kind: "bar",

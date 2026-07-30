@@ -47,6 +47,11 @@ describe("invite an act to an open date", () => {
         postalCode: "53202", timeZone: "America/Chicago",
       },
       {
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
         id: rivalVenueId, ownerUserId: uRival, kind: "bar", name: "Rival Room",
         metro: "inv-tv", lat: 43, lng: -88,
       },

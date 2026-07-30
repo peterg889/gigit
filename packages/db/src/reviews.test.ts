@@ -25,6 +25,11 @@ describe("reviewable profile reviews (integration)", () => {
       { id: performerUserId, email: `${performerUserId}@t.test` },
     ]);
     await d.insert(venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: venueUserId,
       kind: "bar",

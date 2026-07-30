@@ -56,6 +56,11 @@ describe("web API authz matrix (audit #5)", () => {
       );
     await d.insert(schema.actorRoles).values({ id: newId("role"), userId: uAdmin, kind: "admin" });
     await d.insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: venueId,
       ownerUserId: uVenue,
       kind: "bar",
@@ -65,6 +70,11 @@ describe("web API authz matrix (audit #5)", () => {
       lng: -88,
     });
     await d.insert(schema.venues).values({
+    addressLine1: "1 Test St",
+    city: "Milwaukee",
+    region: "WI",
+    postalCode: "53202",
+    timeZone: "America/Chicago",
       id: rivalVenueId,
       ownerUserId: uRival,
       kind: "bar",
