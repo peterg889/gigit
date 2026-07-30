@@ -23,12 +23,17 @@ export async function postSlot(
   const dtLocal = new Date(startsAt.getTime() - startsAt.getTimezoneOffset() * 60_000)
     .toISOString()
     .slice(0, 16);
-  await page.getByLabel("Date & start time").fill(dtLocal);
-  await page.getByLabel("Duration (minutes)").fill("120");
-  await page.getByLabel("Format", { exact: true }).selectOption("music");
-  await page.getByLabel("Budget (USD)").fill(budgetUsd);
-  await page.getByLabel(/About the night/).fill(marker);
-  await page.getByRole("button", { name: "Post open date" }).click();
+  // Scope to the single-date form. /slots/new renders two forms sharing these
+  // field names; both labels used to point at the FIRST form's inputs because
+  // ApiForm keyed DOM ids off the field name, so an unscoped getByLabel resolved
+  // to one element by accident. Ids are per-form now, so the form has to be named.
+  const form = page.locator("form", { has: page.getByRole("button", { name: "Post open date" }) });
+  await form.getByLabel("Date & start time").fill(dtLocal);
+  await form.getByLabel("Duration (minutes)").fill("120");
+  await form.getByLabel("Format", { exact: true }).selectOption("music");
+  await form.getByLabel("Budget (USD)").fill(budgetUsd);
+  await form.getByLabel(/About the night/).fill(marker);
+  await form.getByRole("button", { name: "Post open date" }).click();
   await page.waitForURL("**/slots");
 }
 

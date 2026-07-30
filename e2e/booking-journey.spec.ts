@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./helpers";
+import { postSlot, signIn } from "./helpers";
 
 /**
  * The critical journey (engineering-spec §13 E2E #2): post open date → apply →
@@ -20,18 +20,9 @@ test("venue posts an open date; performer applies; offer; accept; booking confir
 
   // ── venue posts an open date ──
   await signIn(vp, "venue@example.com");
-  await vp.goto("/slots/new");
-  const startsAt = new Date(Date.now() + 14 * 86_400_000);
-  const dtLocal = new Date(startsAt.getTime() - startsAt.getTimezoneOffset() * 60_000)
-    .toISOString()
-    .slice(0, 16);
-  await vp.getByLabel("Date & start time").fill(dtLocal);
-  await vp.getByLabel("Duration (minutes)").fill("120");
-  await vp.getByLabel("Format", { exact: true }).selectOption("music");
-  await vp.getByLabel("Budget (USD)").fill("350");
-  await vp.getByLabel(/About the night/).fill(marker);
-  await vp.getByRole("button", { name: "Post open date" }).click();
-  await vp.waitForURL("**/slots");
+  // helpers.ts was extracted FROM this spec and the spec was never migrated, so
+  // all five steps lived here verbatim — including the /slots/new form scoping.
+  await postSlot(vp, marker, "350");
 
   // ── performer finds it on the feed and applies ──
   await signIn(pp, "band@example.com");
