@@ -95,13 +95,6 @@ export function venueLocalInputToIso(value: string, timeZone: string): string {
   ).toISOString();
 }
 
-export function venueLocalInputValue(value: DateValue, timeZone: string): string {
-  const p = localDateTimeParts(new Date(value), timeZone);
-  return `${p.year}-${String(p.month).padStart(2, "0")}-${String(p.day).padStart(
-    2,
-    "0",
-  )}T${String(p.hour).padStart(2, "0")}:${String(p.minute).padStart(2, "0")}`;
-}
 
 export function formatAddress(venue: {
   addressLine1: string;

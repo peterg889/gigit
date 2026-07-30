@@ -92,3 +92,38 @@ export async function techOwnedBy(userId: string) {
     .orderBy(asc(schema.techs.createdAt));
   return rows[0] ?? null;
 }
+
+/**
+ * Load a sound job with the caller's relationship to it already worked out.
+ *
+ * The payer predicate — which side of the booking funds this sub-slot — was
+ * written out four times, each behind an identical join and a 3× profile lookup.
+ * It is an AUTHORIZATION predicate, so four copies means adding a payer case or
+ * an admin override is four edits and missing one lets the wrong party book,
+ * cancel, or review someone else's sound job.
+ */
+export async function loadSubslotForActor(subslotId: string, userId: string) {
+  const [row] = await db()
+    .select({ subslot: schema.techSubslots, booking: schema.bookings })
+    .from(schema.techSubslots)
+    .innerJoin(schema.bookings, eq(schema.techSubslots.bookingId, schema.bookings.id))
+    .where(eq(schema.techSubslots.id, subslotId));
+  if (!row) return null;
+  const [performer, venue, tech] = await Promise.all([
+    performerOwnedBy(userId),
+    venueOwnedBy(userId),
+    techOwnedBy(userId),
+  ]);
+  const isPayer =
+    row.subslot.payer === "venue"
+      ? venue?.id === row.booking.venueId
+      : performer?.id === row.booking.performerId;
+  return {
+    ...row,
+    performer,
+    venue,
+    tech,
+    isPayer,
+    isBookedTech: !!tech && row.subslot.techId === tech.id,
+  };
+}

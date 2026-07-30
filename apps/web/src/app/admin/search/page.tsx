@@ -21,7 +21,7 @@ export default async function AdminSearchPage({
       </div>
     );
   const { q } = await searchParams;
-  void db();
+  void db(); // primes the pool that getPool() below returns — not dead
   const pool = getPool();
 
   const like = `%${q ?? ""}%`;

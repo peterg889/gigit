@@ -1,7 +1,7 @@
 import { newId, reviewCreateSchema } from "@gigit/domain";
 import { appendEvent, db, pgErrorCode, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { performerOwnedBy, requireUser, respondError, techOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { loadSubslotForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -11,27 +11,15 @@ export async function POST(req: Request, { params }: Params) {
     const { id: subslotId } = await params;
     const userId = await requireUser();
     const d = db();
-    const [row] = await d
-      .select({ subslot: schema.techSubslots, booking: schema.bookings })
-      .from(schema.techSubslots)
-      .innerJoin(schema.bookings, eq(schema.techSubslots.bookingId, schema.bookings.id))
-      .where(eq(schema.techSubslots.id, subslotId));
-    if (!row) return fail("not_found", "We couldn't find that sound gig.", 404);
-    if (row.subslot.state !== "released")
+    const actor = await loadSubslotForActor(subslotId, userId);
+    if (!actor) return fail("not_found", "We couldn't find that sound gig.", 404);
+    if (actor.subslot.state !== "released")
       return fail("conflict", "Reviews open once the sound gig is done.", 409);
 
-    const [venue, performer, tech] = await Promise.all([
-      venueOwnedBy(userId),
-      performerOwnedBy(userId),
-      techOwnedBy(userId),
-    ]);
     let authorRole: "payer" | "tech";
-    if (tech?.id === row.subslot.techId) authorRole = "tech";
+    if (actor.isBookedTech) authorRole = "tech";
     else {
-      const isPayer = row.subslot.payer === "venue"
-        ? venue?.id === row.booking.venueId
-        : performer?.id === row.booking.performerId;
-      if (!isPayer) return fail("forbidden", "This sound gig isn't yours.", 403);
+      if (!actor.isPayer) return fail("forbidden", "This sound gig isn't yours.", 403);
       authorRole = "payer";
     }
 

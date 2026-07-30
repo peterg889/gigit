@@ -1,7 +1,7 @@
 import { IllegalSubslotTransitionError, techSubslotBookSchema } from "@gigit/domain";
 import { ConcurrentUpdateError, db, runSubslotTransition, schema } from "@gigit/db";
 import { and, eq, ne } from "drizzle-orm";
-import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
+import { loadSubslotForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -13,22 +13,10 @@ export async function POST(req: Request, { params }: Params) {
     const userId = await requireUser();
 
     const d = db();
-    const [row] = await d
-      .select({ subslot: schema.techSubslots, booking: schema.bookings })
-      .from(schema.techSubslots)
-      .innerJoin(schema.bookings, eq(schema.techSubslots.bookingId, schema.bookings.id))
-      .where(eq(schema.techSubslots.id, subslotId));
+    const row = await loadSubslotForActor(subslotId, userId);
     if (!row) return fail("not_found", "We couldn't find that sound job.", 404);
-
-    const [performer, venue] = await Promise.all([
-      performerOwnedBy(userId),
-      venueOwnedBy(userId),
-    ]);
-    const isPayer =
-      row.subslot.payer === "venue"
-        ? venue?.id === row.booking.venueId
-        : performer?.id === row.booking.performerId;
-    if (!isPayer) return fail("forbidden", "Only the side paying for sound can book the tech.", 403);
+    if (!row.isPayer)
+      return fail("forbidden", "Only the side paying for sound can book the tech.", 403);
 
     const parsed = await parseBody(req, techSubslotBookSchema);
     if ("response" in parsed) return parsed.response;

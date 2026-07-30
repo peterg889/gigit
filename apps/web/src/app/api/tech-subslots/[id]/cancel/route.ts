@@ -1,7 +1,7 @@
 import { IllegalSubslotTransitionError } from "@gigit/domain";
 import { ConcurrentUpdateError, db, runSubslotTransition, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { performerOwnedBy, requireUser, respondError, techOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { loadSubslotForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -13,23 +13,9 @@ export async function POST(_req: Request, { params }: Params) {
     const userId = await requireUser();
 
     const d = db();
-    const [row] = await d
-      .select({ subslot: schema.techSubslots, booking: schema.bookings })
-      .from(schema.techSubslots)
-      .innerJoin(schema.bookings, eq(schema.techSubslots.bookingId, schema.bookings.id))
-      .where(eq(schema.techSubslots.id, subslotId));
+    const row = await loadSubslotForActor(subslotId, userId);
     if (!row) return fail("not_found", "We couldn't find that sound job.", 404);
-
-    const [performer, venue, tech] = await Promise.all([
-      performerOwnedBy(userId),
-      venueOwnedBy(userId),
-      techOwnedBy(userId),
-    ]);
-    const isPayer =
-      row.subslot.payer === "venue"
-        ? venue?.id === row.booking.venueId
-        : performer?.id === row.booking.performerId;
-    const isBookedTech = !!tech && tech.id === row.subslot.techId;
+    const { isPayer, isBookedTech } = row;
     if (!isPayer && !isBookedTech)
       return fail("forbidden", "That sound gig isn't yours.", 403);
 

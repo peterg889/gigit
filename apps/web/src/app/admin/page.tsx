@@ -14,7 +14,7 @@ export default async function AdminPage() {
         Admin only. <Link href="/login">Sign in</Link>
       </div>
     );
-  void db();
+  void db(); // primes the pool that getPool() below returns — not dead
   const pool = getPool();
   const paymentsOn = paymentsEnabled();
   const q = async (sql: string) => (await pool.query(sql)).rows[0] ?? {};

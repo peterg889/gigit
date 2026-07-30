@@ -1,7 +1,20 @@
 # PRD Coverage Matrix — requirements → architecture → design → implementation
 
-**Date:** June 2026. Audit of every PRD requirement against (a) the architecture plan ([`engineering-spec.md`](engineering-spec.md)), (b) a component-level technical design ([`technical-design.md`](technical-design.md), [`m0-technical-spec.md`](m0-technical-spec.md)), and (c) the code as it exists on `main` today. Status values: **✅ built** (verified in code), **🟡 partial** (built with divergences noted), **❌ missing** (P0/committed scope not yet built), **📋 designed-only** (design exists, build deferred per plan), **⬜ deferred** (P1/P2, intentionally not built — listed only when the seam matters).
+**Date:** June 2026. Audit of every PRD requirement against (a) the architecture plan ([`engineering-spec.md`](engineering-spec.md)), (b) a component-level technical design ([`technical-design.md`](technical-design.md), [`m0-technical-spec.md`](m0-technical-spec.md)), and (c) the code as it existed on `main` in June 2026. Status values: **✅ built** (verified in code), **🟡 partial** (built with divergences noted), **❌ missing** (P0/committed scope not yet built), **📋 designed-only** (design exists, build deferred per plan), **⬜ deferred** (P1/P2, intentionally not built — listed only when the seam matters).
 
+> ## ⚠️ This is a historical snapshot, not current status
+>
+> The matrix below is the **pre-sprint audit of June 2026**, preserved as a
+> record. Its ✅/❌/🟡 marks describe the code as it stood *then*. Do not read a
+> ❌ as "missing today" — several were closed the same month, and much more has
+> shipped since (see git log, and `docs/review-backlog-2026-07.md` for what is
+> actually open as of July 2026).
+>
+> Rewriting the marks in place would mean asserting a current status for 100+
+> requirements without re-auditing each one, which is how this document became
+> misleading in the first place. Treat it as archaeology; treat the backlog as
+> truth.
+>
 > **Update (June 12, 2026):** all 14 gaps below were closed in the build sprint
 > tracked by tasks 1–11 (see `docs/technical-design.md` §7 for the designs).
 > Built and verified: recurrence (slot_series + materializer), saved-search

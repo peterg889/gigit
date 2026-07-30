@@ -27,12 +27,6 @@ export const SUBSLOT_EVENTS = [
   "TECH_CANCELLED",
 ] as const;
 
-export const SUBSLOT_TERMINAL = new Set<SubslotState>([
-  "released",
-  "cancelled_by_payer",
-  "cancelled_with_parent",
-]);
-
 export type SubslotEvent =
   | { kind: "TECH_BOOKED"; techId: string }
   | { kind: "PARENT_RELEASED" }
