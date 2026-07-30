@@ -229,13 +229,6 @@ except the following. Nothing here is a live functional bug.
 - **`reconcileMoney()` has one seeded scenario.** Now that `adjustment` is in
   scope for the balance check, add a clean-check per terminal path plus a case
   whose only imbalance is an adjustment.
-- **No `makeVenue()` fixture factory.** ~30 hand-rolled venue inserts, every one
-  omitting `timeZone`, so all suite venues are UTC and `venueLocationIsComplete`
-  is false for all of them — which is why the venue-local scheduling paths are
-  still untested end-to-end. I deliberately did *not* retrofit all 30: flipping
-  them to a real timezone changes formatted-time assertions across the suite, and
-  that churn deserves its own change rather than riding along with unrelated
-  fixes. The DST math itself is now covered directly at the domain level.
 - **Three remaining tests that can't fail:** `postgig.test.ts:136` is titled
   "either party… strangers cannot" and tests only one party;
   `support/route.test.ts:93` seeds 100 rows into a table the quota query doesn't
@@ -254,9 +247,6 @@ except the following. Nothing here is a live functional bug.
 - The 12-line booking-load preamble (booking + dual-profile resolution) is
   byte-identical in `bookings/[id]/{cancel,dispute,tech-subslot}` — the same
   treatment `loadSubslotForActor()` just got for sound jobs.
-- The type scale still has a 2.5× cliff from h1 to h2 and then six sizes inside a
-  ~5px band. `h3` is fixed; collapsing the 10.5–12.5px cluster and opening a
-  24–28px step for money and dates is a deliberate design pass, not a tweak.
 
 ### Product, deliberately not built
 
