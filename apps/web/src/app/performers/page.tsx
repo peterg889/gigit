@@ -1,11 +1,12 @@
 import { ACT_KIND_LABEL } from "@/lib/labels";
 import { performerReliability } from "@gigit/domain";
 import { db, performerReliabilityStats, schema } from "@gigit/db";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, gte, sql } from "drizzle-orm";
 import Link from "next/link";
 import { venueOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ApiForm } from "@/components/ApiForm";
+import { formatVenueDate } from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
 
@@ -48,6 +49,27 @@ export default async function PerformerSearchPage({
     .orderBy(asc(schema.performers.reliabilityStrikes), asc(schema.performers.createdAt))
     .limit(100);
   const relStats = await performerReliabilityStats(acts.map((p) => p.id));
+
+  // The venue's own open nights, so an invite can name a real date instead of
+  // pushing terms into a chat message.
+  const myOpenSlots = venue
+    ? await db()
+        .select({
+          id: schema.slots.id,
+          startsAt: schema.slots.startsAt,
+          budgetCents: schema.slots.budgetCents,
+        })
+        .from(schema.slots)
+        .where(
+          and(
+            eq(schema.slots.venueId, venue.id),
+            eq(schema.slots.status, "open"),
+            gte(schema.slots.startsAt, new Date()),
+          ),
+        )
+        .orderBy(asc(schema.slots.startsAt))
+        .limit(20)
+    : [];
 
   return (
     <div>
@@ -100,21 +122,50 @@ export default async function PerformerSearchPage({
               </span>
             </p>
           )}
-          <ApiForm
-            endpoint="/api/threads"
-            submitLabel="Message this act"
-            redirectTo="/inbox"
-            fields={[
-              {
-                name: "body",
-                label: `Message ${p.name}`,
-                type: "textarea",
-                required: true,
-                placeholder: "Friday the 26th, 8–10pm, $400 — interested?",
-              },
-            ]}
-            extra={{ performerId: p.id }}
-          />
+          {/* Invite them to a real date, on the offer rail. The two nudges that
+              tell venues to "send an invite" used to land on the message box
+              below, which pushed the terms into chat and then made the act go
+              find the slot and apply before an offer was even possible. */}
+          {myOpenSlots.length > 0 && (
+            <ApiForm
+              endpoint="/api/slots/:slotId/invite"
+              submitLabel={`Invite ${p.name} to a date`}
+              redirectTo="/bookings"
+              fields={[
+                {
+                  name: "slotId",
+                  label: "Which night?",
+                  type: "select",
+                  required: true,
+                  options: myOpenSlots.map((s) => ({
+                    value: s.id,
+                    label: `${formatVenueDate(s.startsAt, venue!.timeZone)} — $${(
+                      s.budgetCents / 100
+                    ).toFixed(0)}`,
+                  })),
+                },
+              ]}
+              extra={{ performerId: p.id }}
+            />
+          )}
+          <details>
+            <summary className="muted">Or just send a message</summary>
+            <ApiForm
+              endpoint="/api/threads"
+              submitLabel="Message this act"
+              redirectTo="/inbox"
+              fields={[
+                {
+                  name: "body",
+                  label: `Message ${p.name}`,
+                  type: "textarea",
+                  required: true,
+                  placeholder: "Anything they should know about the room?",
+                },
+              ]}
+              extra={{ performerId: p.id }}
+            />
+          </details>
         </div>
         );
       })}

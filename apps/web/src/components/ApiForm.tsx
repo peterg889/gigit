@@ -122,7 +122,21 @@ export function ApiForm({
       else body[f.name] = raw;
     }
     applyTransform(body, transform as TransformName | undefined);
-    const res = await fetch(endpoint, {
+    // `:name` placeholders in the endpoint are filled from the body and then
+    // dropped from it — so a form can pick WHICH resource it posts to (invite
+    // this act to *that* night) without a client component per row.
+    let url = endpoint;
+    for (const [key, value] of Object.entries(body)) {
+      if (!url.includes(`:${key}`)) continue;
+      url = url.replace(`:${key}`, encodeURIComponent(String(value)));
+      delete body[key];
+    }
+    if (url.includes("/:")) {
+      setBusy(false);
+      setError("Pick an option before submitting.");
+      return;
+    }
+    const res = await fetch(url, {
       method,
       headers: { "content-type": "application/json" },
       body: JSON.stringify(body),

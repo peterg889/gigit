@@ -5,7 +5,9 @@ import {
   soundPlan,
 } from "@gigit/domain";
 import type { BookingState } from "@gigit/domain";
-import { db, findRebookTarget, paymentsEnabled, schema } from "@gigit/db";
+import {
+  bookingThreadId,
+  ensureBookingThread, db, findRebookTarget, paymentsEnabled, schema } from "@gigit/db";
 import { and, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -152,6 +154,13 @@ export default async function BookingPage({
   const amPayer =
     activeSubslot &&
     (activeSubslot.payer === "venue" ? asVenue : asPerformer);
+
+  // The worker opens this on confirmation, but ensure it here too: bookings
+  // confirmed before this shipped have no thread, and a page view is a fine
+  // place to backfill one lazily. Idempotent either way.
+  const threadId = contactsRevealed
+    ? ((await bookingThreadId(id)) ?? (await ensureBookingThread(id, userId)))
+    : null;
 
   let contacts: { role: string; name: string; phone: string | null; email: string | null }[] = [];
   if (contactsRevealed) {
@@ -400,6 +409,20 @@ export default async function BookingPage({
               from real bookings like this one.
             </li>
           </ol>
+        </div>
+      )}
+
+      {threadId && (
+        <div className="card">
+          <h2>Messages about this booking</h2>
+          <p>
+            <Link href={`/inbox/${threadId}`}>Open the conversation</Link>
+          </p>
+          <p className="muted">
+            Set time moved, load-in changed, pay renegotiated — put it here and
+            both of you have the same record of it. EightGig doesn&rsquo;t hold the
+            money, so what&rsquo;s written down is what you&rsquo;ve got.
+          </p>
         </div>
       )}
 

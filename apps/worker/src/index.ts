@@ -11,6 +11,7 @@ import {
   env,
   db,
   appendEvent,
+  ensureBookingThread,
   closeDb,
   getPool,
   runBookingTransition,
@@ -537,6 +538,17 @@ async function dispatchEvent(
           retryBackoff: true,
         },
       );
+  }
+
+  // Entering `confirmed` opens the booking conversation. Both parties can post
+  // to it (the messages route is participant-scoped), which is the only way an
+  // act can reach a venue at all — cold DMs the other direction are barred.
+  if (
+    row.kind === "booking.transition" &&
+    (row.payload as { to?: string }).to === "confirmed"
+  ) {
+    const threadId = await ensureBookingThread(row.subject_id, "worker");
+    if (threadId) log("thread.booking_opened", { booking: row.subject_id, threadId });
   }
 
   // Entering `confirmed` arms the day-before reminder (not a state transition,
