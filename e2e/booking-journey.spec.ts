@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { postSlot, signIn } from "./helpers";
+import { BADGE, CARD, MONEY, assertPrimitives, postSlot, signIn } from "./helpers";
 
 /**
  * The critical journey (engineering-spec §13 E2E #2): post open date → apply →
@@ -23,19 +23,21 @@ test("venue posts an open date; performer applies; offer; accept; booking confir
   // helpers.ts was extracted FROM this spec and the spec was never migrated, so
   // all five steps lived here verbatim — including the /slots/new form scoping.
   await postSlot(vp, marker, "350");
+  // Fail loudly if the CSS primitives were renamed out from under the suite.
+  await assertPrimitives(vp);
 
   // ── performer finds it on the feed and applies ──
   await signIn(pp, "band@example.com");
   await pp.goto("/slots");
-  const card = pp.locator(".card", { hasText: marker });
+  const card = pp.locator(CARD, { hasText: marker });
   await expect(card).toBeVisible();
-  await expect(card.locator(".money")).toHaveText("$350"); // the pay is on the poster
+  await expect(card.locator(MONEY)).toHaveText("$350"); // the pay is on the poster
   await card.getByRole("link").first().click();
   await pp.getByRole("button", { name: /Apply/ }).click();
 
   // ── venue sees the applicant and sends the offer ──
   await vp.reload();
-  await vp.locator(".card", { hasText: marker }).getByRole("link").first().click();
+  await vp.locator(CARD, { hasText: marker }).getByRole("link").first().click();
   await expect(vp.getByText(/Applicants \(/)).toBeVisible();
   await vp.getByRole("button", { name: "Send firm offer" }).click();
   await expect(vp.getByText("Firm offer sent.")).toBeVisible();
@@ -44,7 +46,7 @@ test("venue posts an open date; performer applies; offer; accept; booking confir
   // (Null gateway) confirms it.
   await pp.goto("/bookings");
   const newestOffer = pp
-    .locator(".card", { hasText: "$350" })
+    .locator(CARD, { hasText: "$350" })
     .first();
   await newestOffer
     .getByRole("link", { name: "Review the deal and respond" })
@@ -70,9 +72,9 @@ test("venue posts an open date; performer applies; offer; accept; booking confir
       async () => {
         await pp.goto("/bookings");
         return pp
-          .locator(".card", { hasText: "$350" })
+          .locator(CARD, { hasText: "$350" })
           .first()
-          .locator(".badge", { hasText: "Confirmed" })
+          .locator(BADGE, { hasText: "Confirmed" })
           .count();
       },
       { timeout: 20_000, message: "booking should reach confirmed via the worker" },
@@ -90,7 +92,7 @@ test("venue posts an open date; performer applies; offer; accept; booking confir
   await pp.getByRole("button", { name: "Cancel booking" }).click();
   expect((await cancelled).status()).toBe(200);
   await expect(
-    pp.locator(".badge", { hasText: "Cancelled by act" }).first(),
+    pp.locator(BADGE, { hasText: "Cancelled by act" }).first(),
   ).toBeVisible();
   await expect(
     pp.getByRole("heading", { name: "Leave a review" }),
@@ -108,7 +110,7 @@ test("venue posts an open date; performer applies; offer; accept; booking confir
 
   await vp.goto(bookingUrl);
   await expect(
-    vp.locator(".badge", { hasText: "Cancelled by act" }).first(),
+    vp.locator(BADGE, { hasText: "Cancelled by act" }).first(),
   ).toBeVisible();
   await expect(
     vp.getByRole("heading", { name: "Leave a review" }),

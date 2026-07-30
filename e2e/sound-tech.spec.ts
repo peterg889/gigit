@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-  acceptOffer,
-  applyToSlot,
-  expectBookingBadge,
-  postSlot,
-  sendOffer,
-  signIn,
-} from "./helpers";
+import { BADGE, CARD, acceptOffer, applyToSlot, assertPrimitives, expectBookingBadge, postSlot, sendOffer, signIn } from "./helpers";
 
 /**
  * The differentiator journey (PRD F6): a confirmed booking whose sound plan
@@ -32,6 +25,8 @@ test("sound gap: venue posts sound job, tech applies, payer books the tech", asy
   // Different night from the other specs: the seeded band's calendar is shared
   // across parallel journeys and double-booking correctly 409s.
   await postSlot(vp, marker, budget, 28);
+  // Fail loudly if the CSS primitives were renamed out from under the suite.
+  await assertPrimitives(vp);
   await signIn(pp, "band@example.com");
   await applyToSlot(pp, marker);
   await sendOffer(vp, marker);
@@ -47,12 +42,12 @@ test("sound gap: venue posts sound job, tech applies, payer books the tech", asy
   await vp.getByLabel("Who pays the tech").selectOption("venue");
   await vp.getByLabel("Tech pay (USD)").fill(techPay);
   await vp.getByRole("button", { name: "Post the sound job" }).click();
-  await expect(vp.locator(".badge", { hasText: "Open" }).first()).toBeVisible();
+  await expect(vp.locator(BADGE, { hasText: "Open" }).first()).toBeVisible();
 
   // ── tech discovers the job with the pay visible, applies ──
   await signIn(tp, "tech@example.com");
   await tp.goto("/techs");
-  const job = tp.locator(".card", { hasText: `$${techPay}` }).first();
+  const job = tp.locator(CARD, { hasText: `$${techPay}` }).first();
   await expect(job).toBeVisible();
   await job.getByRole("button", { name: "Apply — pay as listed" }).click();
   await expect(tp.getByText("Application sent").first()).toBeVisible();
@@ -60,12 +55,12 @@ test("sound gap: venue posts sound job, tech applies, payer books the tech", asy
   // ── the payer books the tech ──
   await vp.goto(bookingUrl);
   await vp.getByRole("button", { name: "Book this tech" }).click();
-  await expect(vp.locator(".badge", { hasText: "Tech booked" }).first()).toBeVisible();
+  await expect(vp.locator(BADGE, { hasText: "Tech booked" }).first()).toBeVisible();
 
   // ── the tech sees it booked on their side too ──
   await tp.goto("/bookings");
   await expect(
-    tp.locator(".card", { hasText: `$${techPay}` }).first().locator(".badge", {
+    tp.locator(CARD, { hasText: `$${techPay}` }).first().locator(BADGE, {
       hasText: "Booked",
     }),
   ).toBeVisible();

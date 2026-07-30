@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@gigit/domain";
-import { closeDb, createOffer, db, runBookingTransition, schema } from "@gigit/db";
+import { closeDb, createOffer, db, makeUser, makeVenue, runBookingTransition, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
@@ -139,11 +139,36 @@ describe("post-gig routes", () => {
   });
 
   it("either party can open a dispute in the post-gig window; strangers cannot", async () => {
-    const { bookingId } = await makeConfirmed();
-    await runBookingTransition(bookingId, { kind: "GIG_ENDED" }, "worker");
+    // The title promised three things and the body tested one — only the venue.
+    // The guard is a single `else return fail(...)`, so simplifying it (dropping
+    // the id comparison, say) would let anyone holding ANY venue profile freeze
+    // any booking's payout, with this test green.
+    const first = await makeConfirmed();
+    await runBookingTransition(first.bookingId, { kind: "GIG_ENDED" }, "worker");
     as(uVenue);
-    expect((await dispute(bookingId)).status).toBe(200);
-    expect(await stateOf(bookingId)).toBe("disputed");
+    expect((await dispute(first.bookingId)).status).toBe(200);
+    expect(await stateOf(first.bookingId)).toBe("disputed");
+
+    // the act's side of "either party"
+    const second = await makeConfirmed();
+    await runBookingTransition(second.bookingId, { kind: "GIG_ENDED" }, "worker");
+    as(uBand);
+    expect((await dispute(second.bookingId)).status).toBe(200);
+    expect(await stateOf(second.bookingId)).toBe("disputed");
+
+    // ...and "strangers cannot", including a stranger who owns an unrelated
+    // venue — that's the case a weakened comparison would let through.
+    const third = await makeConfirmed();
+    await runBookingTransition(third.bookingId, { kind: "GIG_ENDED" }, "worker");
+    const other = await makeVenue({ name: "Unrelated Room" });
+    as(other.ownerUserId);
+    expect((await dispute(third.bookingId)).status).toBe(403);
+    expect(await stateOf(third.bookingId)).toBe("awaiting_confirmation"); // untouched
+
+    const nobody = await makeUser();
+    as(nobody);
+    expect((await dispute(third.bookingId)).status).toBe(403);
+    expect(await stateOf(third.bookingId)).toBe("awaiting_confirmation");
   });
 
   it("dispute outside the window is a 409, and reasons are validated", async () => {

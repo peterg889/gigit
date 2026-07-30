@@ -20,13 +20,16 @@ vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
 
 import { POST } from "./route";
 
-const post = (body: unknown) =>
+// A fresh random IP by default so unrelated cases can't consume each other's
+// per-IP budget; pass one explicitly when the address is the thing under test.
+const post = (body: unknown, ip?: string) =>
   POST(
     new Request("http://test/api/support", {
       method: "POST",
       headers: {
         "content-type": "application/json",
-        "x-forwarded-for": `198.51.100.${Math.floor(Math.random() * 200) + 1}`,
+        "x-forwarded-for":
+          ip ?? `198.51.100.${Math.floor(Math.random() * 200) + 1}`,
       },
       body: JSON.stringify(body),
     }),
@@ -91,24 +94,68 @@ describe("public support", () => {
   });
 
   it("does not let signed-in or SMS escalations consume the public quota", async () => {
+    // This seeded 100 rows into `events`, which the quota query never reads —
+    // an inert fixture in front of an assertion that one ordinary request
+    // returns 200, which it would with the quota keyed any way at all,
+    // including not keyed. The quota counts `support_requests` rows with a
+    // NON-NULL request_ip, so THAT is what has to be seeded to mean anything.
     const marker = Date.now();
-    await db().insert(schema.events).values(
-      Array.from({ length: 100 }, (_, index) => ({
-        actor: "system",
-        kind: "support.escalated",
-        subjectType: "support_request",
-        subjectId: `spr_non_public_${marker}_${index}`,
-        payload: { channel: index % 2 ? "sms" : "web" },
-        dispatchedAt: new Date(),
-      })),
-    );
+    await db()
+      .insert(schema.supportRequests)
+      .values(
+        Array.from({ length: 120 }, (_, index) => ({
+          id: `spr_nonpublic_${marker}_${index}`,
+          channel: index % 2 ? "sms" : "web",
+          escalationReason: "triage",
+          message: "escalated by the assistant, not a public submission",
+          requestIp: null, // the discriminator: not a public submission
+        })),
+      );
 
+    // 120 non-public escalations, well past the global cap of 100.
     const res = await post({
       email: `quota-${marker}@example.test`,
       message: "I am locked out and still need a way to reach support.",
     });
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toMatchObject({ escalated: true });
+  });
+
+  it("public submissions DO consume the quota, per IP", async () => {
+    // The other half, which nothing asserted: without it, deleting the ip filter
+    // entirely would still pass every test in this file.
+    const ip = `203.0.113.${Math.floor(Date.now() % 200) + 1}`;
+    const marker = Date.now();
+    await db()
+      .insert(schema.supportRequests)
+      .values(
+        Array.from({ length: 5 }, (_, index) => ({
+          id: `spr_public_${marker}_${index}`,
+          channel: "web",
+          escalationReason: "anonymous",
+          message: "a public submission from this address",
+          requestIp: ip,
+        })),
+      );
+
+    const res = await post(
+      {
+        email: `capped-${marker}@example.test`,
+        message: "This one should be turned away by the per-IP cap.",
+      },
+      ip,
+    );
+    expect(res.status).toBe(429);
+
+    // ...and a different address is unaffected — it's per-IP, not global.
+    const other = await post(
+      {
+        email: `other-${marker}@example.test`,
+        message: "A different address should still get through fine.",
+      },
+      "203.0.113.254",
+    );
+    expect(other.status).toBe(200);
   });
 
   it("persists an authenticated AI escalation with a contact snapshot", async () => {

@@ -7,7 +7,7 @@ import {
 } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
+import { loadBookingForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -22,19 +22,12 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { id: bookingId } = await params;
     const userId = await requireUser();
-    const [booking] = await db()
-      .select()
-      .from(schema.bookings)
-      .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
-
-    const [performer, venue] = await Promise.all([
-      performerOwnedBy(userId),
-      venueOwnedBy(userId),
-    ]);
+    const actor = await loadBookingForActor(bookingId, userId);
+    if (!actor) return fail("not_found", "We couldn't find that booking.", 404);
+    const { booking } = actor;
     let openedBy: "venue" | "performer";
-    if (venue && venue.id === booking.venueId) openedBy = "venue";
-    else if (performer && performer.id === booking.performerId) openedBy = "performer";
+    if (actor.asVenue) openedBy = "venue";
+    else if (actor.asPerformer) openedBy = "performer";
     else return fail("forbidden", "This booking isn't yours.", 403);
 
     const parsed = await parseBody(req, bodySchema);

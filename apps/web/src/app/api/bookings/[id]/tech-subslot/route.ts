@@ -1,7 +1,7 @@
 import { techSubslotCreateSchema } from "@gigit/domain";
 import { createTechSubslot, db, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
+import { loadBookingForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -11,19 +11,10 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { id: bookingId } = await params;
     const userId = await requireUser();
-    const [booking] = await db()
-      .select()
-      .from(schema.bookings)
-      .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
-
-    const [performer, venue] = await Promise.all([
-      performerOwnedBy(userId),
-      venueOwnedBy(userId),
-    ]);
-    const isParty =
-      performer?.id === booking.performerId || venue?.id === booking.venueId;
-    if (!isParty) return fail("forbidden", "That booking isn't yours.", 403);
+    const actor = await loadBookingForActor(bookingId, userId);
+    if (!actor) return fail("not_found", "We couldn't find that booking.", 404);
+    const { booking } = actor;
+    if (!actor.isParty) return fail("forbidden", "That booking isn't yours.", 403);
     if (booking.state !== "confirmed")
       return fail("conflict", "Sound can be added once the booking is confirmed.", 409);
 

@@ -6,7 +6,7 @@ import {
   schema,
 } from "@gigit/db";
 import { eq } from "drizzle-orm";
-import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
+import { loadBookingForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -16,22 +16,15 @@ export async function POST(_req: Request, { params }: Params) {
   try {
     const { id: bookingId } = await params;
     const userId = await requireUser();
-    const [booking] = await db()
-      .select()
-      .from(schema.bookings)
-      .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
-
-    const [performer, venue] = await Promise.all([
-      performerOwnedBy(userId),
-      venueOwnedBy(userId),
-    ]);
+    const actor = await loadBookingForActor(bookingId, userId);
+    if (!actor) return fail("not_found", "We couldn't find that booking.", 404);
+    const { booking } = actor;
     let event:
       | "VENUE_CANCELLED"
       | "PERFORMER_DECLINED"
       | "PERFORMER_CANCELLED";
-    if (venue && venue.id === booking.venueId) event = "VENUE_CANCELLED";
-    else if (performer && performer.id === booking.performerId)
+    if (actor.asVenue) event = "VENUE_CANCELLED";
+    else if (actor.asPerformer)
       event =
         booking.state === "offered"
           ? "PERFORMER_DECLINED"

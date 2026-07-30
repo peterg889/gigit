@@ -1,12 +1,5 @@
 import { expect, test } from "@playwright/test";
-import {
-  acceptOffer,
-  applyToSlot,
-  expectBookingBadge,
-  postSlot,
-  sendOffer,
-  signIn,
-} from "./helpers";
+import { CARD, acceptOffer, applyToSlot, assertPrimitives, expectBookingBadge, postSlot, sendOffer, signIn } from "./helpers";
 
 /**
  * The recovery loop (audit: PERFORMER_DECLINED dead-end): a declined offer
@@ -28,6 +21,8 @@ test("declined offer: slot reopens, same act re-applies, second offer confirms",
   // Specs run in parallel against the same seeded band: each journey books a
   // DIFFERENT night or the calendar double-book guard correctly 409s the next.
   await postSlot(vp, marker, budget, 21);
+  // Fail loudly if the CSS primitives were renamed out from under the suite.
+  await assertPrimitives(vp);
 
   await signIn(pp, "band@example.com");
   await applyToSlot(pp, marker);
@@ -36,7 +31,7 @@ test("declined offer: slot reopens, same act re-applies, second offer confirms",
   // ── the act declines the firm offer ──
   await pp.goto("/bookings");
   await pp
-    .locator(".card", { hasText: `$${budget}` })
+    .locator(CARD, { hasText: `$${budget}` })
     .first()
     .getByRole("link", { name: "Review the deal and respond" })
     .click();
@@ -49,7 +44,7 @@ test("declined offer: slot reopens, same act re-applies, second offer confirms",
 
   // ── the night is open again and the SAME act can re-apply ──
   await pp.goto("/slots");
-  const card = pp.locator(".card", { hasText: marker });
+  const card = pp.locator(CARD, { hasText: marker });
   await expect(card).toBeVisible();
   await card.getByRole("link").first().click();
   // The withdrawn application must not dead-end the pairing: the apply form

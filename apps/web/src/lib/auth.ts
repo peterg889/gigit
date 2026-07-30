@@ -127,3 +127,35 @@ export async function loadSubslotForActor(subslotId: string, userId: string) {
     isBookedTech: !!tech && row.subslot.techId === tech.id,
   };
 }
+
+/**
+ * Load a booking with the caller's relationship to it already worked out.
+ *
+ * The load itself (booking row + both profile lookups) was byte-identical in
+ * three routes, each then reading the same relationship differently: cancel needs
+ * to know which SIDE you are to pick the event, dispute the same, tech-subslot
+ * only whether you're a party at all. Sharing the derivation means a new party
+ * type or an admin override is one edit, and the notion of "party to this
+ * booking" can't drift between the three places that decide it.
+ */
+export async function loadBookingForActor(bookingId: string, userId: string) {
+  const [booking] = await db()
+    .select()
+    .from(schema.bookings)
+    .where(eq(schema.bookings.id, bookingId));
+  if (!booking) return null;
+  const [performer, venue] = await Promise.all([
+    performerOwnedBy(userId),
+    venueOwnedBy(userId),
+  ]);
+  const asVenue = !!venue && venue.id === booking.venueId;
+  const asPerformer = !!performer && performer.id === booking.performerId;
+  return {
+    booking,
+    performer,
+    venue,
+    asVenue,
+    asPerformer,
+    isParty: asVenue || asPerformer,
+  };
+}

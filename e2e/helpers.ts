@@ -1,5 +1,35 @@
 import { expect, type Page } from "@playwright/test";
 
+/**
+ * The CSS primitives the specs navigate by.
+ *
+ * These class names were spelled out at 19 call sites across four files, so
+ * renaming one in the stylesheet meant hunting them down — in the suite that
+ * gates the staging deploy. Naming them here makes a rename one edit.
+ *
+ * This does not truly decouple tests from styling (that needs test ids in the
+ * markup, on dozens of elements), but it removes the scattered magic strings and
+ * `assertPrimitives` turns a rename into an obvious failure rather than a pile of
+ * "element not found".
+ */
+export const CARD = ".card";
+export const BADGE = ".badge";
+export const MONEY = ".money";
+
+/**
+ * Fail early and legibly if the primitives have been renamed out from under the
+ * suite. Call once per spec after the first page load.
+ */
+export async function assertPrimitives(page: Page) {
+  const cards = await page.locator(CARD).count();
+  if (cards === 0)
+    throw new Error(
+      `No "${CARD}" elements on ${page.url()} — the primitive was probably ` +
+        `renamed in globals.css. Update CARD/BADGE/MONEY in e2e/helpers.ts.`,
+    );
+}
+
+
 /** Dev-stack sign-in: seeded users, dev OTP 000000. */
 export async function signIn(page: Page, email: string) {
   await page.goto("/login");
@@ -40,7 +70,7 @@ export async function postSlot(
 /** From the feed, open the slot card carrying the marker and apply. */
 export async function applyToSlot(page: Page, marker: string) {
   await page.goto("/slots");
-  const card = page.locator(".card", { hasText: marker });
+  const card = page.locator(CARD, { hasText: marker });
   await expect(card).toBeVisible();
   await card.getByRole("link").first().click();
   await page.getByRole("button", { name: /Apply/ }).click();
@@ -49,7 +79,7 @@ export async function applyToSlot(page: Page, marker: string) {
 /** As the venue, open the marked slot and send the firm offer. */
 export async function sendOffer(page: Page, marker: string) {
   await page.goto("/slots");
-  await page.locator(".card", { hasText: marker }).getByRole("link").first().click();
+  await page.locator(CARD, { hasText: marker }).getByRole("link").first().click();
   await expect(page.getByText(/Applicants \(/)).toBeVisible();
   await page.getByRole("button", { name: "Send firm offer" }).click();
   await expect(page.getByText("Firm offer sent.")).toBeVisible();
@@ -59,7 +89,7 @@ export async function sendOffer(page: Page, marker: string) {
 export async function acceptOffer(page: Page, budgetText: string) {
   await page.goto("/bookings");
   await page
-    .locator(".card", { hasText: budgetText })
+    .locator(CARD, { hasText: budgetText })
     .first()
     .getByRole("link", { name: "Review the deal and respond" })
     .click();
@@ -83,9 +113,9 @@ export async function expectBookingBadge(
       async () => {
         await page.goto("/bookings");
         return page
-          .locator(".card", { hasText: budgetText })
+          .locator(CARD, { hasText: budgetText })
           .first()
-          .locator(".badge", { hasText: badge })
+          .locator(BADGE, { hasText: badge })
           .count();
       },
       { timeout: 20_000, message: `booking should show "${badge}"` },
