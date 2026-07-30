@@ -1,3 +1,4 @@
+import { ACT_KIND_LABEL } from "@/lib/labels";
 import { performerReliability } from "@gigit/domain";
 import { db, performerReliabilityStats, schema } from "@gigit/db";
 import { and, asc, eq, sql } from "drizzle-orm";
@@ -7,13 +8,6 @@ import { sessionUserId } from "@/lib/session";
 import { ApiForm } from "@/components/ApiForm";
 
 export const dynamic = "force-dynamic";
-
-const ACT_KIND_LABEL: Record<string, string> = {
-  band: "Band",
-  solo: "Solo act",
-  comedian: "Comedian",
-  other: "Other act",
-};
 
 /** Venue-facing performer search + invite (PRD F2.4). */
 export default async function PerformerSearchPage({

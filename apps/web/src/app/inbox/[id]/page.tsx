@@ -1,6 +1,7 @@
 import { db, schema } from "@gigit/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
+import { formatRelativeTime } from "@/lib/date-time";
 import { notFound } from "next/navigation";
 import { sessionUserId } from "@/lib/session";
 import { ApiForm } from "@/components/ApiForm";
@@ -73,10 +74,7 @@ export default async function ThreadPage({
               ? "You"
               : (m.senderUserId && nameByUser.get(m.senderUserId)) || "Them"}{" "}
             ·{" "}
-            {m.createdAt.toLocaleString("en-US", {
-              dateStyle: "medium",
-              timeStyle: "short",
-            })}
+            {formatRelativeTime(m.createdAt)}
           </span>
           <p>{m.body}</p>
         </div>

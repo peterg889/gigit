@@ -55,3 +55,30 @@ describe("venue address", () => {
     ).toBe(false);
   });
 });
+
+/**
+ * The format defaulted to `dateStyle: "medium"` — "Jul 24, 2026, 8:00 PM": no
+ * weekday, and a year on every date in a 90-day feed. For a bar gig the weekday
+ * is the decision.
+ */
+describe("gig date format", () => {
+  const chicago = "America/Chicago";
+
+  it("leads with the weekday and drops the year for a nearby date", () => {
+    const soon = new Date(Date.now() + 14 * 86_400_000);
+    const out = formatVenueDateTime(soon, chicago);
+    expect(out).toMatch(/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun),? /);
+    expect(out).not.toMatch(/\b20\d\d\b/);
+    expect(out).toMatch(/\d{1,2}:\d{2}\s?(AM|PM)/);
+  });
+
+  it("brings the year back when the date is far enough out to be ambiguous", () => {
+    const farOut = new Date(Date.now() + 400 * 86_400_000);
+    expect(formatVenueDateTime(farOut, chicago)).toMatch(/\b20\d\d\b/);
+  });
+
+  it("still honours an explicit dateStyle for archival surfaces", () => {
+    const d = new Date("2026-07-24T20:00:00Z");
+    expect(formatVenueDateTime(d, chicago, "medium")).toContain("2026");
+  });
+});

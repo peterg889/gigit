@@ -188,7 +188,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
         <div className="card">
           <h2>Manage this open date</h2>
           <details>
-            <summary className="muted" style={{ cursor: "pointer" }}>Edit listing</summary>
+            <summary className="muted">Edit listing</summary>
             <ApiForm
               endpoint={`/api/slots/${slot.id}`}
               method="PATCH"

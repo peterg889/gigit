@@ -1,7 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useId, useState } from "react";
+
+import {
+  ACT_KIND_LABEL,
+  GEAR_LABELS,
+  GIG_FORMAT_LABEL,
+  VENUE_KIND_LABEL,
+} from "@/lib/labels";
 import { venueLocalInputToIso } from "@/lib/date-time";
 import { applyTransform, type TransformName } from "@/lib/form-transforms";
 
@@ -17,24 +24,19 @@ interface Field {
   defaultValue?: string | number;
 }
 
+// Built FROM the canonical maps, not alongside them. These were restated here
+// with different wording, so a venue picked "Music" in this dropdown and the
+// feed card it produced was badged "Live music" — and `other` was "Other" here
+// and "Other act" on the profile. labels.ts exists to prevent exactly that; its
+// own docstring cites the last time this drifted.
 const OPTION_LABELS: Record<string, string> = {
   "": "Any",
   false: "No",
   true: "Yes",
-  band: "Band",
-  solo: "Solo act",
-  comedian: "Comedian",
-  other: "Other",
-  bar: "Bar",
-  restaurant: "Restaurant",
-  coffee_shop: "Coffee shop",
-  brewery: "Brewery",
-  none: "Labor only — no rig",
-  partial: "Partial rig",
-  full_rig: "Full PA rig",
-  music: "Music",
-  comedy: "Comedy",
-  either: "Music or comedy",
+  ...ACT_KIND_LABEL,
+  ...VENUE_KIND_LABEL,
+  ...GEAR_LABELS,
+  ...GIG_FORMAT_LABEL,
   weekly: "Weekly",
   monthly_dow: "Monthly — same week and weekday",
   no_show: "No-show",
@@ -91,6 +93,7 @@ export function ApiForm({
   method?: "POST" | "PATCH"; // PATCH for edit-in-place (partial update) forms
 }) {
   const router = useRouter();
+  const uid = useId();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -137,18 +140,24 @@ export function ApiForm({
   return (
     <form onSubmit={onSubmit}>
       {fields.map((f) => (
+        // Ids must be unique per FORM, not per field name. Using the raw name
+        // meant any page with two forms sharing a field emitted duplicate ids,
+        // and <label for> resolves to the first match in the document — so on
+        // /slots/new, tapping "Duration" under "Make it a series" focused the
+        // single-date form's input. /me had id="name" three times, and the
+        // directory pages rendered up to 100 elements with id="body".
         <div key={f.name}>
-          <label htmlFor={f.name}>{f.label}</label>
+          <label htmlFor={`${uid}-${f.name}`}>{f.label}</label>
           {f.type === "textarea" ? (
             <textarea
-              id={f.name}
+              id={`${uid}-${f.name}`}
               name={f.name}
               rows={3}
               placeholder={f.placeholder}
               defaultValue={f.defaultValue}
             />
           ) : f.type === "select" ? (
-            <select id={f.name} name={f.name} required={f.required} defaultValue={f.defaultValue}>
+            <select id={`${uid}-${f.name}`} name={f.name} required={f.required} defaultValue={f.defaultValue}>
               {f.options?.map((option) => {
                 const { value, label } = optionDetails(option);
                 return (
@@ -160,7 +169,7 @@ export function ApiForm({
             </select>
           ) : (
             <input
-              id={f.name}
+              id={`${uid}-${f.name}`}
               name={f.name}
               type={f.type === "datetime-local" ? "datetime-local" : f.type ?? "text"}
               required={f.required}
@@ -170,7 +179,11 @@ export function ApiForm({
           )}
         </div>
       ))}
-      {error && <p className="error">{error}</p>}
+      {/* Errors are the whole point of this component's feedback; without a
+          live region a screen-reader user submits and hears nothing. */}
+      <div aria-live="polite" role="status">
+        {error && <p className="error">{error}</p>}
+      </div>
       <button disabled={busy}>{busy ? "Working…" : submitLabel}</button>
     </form>
   );
@@ -255,7 +268,9 @@ export function ActionButton({
       >
         {busy ? "…" : label}
       </button>
-      {error && <span className="error"> {error}</span>}
+      <span aria-live="polite" role="status">
+        {error && <span className="error"> {error}</span>}
+      </span>
     </span>
   );
 }

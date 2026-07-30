@@ -2,16 +2,38 @@ import { localDateTimeParts, zonedDateTimeToDate } from "@gigit/domain";
 
 type DateValue = Date | string;
 
+/**
+ * A gig date, the way the scene says it: "Fri Jul 24, 8:00 PM".
+ *
+ * This defaulted to `dateStyle: "medium"`, which yields "Jul 24, 2026, 8:00 PM" —
+ * no weekday and a year. For a bar gig the weekday IS the decision (Friday and
+ * Tuesday are different jobs at different pay), and the year is noise on a feed
+ * of dates inside 90 days. The year comes back automatically once a date is far
+ * enough out to be genuinely ambiguous.
+ */
 export function formatVenueDateTime(
   value: DateValue,
   timeZone: string,
-  dateStyle: "full" | "long" | "medium" | "short" = "medium",
+  dateStyle?: "full" | "long" | "medium" | "short",
 ): string {
+  const when = new Date(value);
+  if (dateStyle)
+    return new Intl.DateTimeFormat("en-US", {
+      dateStyle,
+      timeStyle: "short",
+      timeZone,
+    }).format(when);
+  const farOut =
+    Math.abs(when.getTime() - Date.now()) > 300 * 86_400_000;
   return new Intl.DateTimeFormat("en-US", {
-    dateStyle,
-    timeStyle: "short",
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(farOut ? { year: "numeric" } : {}),
+    hour: "numeric",
+    minute: "2-digit",
     timeZone,
-  }).format(new Date(value));
+  }).format(when);
 }
 
 export function formatVenueDate(
@@ -112,5 +134,46 @@ export function venueLocationIsComplete(venue: {
     venue.postalCode.trim().length > 0 &&
     // UTC is the migration fallback for legacy rows, not a US venue choice.
     venue.timeZone !== "UTC"
+  );
+}
+
+/**
+ * "2 hours ago", "Yesterday", "Jul 22" — for message and thread lists.
+ *
+ * These were rendered with `toLocaleString()` in a server component, i.e. in the
+ * CONTAINER's timezone (UTC in production) and with no zone label at all, so an
+ * 8pm Central message displayed as 1:00 AM. A server component can't know the
+ * viewer's zone; relative time doesn't need it, and for a conversation it's what
+ * you actually want to read.
+ */
+export function formatRelativeTime(value: DateValue, now: Date = new Date()): string {
+  const then = new Date(value);
+  const diffMs = now.getTime() - then.getTime();
+  const mins = Math.round(diffMs / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours} hour${hours === 1 ? "" : "s"} ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  // Older than a week: a date is more useful than "37 days ago". UTC-pinned so
+  // it can't shift a day depending on where this renders.
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    ...(days > 300 ? { year: "numeric" } : {}),
+    timeZone: "UTC",
+  }).format(then);
+}
+
+/** Staff-facing timestamp. Pinned and labelled, so ops can compare log lines. */
+export function formatOpsTimestamp(value: DateValue): string {
+  return (
+    new Intl.DateTimeFormat("en-US", {
+      dateStyle: "medium",
+      timeStyle: "short",
+      timeZone: "UTC",
+    }).format(new Date(value)) + " UTC"
   );
 }

@@ -14,21 +14,10 @@ import {
 
 export const dynamic = "force-dynamic";
 
-const ACT_KIND_LABEL: Record<string, string> = {
-  band: "Band",
-  solo: "Solo act",
-  comedian: "Comedian",
-  other: "Other",
-};
-
 import {
+  GEAR_LABELS,
+  ACT_KIND_LABEL,
   GIG_FORMAT_LABEL, VENUE_KIND_LABEL } from "@/lib/labels";
-
-const GEAR_LABEL: Record<string, string> = {
-  none: "Labor only — no rig",
-  partial: "Partial rig",
-  full_rig: "Full PA rig",
-};
 
 export default async function MePage() {
   const userId = await sessionUserId();
@@ -98,7 +87,7 @@ export default async function MePage() {
             </p>
           )}
           <details>
-            <summary className="muted" style={{ cursor: "pointer" }}>Edit profile</summary>
+            <summary className="muted">Edit profile</summary>
             <ApiForm
               endpoint={`/api/performers/${performer.id}`}
               method="PATCH"
@@ -151,7 +140,7 @@ export default async function MePage() {
       <div className="card">
         <h2>Venue</h2>
         <details>
-          <summary className="muted" style={{ cursor: "pointer" }}>
+          <summary className="muted">
             Music licensing for live performances
           </summary>
           <div className="muted" style={{ marginTop: 8 }}>
@@ -234,7 +223,7 @@ export default async function MePage() {
             </div>
           )}
           <details>
-            <summary className="muted" style={{ cursor: "pointer" }}>Edit details</summary>
+            <summary className="muted">Edit details</summary>
             <ApiForm
               endpoint={`/api/venues/${venue.id}`}
               method="PATCH"
@@ -316,12 +305,12 @@ export default async function MePage() {
           <>
           <p>
             <strong>{tech.name}</strong>{" "}
-            <span className="badge">{GEAR_LABEL[tech.gear] ?? tech.gear}</span>
+            <span className="badge">{GEAR_LABELS[tech.gear] ?? tech.gear}</span>
             <br />
             <span className="muted">{tech.bio}</span>
           </p>
           <details>
-            <summary className="muted" style={{ cursor: "pointer" }}>Edit profile</summary>
+            <summary className="muted">Edit profile</summary>
             <ApiForm
               endpoint={`/api/techs/${tech.id}`}
               method="PATCH"

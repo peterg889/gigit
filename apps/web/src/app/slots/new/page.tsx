@@ -54,7 +54,7 @@ export default async function NewSlotPage() {
 
     <div className="card">
       <details>
-        <summary style={{ cursor: "pointer" }}>
+        <summary>
           <strong>Make it a series</strong>{" "}
           <span className="muted">— weekly music night, first-Tuesday comedy</span>
         </summary>

@@ -1,6 +1,7 @@
 import { db, schema } from "@gigit/db";
 import { asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
+import { formatOpsTimestamp } from "@/lib/date-time";
 import { isAdmin } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 
@@ -87,7 +88,7 @@ export default async function SupportQueuePage({
               {request.message.length > 240 ? "…" : ""}
             </p>
             <p className="muted">
-              {contact} · {request.createdAt.toLocaleString()}
+              {contact} · {formatOpsTimestamp(request.createdAt)}
             </p>
             {request.requesterUserId && (
               <p className="muted">

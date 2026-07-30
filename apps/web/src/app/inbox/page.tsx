@@ -1,6 +1,7 @@
 import { db, schema } from "@gigit/db";
 import { desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
+import { formatRelativeTime } from "@/lib/date-time";
 import { sessionUserId } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
@@ -58,7 +59,7 @@ export default async function InboxPage() {
             <span className="badge">{threadScopeLabel(t.scope)}</span>
           </Link>{" "}
           <span className="muted">
-            {t.createdAt.toLocaleDateString("en-US", { dateStyle: "medium" })}
+            {formatRelativeTime(t.createdAt)}
           </span>
         </div>
       ))}

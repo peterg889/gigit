@@ -6,20 +6,9 @@
  */
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+
+import { ACT_KIND_LABEL, GIG_FORMAT_LABEL } from "@/lib/labels";
 import { formatVenueDateTime } from "@/lib/date-time";
-
-const ACT_TYPE_LABELS: Record<string, string> = {
-  band: "Band",
-  solo: "Solo act",
-  comedian: "Comedian",
-  other: "Other",
-};
-
-const FORMAT_LABELS: Record<string, string> = {
-  music: "Music",
-  comedy: "Comedy",
-  either: "Music or comedy",
-};
 
 async function post(url: string, body: unknown, method: "POST" | "PATCH" = "POST") {
   const res = await fetch(url, {
@@ -94,7 +83,7 @@ export function ProfileIngestWidget() {
             onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
           >
             {["band", "solo", "comedian", "other"].map((k) => (
-              <option key={k} value={k}>{ACT_TYPE_LABELS[k]}</option>
+              <option key={k} value={k}>{ACT_KIND_LABEL[k]}</option>
             ))}
           </select>
           <label>Bio</label>
@@ -194,7 +183,7 @@ export function SlotParseWidget({ timeZone }: { timeZone: string }) {
           )}
           <p>
             <span className="badge">
-              {FORMAT_LABELS[draft.format] ?? draft.format}
+              {GIG_FORMAT_LABEL[draft.format] ?? draft.format}
             </span>{" "}
             {formatVenueDateTime(draft.startsAt, timeZone, "full")}{" "}
             · {draft.durationMinutes} min ·{" "}

@@ -1,4 +1,5 @@
 import { db, schema } from "@gigit/db";
+import { formatRelativeTime } from "@/lib/date-time";
 import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { DeactivateAccount } from "@/components/DeactivateAccount";
@@ -38,7 +39,7 @@ export default async function AccountPage() {
         <h2>Sign-in details</h2>
         <p>{user?.email ?? user?.phone ?? "No sign-in address on file"}</p>
         <p className="muted">
-          Member since {user?.createdAt.toLocaleDateString("en-US", { dateStyle: "medium" })}.
+          Member since {user && formatRelativeTime(user.createdAt)}.
           To change your sign-in address, <Link href="/help">contact support</Link>.
         </p>
         <form action="/api/auth/logout" method="post">

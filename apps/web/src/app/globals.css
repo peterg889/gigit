@@ -8,6 +8,10 @@
   --panel: #211807;       /* chipboard card */
   --panel-deep: #1b1306;  /* nested card */
   --line: #43331a;        /* rule lines, like ink on kraft */
+  /* Interactive boundaries need 3:1 against their background (WCAG 1.4.11).
+     --line is 1.54:1 on --room, which made every form field a faint smudge
+     indistinguishable from the card behind it. */
+  --line-strong: #7d6234;
   --ink: #f3e8d2;         /* cream — paper, reversed out */
   --muted: #a9986f;
   --amber: #ffb53f;       /* the stage light; also: the money */
@@ -269,19 +273,24 @@ button.quiet[disabled]:hover { background: transparent; }
 /* ── Forms: a clipboard backstage ── */
 input, select, textarea {
   width: 100%;
-  padding: 9px 11px;
+  padding: 11px 12px;
   margin: 4px 0 14px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-strong);
   border-radius: 2px;
-  background: var(--room);
+  /* One step off both --room and --panel, so a field reads as a field whether
+     it sits on the page or inside a card (it used to be 1.11:1 on --panel). */
+  background: #100b05;
   color: var(--ink);
   font: inherit;
 }
-input::placeholder, textarea::placeholder { color: rgba(169, 152, 111, 0.55); }
-input:focus, select:focus, textarea:focus {
-  outline: none;
+input::placeholder, textarea::placeholder { color: rgba(169, 152, 111, 0.8); }
+/* `outline: none` on input:focus (0,1,1) out-specifies the global
+   :focus-visible ring (0,1,0), so fields got a ~1.5:1 1px hint while every
+   other control got a 3px amber ring. Keep the ring here too. */
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 3px solid var(--amber-hot, var(--amber));
+  outline-offset: 1px;
   border-color: var(--amber);
-  box-shadow: 0 0 0 3px rgba(255, 181, 63, 0.18);
 }
 label {
   font-family: var(--font-mono);
@@ -486,4 +495,11 @@ button.danger[disabled]:hover { background: #8f2f24; }
   color: var(--ink);
   font-size: 0.94rem;
   letter-spacing: 0.01em;
+}
+
+/* Six pages set style={{ cursor: "pointer" }} on a <summary> because nothing
+   here did. Also gives the disclosure a real tap target. */
+summary {
+  cursor: pointer;
+  padding: 6px 0;
 }

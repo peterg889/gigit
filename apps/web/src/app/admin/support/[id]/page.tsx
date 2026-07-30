@@ -1,6 +1,7 @@
 import { db, schema } from "@gigit/db";
 import { asc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
+import { formatOpsTimestamp } from "@/lib/date-time";
 import { notFound } from "next/navigation";
 import { SupportCaseActions } from "@/components/SupportCaseActions";
 import { isAdmin } from "@/lib/auth";
@@ -92,7 +93,7 @@ export default async function SupportRequestPage({
         <h2>{row.request.id}</h2>
         <p style={{ whiteSpace: "pre-wrap" }}>{row.request.message}</p>
         <p className="muted">
-          Submitted {row.request.createdAt.toLocaleString()} ·{" "}
+          Submitted {formatOpsTimestamp(row.request.createdAt)} ·{" "}
           {friendly(row.request.escalationReason)}
         </p>
       </div>
@@ -125,12 +126,12 @@ export default async function SupportRequestPage({
         <h2>Ownership</h2>
         <p>Claimed by: {staffLabel(row.request.claimedByUserId)}</p>
         {row.request.claimedAt && (
-          <p className="muted">Claimed {row.request.claimedAt.toLocaleString()}</p>
+          <p className="muted">Claimed {formatOpsTimestamp(row.request.claimedAt)}</p>
         )}
         {row.request.resolvedAt && (
           <>
             <p>Resolved by: {staffLabel(row.request.resolvedByUserId)}</p>
-            <p className="muted">Resolved {row.request.resolvedAt.toLocaleString()}</p>
+            <p className="muted">Resolved {formatOpsTimestamp(row.request.resolvedAt)}</p>
           </>
         )}
       </div>
@@ -142,7 +143,7 @@ export default async function SupportRequestPage({
             <p>
               <span className="badge">{friendly(note.kind)}</span>{" "}
               <strong>{authorEmail ?? authorPhone ?? note.authorUserId}</strong>{" "}
-              <span className="muted">{note.createdAt.toLocaleString()}</span>
+              <span className="muted">{formatOpsTimestamp(note.createdAt)}</span>
             </p>
             {note.body && <p style={{ whiteSpace: "pre-wrap" }}>{note.body}</p>}
           </div>
