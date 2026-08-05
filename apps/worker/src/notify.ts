@@ -105,7 +105,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
   new_application: {
     subject: "An act applied to your slot",
-    body: "New applicant — profile, media, and reviews are all there: {url}",
+    // Deep link to the slot, where the applicant list and the offer button live.
+    // This was a bare {url} — the marketing homepage — on the one email whose
+    // whole job is to close the venue funnel.
+    body: "New applicant — profile, media, and reviews are all there: {url}/slots/{slotId}",
   },
   new_inquiry: {
     subject: "New inquiry",
@@ -133,7 +136,7 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   },
   subslot_new_application: {
     subject: "A sound tech applied",
-    body: "A tech applied to cover this sound job. Review their profile and application: {url}/bookings",
+    body: "A tech applied to cover this sound job. Review their profile and application: {url}/sound/{subslotId}",
   },
   subslot_cancelled: {
     subject: "The sound booking was cancelled",
@@ -314,8 +317,18 @@ export async function notifySubslotParties(
       .where(eq(schema.techs.id, row.techId));
     if (tech) userIds.push(tech.owner);
   }
-  for (const userId of userIds) await notifyUser(userId, template);
+  // The subject's own id, so a template can deep-link. Without this any
+  // {subslotId} rendered as the literal string.
+  for (const userId of userIds)
+    await notifyUser(userId, template, { subslotId });
 }
+
+/**
+ * Every template name. @internal export for copy regressions — a placeholder no
+ * caller supplies renders literally in a real email, which is worse than a bad
+ * link, so the suite enumerates these rather than trusting review.
+ */
+export const TEMPLATE_NAMES = Object.keys(TEMPLATES);
 
 /** Resolve template copy and vars; @internal export for copy regressions. */
 export function renderTemplate(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { renderTemplate } from "./notify.js";
+import { TEMPLATE_NAMES, renderTemplate } from "./notify.js";
 
 describe("notification copy", () => {
   it("explains account deactivation truthfully when platform payments are on", () => {
@@ -29,5 +29,61 @@ describe("notification copy", () => {
     expect(inquiry.body.toLowerCase()).not.toContain("venue");
     expect(message.body).toContain("/inbox/thr_copy_test");
     expect(`${inquiry.body}${message.body}`).not.toContain("{threadId}");
+  });
+});
+
+/**
+ * A placeholder that no caller supplies renders as the literal string —
+ * "{bookingId}" in the body of a real email. That is worse than a wrong link and
+ * invisible to every test that renders one template with the vars it happens to
+ * know about. So enumerate them.
+ *
+ * SUPPLIED is the union of what the notifiers actually pass:
+ *   notifySlotVenue -> slotId            notifyApplicationPerformer -> slotId
+ *   notifyBookingParties -> bookingId, performerName, venueName, autoConfirmHours
+ *   notifySubslotParties -> subslotId    notifyOtp -> code
+ *   review prompt -> bookingId, days     new_act -> performerId
+ *   thread notifies -> threadId          support -> requestId
+ */
+const SUPPLIED = {
+  url: "https://x.test",
+  slotId: "slt_1",
+  bookingId: "bkg_1",
+  subslotId: "sub_1",
+  threadId: "thr_1",
+  performerId: "prf_1",
+  requestId: "spr_1",
+  performerName: "The Bishops",
+  venueName: "Lakefront Taproom",
+  autoConfirmHours: "24",
+  days: "7",
+  code: "424242",
+};
+
+describe("every template resolves", () => {
+  for (const name of TEMPLATE_NAMES)
+    it(`${name} leaves no placeholder unresolved`, () => {
+      for (const paymentsOn of [true, false]) {
+        const { subject, body } = renderTemplate(name, SUPPLIED, paymentsOn);
+        // A stray {foo} means a typo or a var no caller passes.
+        expect(subject).not.toMatch(/\{\w+\}/);
+        expect(body).not.toMatch(/\{\w+\}/);
+      }
+    });
+
+  it("never points a subject-specific email at the marketing homepage", () => {
+    // new_application is the email that closes the venue funnel and it linked to
+    // a bare {url}; subslot_new_application linked to the bookings LIST.
+    const deepLinked = {
+      new_application: "/slots/slt_1",
+      subslot_new_application: "/sound/sub_1",
+      new_inquiry: "/inbox/thr_1",
+      slot_match: "/slots/slt_1",
+      new_act: "/p/prf_1",
+    };
+    for (const [name, path] of Object.entries(deepLinked))
+      expect(renderTemplate(name, SUPPLIED).body).toContain(
+        `https://x.test${path}`,
+      );
   });
 });
