@@ -73,6 +73,24 @@ export const ACT_KIND_LABEL: Record<string, string> = {
   other: "Other act",
 };
 
+// `other` exists in both domains with intentionally different copy. Forms use
+// these labeled options instead of asking a global value-only label map to
+// guess whether `other` means an act or a venue.
+export const ACT_KIND_OPTIONS = [
+  { value: "band", label: ACT_KIND_LABEL.band! },
+  { value: "solo", label: ACT_KIND_LABEL.solo! },
+  { value: "comedian", label: ACT_KIND_LABEL.comedian! },
+  { value: "other", label: ACT_KIND_LABEL.other! },
+];
+
+export const VENUE_KIND_OPTIONS = [
+  { value: "bar", label: VENUE_KIND_LABEL.bar! },
+  { value: "restaurant", label: VENUE_KIND_LABEL.restaurant! },
+  { value: "coffee_shop", label: VENUE_KIND_LABEL.coffee_shop! },
+  { value: "brewery", label: VENUE_KIND_LABEL.brewery! },
+  { value: "other", label: VENUE_KIND_LABEL.other! },
+];
+
 export const SLOT_STATUS_LABELS: Record<string, string> = {
   draft: "Not yet open",
   open: "Open gig",

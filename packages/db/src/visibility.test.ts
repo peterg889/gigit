@@ -25,13 +25,16 @@ describe("profile visibility follows the account", () => {
       id: performerId, ownerUserId: userId, kind: "band", name: "Vis Act", homeMetro: "vis-tv",
     });
     await db().insert(schema.venues).values({
-    addressLine1: "1 Test St",
-    city: "Milwaukee",
-    region: "WI",
-    postalCode: "53202",
-    timeZone: "America/Chicago",
-      id: venueId, ownerUserId: userId, kind: "bar", name: "Vis Room", metro: "vis-tv",
-      addressLine1: "123 Private St", city: "Milwaukee", region: "WI", postalCode: "53202",
+      id: venueId,
+      ownerUserId: userId,
+      kind: "bar",
+      name: "Vis Room",
+      metro: "vis-tv",
+      addressLine1: "123 Private St",
+      city: "Milwaukee",
+      region: "WI",
+      postalCode: "53202",
+      timeZone: "America/Chicago",
     });
     await db().insert(schema.techs).values({
       id: techId, ownerUserId: userId, name: "Vis Tech", gear: "full_rig",
@@ -73,10 +76,14 @@ describe("profile visibility follows the account", () => {
     });
   });
 
-  it("setProfileVisibility can hide and restore (admin suspend / reinstate)", async () => {
+  it("setProfileVisibility can suspend and restore all current profiles", async () => {
     const ids = await seedOwner();
-    await setProfileVisibility(ids.userId, "hidden");
-    expect((await statuses(ids)).venue).toBe("hidden");
+    await setProfileVisibility(ids.userId, "suspended");
+    expect(await statuses(ids)).toEqual({
+      performer: "suspended",
+      venue: "suspended",
+      tech: "suspended",
+    });
     await setProfileVisibility(ids.userId, "live");
     expect(await statuses(ids)).toEqual({ performer: "live", venue: "live", tech: "live" });
   });

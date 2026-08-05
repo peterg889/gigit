@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { newId } from "@gigit/domain";
 import { closeDb, createOffer, db, schema } from "@gigit/db";
 
@@ -100,14 +100,59 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
     const [s] = await db().select().from(schema.slots).where(eq(schema.slots.id, id));
     expect(s!.budgetCents).toBe(45_000);
     expect(s!.notes).toBe("earlier set");
+
+    expect((await patchReq(id, { notes: "" })).status).toBe(200);
+    const [reloaded] = await db()
+      .select({ notes: schema.slots.notes })
+      .from(schema.slots)
+      .where(eq(schema.slots.id, id));
+    expect(reloaded?.notes).toBe("");
   });
 
-  it("owner closes an open slot → status 'cancelled'", async () => {
+  it("owner closes an open slot and resolves its pending applications", async () => {
     sessionUserId.mockResolvedValue(owner);
     const id = await openSlot();
+    const applicationId = newId("application");
+    await db().insert(schema.applications).values({
+      id: applicationId,
+      slotId: id,
+      performerId: pId,
+    });
+
     expect((await deleteReq(id)).status).toBe(200);
     const [s] = await db().select().from(schema.slots).where(eq(schema.slots.id, id));
     expect(s!.status).toBe("cancelled");
+    const [application] = await db()
+      .select({
+        status: schema.applications.status,
+        reason: schema.applications.declineReason,
+      })
+      .from(schema.applications)
+      .where(eq(schema.applications.id, applicationId));
+    expect(application).toEqual({
+      status: "declined",
+      reason: "slot_cancelled",
+    });
+    const [event] = await db()
+      .select({ payload: schema.events.payload })
+      .from(schema.events)
+      .where(
+        and(
+          eq(schema.events.subjectId, id),
+          eq(schema.events.kind, "application.declined"),
+        ),
+      );
+    expect(event?.payload).toMatchObject({
+      applicationId,
+      reason: "slot_cancelled",
+      effects: [
+        {
+          kind: "notify",
+          template: "application_cancelled",
+          to: "performer",
+        },
+      ],
+    });
   });
 
   it("a non-owner can neither edit nor close (403, no IDOR)", async () => {
@@ -130,7 +175,7 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
     expect((await deleteReq(await openSlot())).status).toBe(401);
   });
 
-  it("won't close a slot that has an outstanding offer (409 — no orphaned booking)", async () => {
+  it("won't edit or close a slot held by an offered or confirming booking", async () => {
     const id = await openSlot();
     const appId = newId("application");
     const [advertisedSlot] = await db()
@@ -139,7 +184,7 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
       .where(eq(schema.slots.id, id));
     const startsAt = advertisedSlot!.startsAt;
     await db().insert(schema.applications).values({ id: appId, slotId: id, performerId: pId });
-    await createOffer({
+    const bookingId = await createOffer({
       applicationId: appId,
       slotId: id,
       performerId: pId,
@@ -152,6 +197,13 @@ describe("slot lifecycle route — edit/close + authz (audit #11)", () => {
       },
     });
     sessionUserId.mockResolvedValue(owner);
+    expect((await patchReq(id, { budgetCents: 50_000 })).status).toBe(409);
+    expect((await deleteReq(id)).status).toBe(409);
+
+    await db()
+      .update(schema.bookings)
+      .set({ state: "confirming" })
+      .where(eq(schema.bookings.id, bookingId));
     expect((await patchReq(id, { budgetCents: 50_000 })).status).toBe(409);
     expect((await deleteReq(id)).status).toBe(409);
     const [s] = await db().select().from(schema.slots).where(eq(schema.slots.id, id));

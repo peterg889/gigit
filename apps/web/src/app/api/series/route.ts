@@ -16,7 +16,7 @@ export async function POST(req: Request) {
     if (!venueLocationIsComplete(venue))
       return fail(
         "venue_location_required",
-        "add your venue address and timezone before starting a series",
+        "Add your venue address and time zone before starting a series.",
         409,
       );
 

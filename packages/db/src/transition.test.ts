@@ -3,9 +3,14 @@ import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, db } from "./client.js";
 import {
+  AccountUnavailableError,
+  MarketplaceProfileUnavailableError,
+} from "./account-gate.js";
+import {
   ConcurrentUpdateError,
   IllegalTransitionError,
   OfferExpiredError,
+  PaymentReferenceConflictError,
   PerformerUnavailableError,
   SlotUnavailableError,
   createOffer,
@@ -15,8 +20,11 @@ import {
   applications,
   bookings,
   events,
+  ledgerEntries,
   performers,
   slots,
+  threadParticipants,
+  threads,
   users,
   venues,
 } from "./schema.js";
@@ -126,6 +134,30 @@ describe("booking transition runner (integration)", () => {
       .from(bookings)
       .where(eq(bookings.id, bookingId));
     expect(offered!.agreementTemplateVer).toBe(AGREEMENT_TEMPLATE_VERSION);
+
+    const [thread] = await d
+      .select({
+        id: threads.id,
+        createdByUserId: threads.createdByUserId,
+      })
+      .from(threads)
+      .where(eq(threads.subjectId, bookingId));
+    expect(thread).toMatchObject({ createdByUserId: userVenue });
+    const participants = await d
+      .select({ userId: threadParticipants.userId })
+      .from(threadParticipants)
+      .where(eq(threadParticipants.threadId, thread!.id));
+    expect(participants.map((row) => row.userId).sort()).toEqual(
+      [userVenue, userBand].sort(),
+    );
+    const [threadOpened] = await d
+      .select({ kind: events.kind, payload: events.payload })
+      .from(events)
+      .where(eq(events.subjectId, thread!.id));
+    expect(threadOpened).toMatchObject({
+      kind: "thread.booking_opened",
+      payload: { bookingId },
+    });
 
     const accept = await runBookingTransition(
       bookingId,
@@ -310,6 +342,260 @@ describe("booking transition runner (integration)", () => {
     expect(b!.expires.getTime()).toBeGreaterThan(Date.now() + 71 * 3_600_000);
   });
 
+  it("uses downbeat as the hard deadline for a live close-in offer", async () => {
+    const d = db();
+    const startsAt = new Date(Date.now() + 30 * 60_000);
+    const { slotId, appId, rivalAppId } =
+      await makeSlotWithApplications(startsAt);
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    const [booking] = await d
+      .select({ expiresAt: bookings.offerExpiresAt })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    expect(booking!.expiresAt.getTime()).toBeGreaterThan(Date.now());
+    expect(booking!.expiresAt.getTime()).toBeLessThanOrEqual(startsAt.getTime());
+
+    await expect(
+      runBookingTransition(
+        bookingId,
+        { kind: "PERFORMER_ACCEPTED" },
+        userBand,
+        startsAt,
+      ),
+    ).rejects.toBeInstanceOf(OfferExpiredError);
+
+    const afterDownbeat = new Date(startsAt.getTime() + 1);
+    const collapsed = await runBookingTransition(
+      bookingId,
+      { kind: "OFFER_EXPIRED" },
+      "worker",
+      afterDownbeat,
+    );
+    expect(collapsed.to).toBe("collapsed");
+    const [slot] = await d.select().from(slots).where(eq(slots.id, slotId));
+    expect(slot!.status).toBe("expired");
+    const applicationRows = await d
+      .select({ id: applications.id, status: applications.status, reason: applications.declineReason })
+      .from(applications)
+      .where(eq(applications.slotId, slotId));
+    expect(applicationRows).toEqual(
+      expect.arrayContaining([
+        { id: appId, status: "declined", reason: "slot_expired" },
+        { id: rivalAppId, status: "declined", reason: "slot_expired" },
+      ]),
+    );
+  });
+
+  it("refuses a past open slot even before the expiry sweep reaches it", async () => {
+    const d = db();
+    const startsAt = new Date(Date.now() - 60_000);
+    const { slotId, appId } = await makeSlotWithApplications(startsAt);
+
+    await expect(offerFor(slotId, appId, startsAt)).rejects.toBeInstanceOf(
+      SlotUnavailableError,
+    );
+    const [application] = await d
+      .select({ status: applications.status })
+      .from(applications)
+      .where(eq(applications.id, appId));
+    expect(application!.status).toBe("submitted");
+    const existing = await d
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(eq(bookings.slotId, slotId));
+    expect(existing).toHaveLength(0);
+  });
+
+  it("collapses and refunds immediately when payment arrives after downbeat", async () => {
+    const d = db();
+    const { slotId, appId, rivalAppId, startsAt } =
+      await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await d.update(slots).set({ status: "expired" }).where(eq(slots.id, slotId));
+    const afterDownbeat = new Date(startsAt.getTime() + 1);
+
+    const late = await runBookingTransition(
+      bookingId,
+      { kind: "PAYMENT_SUCCEEDED" },
+      "worker",
+      afterDownbeat,
+    );
+    expect(late.to).toBe("collapsed");
+    expect(late.effects).toContainEqual({
+      kind: "refund_funds",
+      amountCents: 50_000,
+    });
+    expect(late.effects).toContainEqual({
+      kind: "notify",
+      template: "payment_late_refunded",
+      to: "both",
+    });
+    const [closed] = await d
+      .select({ state: bookings.state })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    expect(closed!.state).toBe("collapsed");
+    const money = await d
+      .select({ type: ledgerEntries.entryType, amount: ledgerEntries.amountCents })
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.bookingId, bookingId))
+      .orderBy(asc(ledgerEntries.id));
+    expect(money).toEqual([
+      { type: "charge", amount: 50_000 },
+      { type: "refund", amount: 50_000 },
+    ]);
+    const [slot] = await d.select().from(slots).where(eq(slots.id, slotId));
+    expect(slot!.status).toBe("expired");
+    const applicationRows = await d
+      .select({ id: applications.id, status: applications.status, reason: applications.declineReason })
+      .from(applications)
+      .where(eq(applications.slotId, slotId));
+    expect(applicationRows).toEqual(
+      expect.arrayContaining([
+        { id: appId, status: "declined", reason: "slot_expired" },
+        { id: rivalAppId, status: "declined", reason: "slot_expired" },
+      ]),
+    );
+  });
+
+  it("ledgers and refunds success delivered after a payment-window collapse exactly once", async () => {
+    const d = db();
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    const paymentRef = `pi_late_${bookingId}`;
+
+    const afterDownbeat = new Date(startsAt.getTime() + 1);
+    const timedOut = await runBookingTransition(
+      bookingId,
+      { kind: "PAYMENT_FAILED", reason: "payment_window_closed" },
+      "worker",
+      afterDownbeat,
+    );
+    expect(timedOut.to).toBe("collapsed");
+    const historyBeforeSuccess = await d
+      .select({ payload: events.payload })
+      .from(events)
+      .where(eq(events.subjectId, bookingId))
+      .orderBy(asc(events.id));
+    expect(historyBeforeSuccess.at(-1)?.payload).toMatchObject({
+      event: "PAYMENT_FAILED",
+      from: "confirming",
+      to: "collapsed",
+      reason: "payment_window_closed",
+    });
+
+    const compensated = await runBookingTransition(
+      bookingId,
+      { kind: "PAYMENT_SUCCEEDED", paymentRef },
+      "stripe",
+      new Date(afterDownbeat.getTime() + 1),
+    );
+    expect(compensated).toMatchObject({ from: "collapsed", to: "collapsed" });
+    expect(compensated.effects).toContainEqual({
+      kind: "refund_funds",
+      amountCents: 50_000,
+    });
+    const money = await d
+      .select({
+        type: ledgerEntries.entryType,
+        amount: ledgerEntries.amountCents,
+        paymentRef: ledgerEntries.paymentRef,
+      })
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.bookingId, bookingId))
+      .orderBy(asc(ledgerEntries.id));
+    expect(money).toEqual([
+      {
+        type: "charge",
+        amount: 50_000,
+        paymentRef,
+      },
+      { type: "refund", amount: 50_000, paymentRef: null },
+    ]);
+    const [persisted] = await d
+      .select({ paymentRef: bookings.paymentRef })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    expect(persisted?.paymentRef).toBe(paymentRef);
+
+    await expect(
+      runBookingTransition(
+        bookingId,
+        { kind: "PAYMENT_SUCCEEDED", paymentRef },
+        "stripe",
+        new Date(afterDownbeat.getTime() + 2),
+      ),
+    ).rejects.toBeInstanceOf(IllegalTransitionError);
+    const moneyAfterReplay = await d
+      .select({ type: ledgerEntries.entryType })
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.bookingId, bookingId));
+    expect(moneyAfterReplay).toHaveLength(2);
+  });
+
+  it("rejects a success for a different provider payment without changing money or state", async () => {
+    const d = db();
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, userBand);
+    await d
+      .update(bookings)
+      .set({ paymentRef: `pi_original_${bookingId}` })
+      .where(eq(bookings.id, bookingId));
+
+    await expect(
+      runBookingTransition(
+        bookingId,
+        { kind: "PAYMENT_SUCCEEDED", paymentRef: `pi_conflict_${bookingId}` },
+        "stripe",
+      ),
+    ).rejects.toBeInstanceOf(PaymentReferenceConflictError);
+
+    const [unchanged] = await d
+      .select({ state: bookings.state, paymentRef: bookings.paymentRef })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    expect(unchanged).toEqual({
+      state: "confirming",
+      paymentRef: `pi_original_${bookingId}`,
+    });
+    const money = await d
+      .select({ id: ledgerEntries.id })
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.bookingId, bookingId));
+    expect(money).toHaveLength(0);
+  });
+
+  it("does not treat an arbitrary collapsed offer as a late successful charge", async () => {
+    const d = db();
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await runBookingTransition(
+      bookingId,
+      { kind: "PERFORMER_DECLINED" },
+      userBand,
+    );
+    await d
+      .update(bookings)
+      .set({ paymentRef: `pi_unrelated_${bookingId}` })
+      .where(eq(bookings.id, bookingId));
+
+    await expect(
+      runBookingTransition(
+        bookingId,
+        { kind: "PAYMENT_SUCCEEDED" },
+        "stripe",
+      ),
+    ).rejects.toBeInstanceOf(IllegalTransitionError);
+    const money = await d
+      .select({ id: ledgerEntries.id })
+      .from(ledgerEntries)
+      .where(eq(ledgerEntries.bookingId, bookingId));
+    expect(money).toHaveLength(0);
+  });
+
   it("venue cancellation inside 48h records a 100% fee", async () => {
     const d = db();
     const slotId = newId("slot");
@@ -439,6 +725,111 @@ describe("booking transition runner (integration)", () => {
     // worth pinning is that the room's own zone is what gets captured.
     expect(firstRow!.terms.timeZone).toBe("America/Chicago");
     expect(rivalApplication!.status).toBe("submitted");
+  });
+
+  it("rejects a second offer without taking the slot from payment confirmation", async () => {
+    const { slotId, appId, rivalAppId, startsAt } =
+      await makeSlotWithApplications();
+    const terms = {
+      amountCents: 50_000,
+      startsAt: startsAt.toISOString(),
+      endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+    };
+    const bookingId = await createOffer({
+      applicationId: appId,
+      slotId,
+      performerId,
+      venueId,
+      actor: userVenue,
+      terms,
+    });
+    await runBookingTransition(
+      bookingId,
+      { kind: "PERFORMER_ACCEPTED" },
+      userBand,
+    );
+
+    let announceBookingLock!: () => void;
+    const bookingLocked = new Promise<void>((resolve) => {
+      announceBookingLock = resolve;
+    });
+    let releasePayment!: () => void;
+    const paymentMayFillSlot = new Promise<void>((resolve) => {
+      releasePayment = resolve;
+    });
+    const payment = runBookingTransition(
+      bookingId,
+      { kind: "PAYMENT_SUCCEEDED", paymentRef: `pi_lock_${bookingId}` },
+      "worker",
+      new Date(),
+      undefined,
+      {
+        afterBookingLock: async () => {
+          announceBookingLock();
+          await paymentMayFillSlot;
+        },
+      },
+    );
+    await bookingLocked;
+
+    let announceSlotLock!: () => void;
+    const rivalReachedSlotLock = new Promise<void>((resolve) => {
+      announceSlotLock = resolve;
+    });
+    const rivalOffer = createOffer({
+      applicationId: rivalAppId,
+      slotId,
+      performerId: rivalPerformerId,
+      venueId,
+      actor: userVenue,
+      terms,
+      lifecycleHooks: {
+        afterSlotLock: async () => announceSlotLock(),
+      },
+    });
+    const rivalOutcome = rivalOffer.then(
+      () => "offer_fulfilled" as const,
+      () => "offer_rejected" as const,
+    );
+
+    // No timers: either the pre-check rejects, or the old inverted path takes
+    // the slot and announces it. Holding booking while awaiting this race makes
+    // the regression deterministic instead of hoping PostgreSQL schedules two
+    // ordinary promises in the problematic order.
+    let firstOutcome:
+      | "offer_fulfilled"
+      | "offer_rejected"
+      | "slot_locked"
+      | undefined;
+    try {
+      firstOutcome = await Promise.race([
+        rivalOutcome,
+        rivalReachedSlotLock.then(() => "slot_locked" as const),
+      ]);
+    } finally {
+      releasePayment();
+    }
+
+    const [paymentResult, rivalResult] = await Promise.allSettled([
+      payment,
+      rivalOffer,
+    ]);
+    expect(firstOutcome).toBe("offer_rejected");
+    expect(paymentResult.status).toBe("fulfilled");
+    expect(rivalResult.status).toBe("rejected");
+    if (rivalResult.status === "rejected")
+      expect(rivalResult.reason).toBeInstanceOf(SlotUnavailableError);
+
+    const [slot] = await db()
+      .select({ status: slots.status })
+      .from(slots)
+      .where(eq(slots.id, slotId));
+    expect(slot?.status).toBe("filled");
+    const [rivalApplication] = await db()
+      .select({ status: applications.status })
+      .from(applications)
+      .where(eq(applications.id, rivalAppId));
+    expect(rivalApplication?.status).toBe("declined");
   });
 
   it("createOffer rejects terms whose endsAt is not after startsAt", async () => {
@@ -723,6 +1114,95 @@ describe("booking transition runner (integration)", () => {
         new Date(Date.now() + 2 * 3_600_000),
       ),
     ).rejects.toBeInstanceOf(OfferExpiredError);
+  });
+
+  it("rejects offers to a hidden profile without changing the application", async () => {
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    await db()
+      .update(performers)
+      .set({ status: "hidden" })
+      .where(eq(performers.id, performerId));
+    try {
+      await expect(offerFor(slotId, appId, startsAt)).rejects.toBeInstanceOf(
+        MarketplaceProfileUnavailableError,
+      );
+    } finally {
+      await db()
+        .update(performers)
+        .set({ status: "live" })
+        .where(eq(performers.id, performerId));
+    }
+    const [application] = await db()
+      .select({ status: applications.status })
+      .from(applications)
+      .where(eq(applications.id, appId));
+    expect(application?.status).toBe("submitted");
+    const created = await db()
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(eq(bookings.slotId, slotId));
+    expect(created).toHaveLength(0);
+  });
+
+  for (const status of ["suspended", "deleted"] as const) {
+    it(`rejects offers when the performer owner is ${status}`, async () => {
+      const { slotId, appId, startsAt } = await makeSlotWithApplications();
+      await db()
+        .update(users)
+        .set({ status })
+        .where(eq(users.id, userBand));
+      try {
+        await expect(offerFor(slotId, appId, startsAt)).rejects.toBeInstanceOf(
+          AccountUnavailableError,
+        );
+      } finally {
+        await db()
+          .update(users)
+          .set({ status: "active" })
+          .where(eq(users.id, userBand));
+      }
+      const created = await db()
+        .select({ id: bookings.id })
+        .from(bookings)
+        .where(eq(bookings.slotId, slotId));
+      expect(created).toHaveLength(0);
+    });
+  }
+
+  it("rejects acceptance after the venue is suspended at commit time", async () => {
+    const { slotId, appId, startsAt } = await makeSlotWithApplications();
+    const bookingId = await offerFor(slotId, appId, startsAt);
+    await db()
+      .update(users)
+      .set({ status: "suspended" })
+      .where(eq(users.id, userVenue));
+    await db()
+      .update(venues)
+      .set({ status: "suspended" })
+      .where(eq(venues.id, venueId));
+    try {
+      await expect(
+        runBookingTransition(
+          bookingId,
+          { kind: "PERFORMER_ACCEPTED" },
+          userBand,
+        ),
+      ).rejects.toBeInstanceOf(AccountUnavailableError);
+    } finally {
+      await db()
+        .update(users)
+        .set({ status: "active" })
+        .where(eq(users.id, userVenue));
+      await db()
+        .update(venues)
+        .set({ status: "live" })
+        .where(eq(venues.id, venueId));
+    }
+    const [booking] = await db()
+      .select({ state: bookings.state })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    expect(booking?.state).toBe("offered");
   });
 
   it("DISPUTE_OPENED persists openedBy + reason into the event log (audit critic #1)", async () => {

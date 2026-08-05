@@ -1,18 +1,26 @@
 import Link from "next/link";
-import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 
 export const dynamic = "force-dynamic";
 
 export default async function HomePage() {
   const userId = await sessionUserId();
-  const [performer, venue, tech] = userId
-    ? await Promise.all([
-        performerOwnedBy(userId),
-        venueOwnedBy(userId),
-        techOwnedBy(userId),
-      ])
-    : [null, null, null];
+  const profiles = userId ? await profileCapabilitiesOwnedBy(userId) : null;
+  const performer = profiles?.live.performer ?? null;
+  const venue = profiles?.live.venue ?? null;
+  const tech = profiles?.live.tech ?? null;
+  const hasOwnedProfile = Boolean(
+    profiles?.owned.performer || profiles?.owned.venue || profiles?.owned.tech,
+  );
+  const accountActive = profiles?.accountStatus === "active";
+  const heroAction = !userId
+    ? { href: "/onboarding?role=venue", label: "Start as a venue" }
+    : !accountActive
+      ? { href: "/account", label: "Review account" }
+      : hasOwnedProfile
+        ? { href: "/me", label: "Your profiles" }
+        : { href: "/onboarding", label: "Get started" };
 
   return (
     <div className="landing">
@@ -26,8 +34,8 @@ export default async function HomePage() {
         </p>
         <div className="button-row">
           <Link className="btn" href="/slots">See open gigs</Link>
-          <Link className="btn secondary" href={userId ? "/onboarding" : "/onboarding?role=venue"}>
-            {userId ? "Get started" : "Start as a venue"}
+          <Link className="btn secondary" href={heroAction.href}>
+            {heroAction.label}
           </Link>
         </div>
         <p className="trust-line">
@@ -56,7 +64,12 @@ export default async function HomePage() {
         <section className="card welcome-card">
           <span className="badge">Welcome back</span>
           <h2>Your next move</h2>
-          {!performer && !venue && !tech ? (
+          {!accountActive ? (
+            <p>
+              Your account is not active, so marketplace actions are unavailable.{" "}
+              <Link href="/account">Review your account</Link> or contact support.
+            </p>
+          ) : !hasOwnedProfile ? (
             <p>
               Your account is ready. <Link href="/onboarding">Tell us what you do</Link>{" "}
               to create your first profile.
@@ -66,6 +79,9 @@ export default async function HomePage() {
               {venue && <Link className="btn" href="/slots/new">Post an open date</Link>}
               {performer && <Link className="btn" href="/slots">Find a gig</Link>}
               {tech && <Link className="btn" href="/bookings">View sound work</Link>}
+              {!venue && !performer && !tech && (
+                <Link className="btn" href="/me">Review profiles</Link>
+              )}
               <Link className="btn secondary" href="/bookings">Bookings</Link>
             </div>
           )}

@@ -3,8 +3,13 @@ import { MONEY_SETTLED_STATES } from "@gigit/domain";
  * Nightly money reconciliation (engineering-spec §5 invariants, §12):
  *
  *  A. Ledger self-consistency — for every booking in a terminal state:
- *       Σ charge == Σ (release + refund + fee)        (invariant 1)
- *       any release/refund/fee implies a prior charge (invariant 2)
+ *       Σ charge == Σ base settlement (release + refund + fee) (invariant 1)
+ *       any settlement/adjustment implies a prior charge       (invariant 2)
+ *
+ * Manual `adjustment` rows are explicit extra movements, not part of the
+ * booking contract's base conservation equation. Including them let an
+ * adjustment hide a short settlement and made every legitimate goodwill
+ * payment on an already-balanced booking page forever.
  *  B. Stripe cross-check (when configured) — every ledger charge's
  *     paymentRef must exist and be succeeded on Stripe.
  *
@@ -30,13 +35,13 @@ export async function reconcileMoney(): Promise<Mismatch[]> {
     `
     select b.id,
            coalesce(sum(l.amount_cents) filter (where l.entry_type = 'charge'), 0) as charged,
-           coalesce(sum(l.amount_cents) filter (where l.entry_type in ('release','refund','fee','adjustment')), 0) as settled
+           coalesce(sum(l.amount_cents) filter (where l.entry_type in ('release','refund','fee')), 0) as settled
       from bookings b
       join ledger_entries l on l.booking_id = b.id
      where b.state = any($1::text[])
      group by b.id
     having coalesce(sum(l.amount_cents) filter (where l.entry_type = 'charge'), 0)
-        <> coalesce(sum(l.amount_cents) filter (where l.entry_type in ('release','refund','fee','adjustment')), 0)`,
+        <> coalesce(sum(l.amount_cents) filter (where l.entry_type in ('release','refund','fee')), 0)`,
     [[...MONEY_SETTLED_STATES]],
   );
   for (const r of unbalanced)

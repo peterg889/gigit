@@ -1,10 +1,17 @@
 import { db, schema } from "@gigit/db";
-import { desc, eq, or } from "drizzle-orm";
+import { desc, eq, inArray, or } from "drizzle-orm";
 import Link from "next/link";
-import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
+import { accountCanAct } from "@/lib/profile-capabilities";
 import { sessionUserId } from "@/lib/session";
-import { ActionButton } from "@/components/ApiForm";
 import { formatVenueDateTime, shortTimeZoneName } from "@/lib/date-time";
+import { declinedApplicationMessage } from "@/lib/slot-display";
+import {
+  isSoundJobActionable,
+  isSoundParentActionable,
+  soundApplicationMessage,
+  soundAssignmentMessage,
+} from "@/lib/sound-display";
 
 export const dynamic = "force-dynamic";
 
@@ -24,15 +31,22 @@ export default async function BookingsPage() {
         <Link href="/login">Sign in</Link> to see your bookings.
       </div>
     );
-  const [performer, venue, tech] = await Promise.all([
-    performerOwnedBy(userId),
-    venueOwnedBy(userId),
-    techOwnedBy(userId),
-  ]);
+  const profiles = await profileCapabilitiesOwnedBy(userId);
+  const { performer, venue, tech } = profiles.owned;
+  const livePerformer = profiles.live.performer;
+  const liveVenue = profiles.live.venue;
+  const liveTech = profiles.live.tech;
+  const accountActive = accountCanAct(profiles.accountStatus);
   if (!performer && !venue && !tech)
     return (
       <div className="card">
-        Create a <Link href="/me">profile</Link> first.
+        {accountActive ? (
+          <>Create a <Link href="/me">profile</Link> first.</>
+        ) : (
+          <>
+            Your account is not active. <Link href="/account">Review your account</Link>.
+          </>
+        )}
       </div>
     );
 
@@ -79,9 +93,14 @@ export default async function BookingsPage() {
           application: schema.techSubslotApplications,
           subslot: schema.techSubslots,
           terms: schema.bookings.terms,
+          bookingState: schema.bookings.state,
           performerName: schema.performers.name,
+          performerProfileStatus: schema.performers.status,
+          performerOwnerUserId: schema.performers.ownerUserId,
           venueName: schema.venues.name,
           venueTimeZone: schema.venues.timeZone,
+          venueProfileStatus: schema.venues.status,
+          venueOwnerUserId: schema.venues.ownerUserId,
         })
         .from(schema.techSubslotApplications)
         .innerJoin(schema.techSubslots, eq(schema.techSubslotApplications.subslotId, schema.techSubslots.id))
@@ -91,16 +110,42 @@ export default async function BookingsPage() {
         .where(eq(schema.techSubslotApplications.techId, tech.id))
         .orderBy(desc(schema.techSubslots.createdAt))
     : [];
+  const soundOwnerRows = soundRows.length
+    ? await d
+        .select({ id: schema.users.id, status: schema.users.status })
+        .from(schema.users)
+        .where(
+          inArray(
+            schema.users.id,
+            [
+              ...new Set(
+                soundRows.flatMap((row) => [
+                  row.venueOwnerUserId,
+                  row.performerOwnerUserId,
+                ]),
+              ),
+            ],
+          ),
+        )
+    : [];
+  const soundOwnerStatus = new Map(
+    soundOwnerRows.map((owner) => [owner.id, owner.status]),
+  );
 
   return (
     <div>
       <h1>Bookings</h1>
+      {!accountActive && (
+        <div className="notice">
+          Your account is not active. Booking and application history is read-only.
+        </div>
+      )}
       {rows.length === 0 && soundRows.length === 0 && applicationRows.length === 0 && (
         <div className="card">
           <p>Nothing on your calendar yet.</p>
-          {venue && <p><Link href="/slots/new">Post an open date</Link> to start hearing from acts.</p>}
-          {performer && <p><Link href="/slots">Browse open gigs</Link> and apply when one fits.</p>}
-          {tech && <p><Link href="/techs">See gigs that need sound</Link>.</p>}
+          {liveVenue && <p><Link href="/slots/new">Post an open date</Link> to start hearing from acts.</p>}
+          {livePerformer && <p><Link href="/slots">Browse open gigs</Link> and apply when one fits.</p>}
+          {liveTech && <p><Link href="/techs">See gigs that need sound</Link>.</p>}
         </div>
       )}
       {rows.map(({ booking, performerName, venueName, venueTimeZone }) => {
@@ -129,7 +174,11 @@ export default async function BookingsPage() {
                 {formatVenueDateTime(booking.offerExpiresAt, booking.terms.timeZone ?? venueTimeZone)}{" "}
                 {shortTimeZoneName(booking.offerExpiresAt, booking.terms.timeZone ?? venueTimeZone)}. {" "}
                 <Link href={`/bookings/${booking.id}`}>
-                  {mineAsPerformer ? "Review the deal and respond" : "Review or withdraw the offer"}
+                  {!accountActive
+                    ? "View the firm offer"
+                    : mineAsPerformer
+                      ? "Review the deal and respond"
+                      : "Review or withdraw the offer"}
                 </Link>
               </p>
             )}{" "}
@@ -172,8 +221,12 @@ export default async function BookingsPage() {
               </div>
               {application.status === "declined" && (
                 <p className="muted">
-                  This one went to another act.{" "}
-                  <Link href="/slots">Find another gig</Link>.
+                  {declinedApplicationMessage(application.declineReason)}
+                  {livePerformer && (
+                    <>
+                      {" "}<Link href="/slots">Browse open gigs</Link>.
+                    </>
+                  )}
                 </p>
               )}
             </div>
@@ -184,32 +237,63 @@ export default async function BookingsPage() {
       {soundRows.length > 0 && (
         <>
           <h2>Sound work</h2>
-          {soundRows.map(({ application, subslot, terms, performerName, venueName, venueTimeZone }) => (
-            <div className="card" key={application.id}>
-              <div>
-                <Link href={"/sound/" + subslot.id}>
-                  <strong>{performerName}</strong> at <strong>{venueName}</strong>
-                </Link>{" "}
-                <span className="badge">
-                  {subslot.techId === tech?.id
-                    ? friendlyLabel(SOUND_STATE_LABELS, subslot.state)
-                    : friendlyLabel(SOUND_APPLICATION_LABELS_OWN, application.status)}
-                </span>
+          {soundRows.map(({
+            application,
+            subslot,
+            terms,
+            bookingState,
+            performerName,
+            performerProfileStatus,
+            performerOwnerUserId,
+            venueName,
+            venueTimeZone,
+            venueProfileStatus,
+            venueOwnerUserId,
+          }) => {
+            const availability = {
+              subslotState: subslot.state,
+              bookingState,
+              startsAt: terms.startsAt,
+              venueProfileStatus,
+              performerProfileStatus,
+              venueOwnerStatus:
+                soundOwnerStatus.get(venueOwnerUserId) ?? "missing",
+              performerOwnerStatus:
+                soundOwnerStatus.get(performerOwnerUserId) ?? "missing",
+            };
+            const assignedToMe = subslot.techId === tech?.id;
+            const message = assignedToMe
+              ? soundAssignmentMessage({
+                  subslotState: subslot.state,
+                  bookingState,
+                  parentIsActionable: isSoundParentActionable(availability),
+                })
+              : soundApplicationMessage({
+                  applicationStatus: application.status,
+                  subslotState: subslot.state,
+                  jobIsActionable: isSoundJobActionable(availability),
+                });
+            return (
+              <div className="card" key={application.id}>
+                <div>
+                  <Link href={"/sound/" + subslot.id}>
+                    <strong>{performerName}</strong> at <strong>{venueName}</strong>
+                  </Link>{" "}
+                  <span className="badge">
+                    {assignedToMe
+                      ? friendlyLabel(SOUND_STATE_LABELS, subslot.state)
+                      : friendlyLabel(SOUND_APPLICATION_LABELS_OWN, application.status)}
+                  </span>
+                </div>
+                <div className="gig-line">
+                  {formatVenueDateTime(terms.startsAt, venueTimeZone)}{" "}
+                  {shortTimeZoneName(terms.startsAt, venueTimeZone)}{" "}
+                  · <span className="money">{"$"}{(subslot.budgetCents / 100).toFixed(0)}</span>
+                </div>
+                <p className="muted">{message}</p>
               </div>
-              <div className="gig-line">
-                {formatVenueDateTime(terms.startsAt, venueTimeZone)}{" "}
-                {shortTimeZoneName(terms.startsAt, venueTimeZone)}{" "}
-                · <span className="money">{"$"}{(subslot.budgetCents / 100).toFixed(0)}</span>
-              </div>
-              <p className="muted">
-                {subslot.techId === tech?.id
-                  ? "You are the booked tech. Open for load-in details and contacts."
-                  : application.status === "submitted"
-                    ? "Application pending."
-                    : "This sound job was filled by another tech."}
-              </p>
-            </div>
-          ))}
+            );
+          })}
         </>
       )}
     </div>

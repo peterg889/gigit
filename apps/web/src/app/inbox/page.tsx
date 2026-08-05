@@ -1,8 +1,14 @@
 import { db, schema } from "@gigit/db";
-import { desc, eq, inArray } from "drizzle-orm";
+import { desc, eq, inArray, sql } from "drizzle-orm";
 import Link from "next/link";
-import { formatRelativeTime } from "@/lib/date-time";
+import {
+  formatRelativeTime,
+  formatVenueDateTime,
+  shortTimeZoneName,
+} from "@/lib/date-time";
 import { sessionUserId } from "@/lib/session";
+import { counterpartyLabel } from "@/lib/thread-display";
+import { loadParticipantLabels } from "@/lib/thread-profile-labels";
 
 export const dynamic = "force-dynamic";
 
@@ -26,15 +32,24 @@ export default async function InboxPage() {
       </div>
     );
   const d = db();
-  const mine = d
-    .select({ threadId: schema.threadParticipants.threadId })
-    .from(schema.threadParticipants)
-    .where(eq(schema.threadParticipants.userId, userId));
+  const latestActivity = sql<Date>`coalesce(max(${schema.messages.createdAt}), ${schema.threads.createdAt})`;
   const threads = await d
-    .select()
-    .from(schema.threads)
-    .where(inArray(schema.threads.id, mine))
-    .orderBy(desc(schema.threads.createdAt))
+    .select({
+      id: schema.threads.id,
+      scope: schema.threads.scope,
+      subjectId: schema.threads.subjectId,
+      createdAt: schema.threads.createdAt,
+      lastActivityAt: latestActivity,
+    })
+    .from(schema.threadParticipants)
+    .innerJoin(
+      schema.threads,
+      eq(schema.threadParticipants.threadId, schema.threads.id),
+    )
+    .leftJoin(schema.messages, eq(schema.messages.threadId, schema.threads.id))
+    .where(eq(schema.threadParticipants.userId, userId))
+    .groupBy(schema.threads.id)
+    .orderBy(desc(latestActivity))
     .limit(50);
 
   // A row used to be a scope badge and a date, so a venue with a dozen
@@ -52,43 +67,54 @@ export default async function InboxPage() {
           .from(schema.threadParticipants)
           .where(inArray(schema.threadParticipants.threadId, threadIds)),
         d
-          .select({
+          .selectDistinctOn([schema.messages.threadId], {
             threadId: schema.messages.threadId,
             body: schema.messages.body,
             createdAt: schema.messages.createdAt,
           })
           .from(schema.messages)
           .where(inArray(schema.messages.threadId, threadIds))
-          .orderBy(desc(schema.messages.createdAt)),
+          .orderBy(schema.messages.threadId, desc(schema.messages.createdAt)),
       ])
     : [[], []];
 
   const otherUserIds = [
     ...new Set(participants.filter((p) => p.userId !== userId).map((p) => p.userId)),
   ];
-  const nameByUser = new Map<string, string>();
-  if (otherUserIds.length > 0) {
-    const [perf, ven, tec] = await Promise.all([
-      d.select({ u: schema.performers.ownerUserId, n: schema.performers.name })
-        .from(schema.performers).where(inArray(schema.performers.ownerUserId, otherUserIds)),
-      d.select({ u: schema.venues.ownerUserId, n: schema.venues.name })
-        .from(schema.venues).where(inArray(schema.venues.ownerUserId, otherUserIds)),
-      d.select({ u: schema.techs.ownerUserId, n: schema.techs.name })
-        .from(schema.techs).where(inArray(schema.techs.ownerUserId, otherUserIds)),
-    ]);
-    for (const r of [...perf, ...ven, ...tec])
-      if (r.u && !nameByUser.has(r.u)) nameByUser.set(r.u, r.n);
-  }
+  const nameByUser = await loadParticipantLabels(otherUserIds);
   const otherNameFor = (threadId: string) =>
-    participants
-      .filter((p) => p.threadId === threadId && p.userId !== userId)
-      .map((p) => nameByUser.get(p.userId))
-      .find(Boolean);
+    counterpartyLabel(
+      participants.filter((p) => p.threadId === threadId).map((p) => p.userId),
+      userId,
+      nameByUser,
+    );
   // Ordered desc, so the first hit per thread is the latest message.
   const lastByThread = new Map<string, { body: string; createdAt: Date }>();
   for (const m of lastMessages)
     if (!lastByThread.has(m.threadId))
       lastByThread.set(m.threadId, { body: m.body, createdAt: m.createdAt });
+
+  const bookingIds = threads
+    .filter((thread) => thread.scope === "booking" && thread.subjectId)
+    .map((thread) => thread.subjectId!);
+  const bookingRows = bookingIds.length
+    ? await d
+        .select({
+          id: schema.bookings.id,
+          terms: schema.bookings.terms,
+          performerName: schema.performers.name,
+          venueName: schema.venues.name,
+          venueTimeZone: schema.venues.timeZone,
+        })
+        .from(schema.bookings)
+        .innerJoin(
+          schema.performers,
+          eq(schema.bookings.performerId, schema.performers.id),
+        )
+        .innerJoin(schema.venues, eq(schema.bookings.venueId, schema.venues.id))
+        .where(inArray(schema.bookings.id, bookingIds))
+    : [];
+  const bookingById = new Map(bookingRows.map((row) => [row.id, row]));
 
   return (
     <div>
@@ -109,17 +135,34 @@ export default async function InboxPage() {
       {threads.map((t) => {
         const last = lastByThread.get(t.id);
         const who = otherNameFor(t.id);
+        const booking =
+          t.scope === "booking" && t.subjectId
+            ? bookingById.get(t.subjectId)
+            : undefined;
         return (
           // The whole card is the link now — it used to be the badge alone,
           // a ~17px tap target on a phone.
           <Link className="card thread-row" href={`/inbox/${t.id}`} key={t.id}>
             <strong>{who ?? "Conversation"}</strong>{" "}
             <span className="badge">{threadScopeLabel(t.scope)}</span>
+            {booking && (
+              <p className="gig-line thread-context">
+                {booking.performerName} at {booking.venueName} ·{" "}
+                {formatVenueDateTime(
+                  booking.terms.startsAt,
+                  booking.terms.timeZone ?? booking.venueTimeZone,
+                )}{" "}
+                {shortTimeZoneName(
+                  booking.terms.startsAt,
+                  booking.terms.timeZone ?? booking.venueTimeZone,
+                )}
+              </p>
+            )}
             <p className="muted thread-preview">
               {last?.body?.trim() || "No messages yet."}
             </p>
             <span className="muted">
-              {formatRelativeTime(last?.createdAt ?? t.createdAt)}
+              {formatRelativeTime(last?.createdAt ?? t.lastActivityAt)}
             </span>
           </Link>
         );

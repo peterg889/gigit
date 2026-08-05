@@ -2,6 +2,9 @@ export * from "./client.js";
 export * from "./env.js";
 export * from "./events.js";
 export * from "./transition.js";
+export * from "./invites.js";
+export * from "./slot-cancellation.js";
+export * from "./open-slots.js";
 export * as schema from "./schema.js";
 export * from "./booking-thread.js";
 export * from "./feed.js";
@@ -15,6 +18,7 @@ export * from "./analytics.js";
 export * from "./reliability.js";
 export * from "./support.js";
 export * from "./account.js";
+export * from "./account-gate.js";
 export * from "./reviews.js";
 export * from "./founding.js";
 // Test fixtures. Exported from the package so all three suites share one

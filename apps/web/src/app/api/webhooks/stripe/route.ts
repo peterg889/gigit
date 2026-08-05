@@ -48,7 +48,7 @@ export async function POST(req: Request) {
           await runBookingTransition(
             bookingId,
             event.type === "payment_intent.succeeded"
-              ? { kind: "PAYMENT_SUCCEEDED" }
+              ? { kind: "PAYMENT_SUCCEEDED", paymentRef: pi.id }
               : { kind: "PAYMENT_FAILED", reason: pi.last_payment_error?.code },
             "stripe",
           );

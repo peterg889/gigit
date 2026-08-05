@@ -1,8 +1,9 @@
 import { db, schema } from "@gigit/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
+import { accountCanAct } from "@/lib/profile-capabilities";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
 import {
@@ -16,6 +17,14 @@ import {
   SOUND_STATE_LABELS,
   friendlyLabel,
 } from "@/lib/labels";
+import {
+  equipmentCount,
+  isSoundApplicantBookable,
+  isSoundJobActionable,
+  isSoundParentActionable,
+  isTechSoundCancellationActionable,
+  soundApplicationMessage,
+} from "@/lib/sound-display";
 
 export const dynamic = "force-dynamic";
 
@@ -47,11 +56,37 @@ export default async function SoundBookingPage({
     .where(eq(schema.techSubslots.id, id));
   if (!row) notFound();
 
-  const [myVenue, myPerformer, myTech] = await Promise.all([
-    venueOwnedBy(userId),
-    performerOwnedBy(userId),
-    techOwnedBy(userId),
+  const [profiles, ownerRows] = await Promise.all([
+    profileCapabilitiesOwnedBy(userId),
+    d
+      .select({ id: schema.users.id, status: schema.users.status })
+      .from(schema.users)
+      .where(
+        inArray(schema.users.id, [
+          row.venue.ownerUserId,
+          row.performer.ownerUserId,
+        ]),
+      ),
   ]);
+  const myVenue = profiles.owned.venue;
+  const myPerformer = profiles.owned.performer;
+  const myTech = profiles.owned.tech;
+  const accountActive = accountCanAct(profiles.accountStatus);
+  const ownerStatus = new Map(ownerRows.map((owner) => [owner.id, owner.status]));
+  const soundAvailability = {
+    subslotState: row.subslot.state,
+    bookingState: row.booking.state,
+    startsAt: row.booking.terms.startsAt,
+    venueProfileStatus: row.venue.status,
+    performerProfileStatus: row.performer.status,
+    venueOwnerStatus: ownerStatus.get(row.venue.ownerUserId) ?? "missing",
+    performerOwnerStatus:
+      ownerStatus.get(row.performer.ownerUserId) ?? "missing",
+  };
+  const parentIsActionable = isSoundParentActionable(soundAvailability);
+  const jobIsActionable = isSoundJobActionable(soundAvailability);
+  const cancellationIsActionable =
+    isTechSoundCancellationActionable(soundAvailability);
   const isBookingParty =
     myVenue?.id === row.booking.venueId || myPerformer?.id === row.booking.performerId;
   const isAssignedTech = myTech?.id === row.subslot.techId;
@@ -65,6 +100,8 @@ export default async function SoundBookingPage({
         ))
     : [];
   if (!isBookingParty && !isAssignedTech && !myApplication) notFound();
+  const canSeeOperationalDetails =
+    isBookingParty || isAssignedTech || jobIsActionable;
 
   const payerIsMe = row.subslot.payer === "venue"
     ? myVenue?.id === row.booking.venueId
@@ -81,9 +118,14 @@ export default async function SoundBookingPage({
     : [];
   const applicants = payerIsMe
     ? await d
-        .select({ application: schema.techSubslotApplications, tech: schema.techs })
+        .select({
+          application: schema.techSubslotApplications,
+          tech: schema.techs,
+          techOwnerStatus: schema.users.status,
+        })
         .from(schema.techSubslotApplications)
         .innerJoin(schema.techs, eq(schema.techSubslotApplications.techId, schema.techs.id))
+        .innerJoin(schema.users, eq(schema.techs.ownerUserId, schema.users.id))
         .where(eq(schema.techSubslotApplications.subslotId, id))
     : [];
 
@@ -106,6 +148,11 @@ export default async function SoundBookingPage({
 
   return (
     <div>
+      {!accountActive && (
+        <div className="notice">
+          Your account is not active. This sound-booking history is read-only.
+        </div>
+      )}
       <div className="card">
         <h1>
           Sound for {row.performer.name} at {row.venue.name}{" "}
@@ -118,7 +165,9 @@ export default async function SoundBookingPage({
           {shortTimeZoneName(row.booking.terms.startsAt, row.venue.timeZone)} ·{" "}
           <span className="money">{"$"}{(row.subslot.budgetCents / 100).toFixed(0)}</span>
         </p>
-        <p className="muted">{formatAddress(row.venue)}</p>
+        {canSeeOperationalDetails && (
+          <p className="muted">{formatAddress(row.venue)}</p>
+        )}
         <p className="muted">
           The {row.subslot.payer === "venue" ? "venue" : "act"} pays the tech
           directly.
@@ -126,21 +175,25 @@ export default async function SoundBookingPage({
         <p>{row.subslot.needs.inputs} inputs
           {row.subslot.needs.gaps.length > 0 && <> · sound gaps: {row.subslot.needs.gaps.join("; ")}</>}
         </p>
-        {row.subslot.needs.notes && <p>{row.subslot.needs.notes}</p>}
-        <p className="muted">
-          House PA:{" "}
-          {row.venue.paInventory.hasPA ? (
-            <>
-              {row.venue.paInventory.mixerChannels != null
-                ? row.venue.paInventory.mixerChannels + " channels"
-                : "channel count not listed"}
-              , {row.venue.paInventory.micsAvailable ?? 0} microphones,{" "}
-              {row.venue.paInventory.monitors ?? 0} monitors
-            </>
-          ) : (
-            "None — bring a rig"
-          )}
-        </p>
+        {canSeeOperationalDetails && (
+          <>
+            {row.subslot.needs.notes && <p>{row.subslot.needs.notes}</p>}
+            <p className="muted">
+              House PA:{" "}
+              {row.venue.paInventory.hasPA ? (
+                <>
+                  {row.venue.paInventory.mixerChannels != null
+                    ? row.venue.paInventory.mixerChannels + " channels"
+                    : "channel count not listed"}
+                  , {equipmentCount(row.venue.paInventory.micsAvailable, "microphone")},{" "}
+                  {equipmentCount(row.venue.paInventory.monitors, "monitor")}
+                </>
+              ) : (
+                "None — bring a rig"
+              )}
+            </p>
+          </>
+        )}
       </div>
 
       {myApplication && !isAssignedTech && (
@@ -149,10 +202,14 @@ export default async function SoundBookingPage({
           <p><span className="badge">
             {SOUND_APPLICATION_LABELS_OWN[myApplication.status] ?? "Application updated"}
           </span>{" "}
-            {myApplication.status === "submitted"
-              ? "The paying side has your application and will respond here."
-              : "This sound job was filled by another tech."}</p>
-          {myApplication.status === "submitted" && (
+            {soundApplicationMessage({
+              applicationStatus: myApplication.status,
+              subslotState: row.subslot.state,
+              jobIsActionable,
+            })}</p>
+          {myApplication.status === "submitted" &&
+            jobIsActionable &&
+            accountActive && (
             <ActionButton endpoint={"/api/tech-subslots/" + id + "/applications"}
               method="DELETE" label="Withdraw application" variant="quiet"
               confirm="Withdraw from this sound gig?" />
@@ -163,33 +220,55 @@ export default async function SoundBookingPage({
       {isAssignedTech && row.subslot.state === "booked" && (
         <div className="card">
           <h2>You are booked</h2>
-          <p>Keep this page for load-in details and day-of contacts.</p>
-          <ActionButton endpoint={"/api/tech-subslots/" + id + "/cancel"}
-            label="Cancel sound booking" variant="quiet"
-            confirm="Cancel this sound booking? The gig will reopen for another tech." />
+          <p>
+            {parentIsActionable
+              ? "Keep this page for load-in details and day-of contacts."
+              : "The parent booking is no longer active or the gig has started, so this sound assignment cannot reopen."}
+          </p>
+          {accountActive && cancellationIsActionable && (
+            <ActionButton endpoint={"/api/tech-subslots/" + id + "/cancel"}
+              label="Cancel sound booking" variant="quiet"
+              confirm="Cancel this sound booking? The gig will reopen for another tech." />
+          )}
         </div>
       )}
 
       {payerIsMe && applicants.length > 0 && (
         <div className="card">
           <h2>Tech applicants</h2>
-          {applicants.map(({ application, tech }) => (
-            <p key={application.id}>
-              <Link href={"/t/" + tech.id}><strong>{tech.name}</strong></Link>{" "}
-              <span className="badge">
-                {friendlyLabel(SOUND_APPLICATION_LABELS_REVIEW, application.status)}
-              </span>{" "}
-              {row.subslot.state === "open" && application.status === "submitted" && (
-                <ActionButton endpoint={"/api/tech-subslots/" + id + "/book"}
-                  label="Book this tech" body={{ techId: tech.id }}
-                  confirm={"Book " + tech.name + " for $" + (row.subslot.budgetCents / 100).toFixed(0) + "?"} />
-              )}
-            </p>
-          ))}
+          {applicants.map(({ application, tech, techOwnerStatus }) => {
+            const applicantIsBookable = isSoundApplicantBookable({
+              applicationStatus: application.status,
+              techProfileStatus: tech.status,
+              techOwnerStatus,
+              jobIsActionable,
+            });
+            return (
+              <p key={application.id}>
+                <Link href={"/t/" + tech.id}><strong>{tech.name}</strong></Link>{" "}
+                <span className="badge">
+                  {friendlyLabel(SOUND_APPLICATION_LABELS_REVIEW, application.status)}
+                </span>{" "}
+                {accountActive && applicantIsBookable && (
+                  <ActionButton endpoint={"/api/tech-subslots/" + id + "/book"}
+                    label="Book this tech" body={{ techId: tech.id }}
+                    confirm={"Book " + tech.name + " for $" + (row.subslot.budgetCents / 100).toFixed(0) + "?"} />
+                )}
+                {jobIsActionable &&
+                  application.status === "submitted" &&
+                  !applicantIsBookable && (
+                    <span className="muted">
+                      {" "}/ This tech is not currently available to book.
+                    </span>
+                  )}
+              </p>
+            );
+          })}
         </div>
       )}
 
-      {row.subslot.state === "released" && reviewRole && !myReview && (
+      {accountActive &&
+        row.subslot.state === "released" && reviewRole && !myReview && (
         <div className="card">
           <h2>Review the sound booking</h2>
           <p className="muted">

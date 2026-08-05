@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { db, paymentsEnabled, seriesForVenue } from "@gigit/db";
-import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
+import { accountCanAct } from "@/lib/profile-capabilities";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm, RedirectButton } from "@/components/ApiForm";
 import { GearExtractWidget, ProfileIngestWidget } from "@/components/AiAssist";
@@ -15,9 +16,13 @@ import {
 export const dynamic = "force-dynamic";
 
 import {
-  GEAR_LABELS,
   ACT_KIND_LABEL,
-  GIG_FORMAT_LABEL, VENUE_KIND_LABEL } from "@/lib/labels";
+  ACT_KIND_OPTIONS,
+  GEAR_LABELS,
+  GIG_FORMAT_LABEL,
+  VENUE_KIND_LABEL,
+  VENUE_KIND_OPTIONS,
+} from "@/lib/labels";
 
 export default async function MePage() {
   const userId = await sessionUserId();
@@ -27,11 +32,50 @@ export default async function MePage() {
         <Link href="/login">Sign in</Link> to set up your profile.
       </div>
     );
-  const [performer, venue, tech] = await Promise.all([
-    performerOwnedBy(userId),
-    venueOwnedBy(userId),
-    techOwnedBy(userId),
-  ]);
+  const profiles = await profileCapabilitiesOwnedBy(userId);
+  const { performer, venue, tech } = profiles.owned;
+  const accountActive = accountCanAct(profiles.accountStatus);
+
+  if (!accountActive)
+    return (
+      <div>
+        <h1>Your profiles</h1>
+        <div className="notice">
+          Your account is not active, so profile and marketplace changes are
+          unavailable. <Link href="/account">Review your account</Link> or
+          contact support.
+        </div>
+        {performer && (
+          <div className="card">
+            <h2>Act</h2>
+            <p><strong>{performer.name}</strong>{" "}
+              <span className="badge">{performer.status}</span>
+            </p>
+          </div>
+        )}
+        {venue && (
+          <div className="card">
+            <h2>Venue</h2>
+            <p><strong>{venue.name}</strong>{" "}
+              <span className="badge">{venue.status}</span>
+            </p>
+          </div>
+        )}
+        {tech && (
+          <div className="card">
+            <h2>Sound tech</h2>
+            <p><strong>{tech.name}</strong>{" "}
+              <span className="badge">{tech.status}</span>
+            </p>
+          </div>
+        )}
+        {!performer && !venue && !tech && (
+          <div className="card muted">No profiles have been created on this account.</div>
+        )}
+        <p><Link href="/bookings">View booking history</Link></p>
+      </div>
+    );
+
   const series = venue ? await seriesForVenue(db(), venue.id) : [];
   const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const WEEK = ["", "first", "second", "third", "fourth", "last"];
@@ -69,7 +113,11 @@ export default async function MePage() {
                 </span>{" "}
               </>
             )}
-            <Link href={`/p/${performer.id}`}>view public page</Link>
+            {performer.status === "live" ? (
+              <Link href={`/p/${performer.id}`}>view public page</Link>
+            ) : (
+              <span className="muted">Profile saved but not public ({performer.status}).</span>
+            )}
             <br />
             <span className="muted">{performer.bio}</span>
           </p>
@@ -95,12 +143,12 @@ export default async function MePage() {
               transform="performerProfile"
               fields={[
                 { name: "name", label: "Act name", defaultValue: performer.name },
-                { name: "bio", label: "Bio", type: "textarea", defaultValue: performer.bio ?? "" },
-                { name: "genreTags", label: "Genres (comma-separated)", defaultValue: (performer.genreTags ?? []).join(", ") },
-                { name: "rateMinCents", label: "Typical rate from, in dollars", type: "number", defaultValue: performer.rateMinCents != null ? performer.rateMinCents / 100 : undefined },
-                { name: "rateMaxCents", label: "Typical rate to, in dollars", type: "number", defaultValue: performer.rateMaxCents != null ? performer.rateMaxCents / 100 : undefined },
+                { name: "bio", label: "Bio", type: "textarea", defaultValue: performer.bio ?? "", emptyValue: "empty-string" },
+                { name: "genreTags", label: "Genres (comma-separated)", defaultValue: (performer.genreTags ?? []).join(", "), emptyValue: "empty-array" },
+                { name: "rateMinCents", label: "Typical rate from, in dollars", type: "number", defaultValue: performer.rateMinCents != null ? performer.rateMinCents / 100 : undefined, emptyValue: "null" },
+                { name: "rateMaxCents", label: "Typical rate to, in dollars", type: "number", defaultValue: performer.rateMaxCents != null ? performer.rateMaxCents / 100 : undefined, emptyValue: "null" },
                 { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: performer.travelRadiusMiles },
-                { name: "setLengthsMinutes", label: "Set lengths in minutes (comma-separated)", defaultValue: (performer.setLengthsMinutes ?? []).join(", ") },
+                { name: "setLengthsMinutes", label: "Set lengths in minutes (comma-separated)", defaultValue: (performer.setLengthsMinutes ?? []).join(", "), emptyValue: "empty-array" },
                 { name: "inputs", label: "Audio inputs needed", type: "number", defaultValue: performer.techNeeds.inputs },
                 { name: "micsNeeded", label: "Microphones needed", type: "number", defaultValue: performer.techNeeds.micsNeeded ?? 0 },
                 { name: "monitorsNeeded", label: "Stage monitors needed", type: "number", defaultValue: performer.techNeeds.monitorsNeeded ?? 0 },
@@ -119,7 +167,7 @@ export default async function MePage() {
             transform="performerProfile"
             fields={[
               { name: "name", label: "Act name", required: true },
-              { name: "kind", label: "Type", type: "select", options: ["band", "solo", "comedian", "other"], required: true },
+              { name: "kind", label: "Type", type: "select", options: ACT_KIND_OPTIONS, required: true },
               { name: "homeMetro", label: "Home city or metro area", required: true, placeholder: "e.g. Milwaukee" },
               { name: "bio", label: "Bio", type: "textarea" },
               { name: "genreTags", label: "Genres (comma-separated)" },
@@ -177,7 +225,11 @@ export default async function MePage() {
                 </span>{" "}
               </>
             )}
-            <Link href={`/v/${venue.id}`}>view public page</Link>
+            {venue.status === "live" ? (
+              <Link href={`/v/${venue.id}`}>view public page</Link>
+            ) : (
+              <span className="muted">Profile saved but not public ({venue.status}).</span>
+            )}
             <br />
             <span className="muted">{venue.bio}</span>
           </p>
@@ -186,7 +238,7 @@ export default async function MePage() {
           </p>
           {!venueLocationIsComplete(venue) && (
             <p className="error">
-              Add your venue&apos;s full address and timezone before posting a
+              Add your venue&apos;s full address and time zone before posting a
               night so listings and calendar invites show the correct time.
             </p>
           )}
@@ -216,7 +268,7 @@ export default async function MePage() {
                   · {formatWallTime(s.pattern.startTimeLocal ?? s.pattern.startTimeUtc ?? "00:00")}{" "}
                   {s.pattern.timeZone
                     ? friendlyTimeZoneName(s.pattern.timeZone)
-                    : "Timezone not set"}{" "}
+                    : "Time zone not set"}{" "}
                   ·{" "}
                   <span className="money">${(s.defaults.budgetCents / 100).toFixed(0)}</span>{" "}
                   <ActionButton
@@ -241,9 +293,9 @@ export default async function MePage() {
               transform="venueGear"
               fields={[
                 { name: "name", label: "Venue name", defaultValue: venue.name },
-                { name: "bio", label: "About the room", type: "textarea", defaultValue: venue.bio ?? "" },
+                { name: "bio", label: "About the room", type: "textarea", defaultValue: venue.bio ?? "", emptyValue: "empty-string" },
                 { name: "addressLine1", label: "Street address", defaultValue: venue.addressLine1 },
-                { name: "addressLine2", label: "Suite / unit (optional)", defaultValue: venue.addressLine2 ?? "" },
+                { name: "addressLine2", label: "Suite / unit (optional)", defaultValue: venue.addressLine2 ?? "", emptyValue: "empty-string" },
                 { name: "city", label: "City", defaultValue: venue.city },
                 {
                   // The edit form had no metro field at all, so a venue derived
@@ -256,19 +308,19 @@ export default async function MePage() {
                 { name: "postalCode", label: "ZIP code", defaultValue: venue.postalCode },
                 {
                   name: "timeZone",
-                  label: "Timezone",
+                  label: "Time zone",
                   type: "select",
                   options: US_TIME_ZONES.includes(venue.timeZone)
                     ? US_TIME_ZONES
                     : [venue.timeZone, ...US_TIME_ZONES],
                   defaultValue: venue.timeZone,
                 },
-                { name: "capacity", label: "Capacity", type: "number", defaultValue: venue.capacity ?? undefined },
-                { name: "noiseCurfew", label: "Noise curfew (e.g. 11pm)", defaultValue: venue.noiseCurfew ?? "" },
+                { name: "capacity", label: "Capacity", type: "number", defaultValue: venue.capacity ?? undefined, emptyValue: "null" },
+                { name: "noiseCurfew", label: "Noise curfew (e.g. 11pm)", defaultValue: venue.noiseCurfew ?? "", emptyValue: "empty-string" },
                 { name: "hasPA", label: "Does the room have a house PA?", type: "select", options: ["true", "false"], defaultValue: String(venue.paInventory.hasPA) },
-                { name: "mixerChannels", label: "Mixer channels", type: "number", defaultValue: venue.paInventory.mixerChannels ?? undefined },
-                { name: "micsAvailable", label: "Microphones available", type: "number", defaultValue: venue.paInventory.micsAvailable ?? undefined },
-                { name: "monitors", label: "Stage monitors", type: "number", defaultValue: venue.paInventory.monitors ?? undefined },
+                { name: "mixerChannels", label: "Mixer channels", type: "number", defaultValue: venue.paInventory.mixerChannels ?? undefined, emptyValue: "omit" },
+                { name: "micsAvailable", label: "Microphones available", type: "number", defaultValue: venue.paInventory.micsAvailable ?? undefined, emptyValue: "omit" },
+                { name: "monitors", label: "Stage monitors", type: "number", defaultValue: venue.paInventory.monitors ?? undefined, emptyValue: "omit" },
                 {
                   // "Not sure yet" is the DEFAULT and it submits nothing, so the
                   // sound plan sees `undefined` and returns its `unknown` verdict.
@@ -285,6 +337,7 @@ export default async function MePage() {
                     { value: "true", label: "Yes" },
                     { value: "false", label: "No" },
                   ],
+                  emptyValue: "omit",
                   // Round-trips the stored answer. Without this, "Not sure yet"
                   // would be the default on every edit and the venueGear
                   // transform would rebuild paInventory without hasOperator —
@@ -304,7 +357,7 @@ export default async function MePage() {
           <>
             <p className="muted">
               Your full venue address appears on your public venue profile and
-              open gigs. Choose the correct timezone so offers and calendar
+              open gigs. Choose the correct time zone so offers and calendar
               entries show the right local time.
             </p>
             <ApiForm
@@ -313,7 +366,7 @@ export default async function MePage() {
             transform="venueGear"
             fields={[
               { name: "name", label: "Venue name", required: true },
-              { name: "kind", label: "Type", type: "select", options: ["bar", "restaurant", "coffee_shop", "brewery", "other"], required: true },
+              { name: "kind", label: "Type", type: "select", options: VENUE_KIND_OPTIONS, required: true },
               { name: "addressLine1", label: "Street address", required: true, placeholder: "1872 N Commerce St" },
               { name: "addressLine2", label: "Suite / unit (optional)" },
               { name: "city", label: "City", required: true, placeholder: "Milwaukee" },
@@ -330,7 +383,7 @@ export default async function MePage() {
               { name: "postalCode", label: "ZIP code", required: true, placeholder: "53212" },
               {
                 name: "timeZone",
-                label: "Timezone",
+                label: "Time zone",
                 type: "select",
                 options: US_TIME_ZONES,
                 required: true,
@@ -383,9 +436,9 @@ export default async function MePage() {
               fields={[
                 { name: "name", label: "Name", defaultValue: tech.name },
                 { name: "gear", label: "Gear", type: "select", options: ["none", "partial", "full_rig"], defaultValue: tech.gear },
-                { name: "bio", label: "Experience", type: "textarea", defaultValue: tech.bio ?? "" },
-                { name: "rateLaborCents", label: "Labor rate, in dollars", type: "number", defaultValue: tech.rateLaborCents != null ? tech.rateLaborCents / 100 : undefined },
-                { name: "rateWithRigCents", label: "Rate with rig, in dollars", type: "number", defaultValue: tech.rateWithRigCents != null ? tech.rateWithRigCents / 100 : undefined },
+                { name: "bio", label: "Experience", type: "textarea", defaultValue: tech.bio ?? "", emptyValue: "empty-string" },
+                { name: "rateLaborCents", label: "Labor rate, in dollars", type: "number", defaultValue: tech.rateLaborCents != null ? tech.rateLaborCents / 100 : undefined, emptyValue: "null" },
+                { name: "rateWithRigCents", label: "Rate with rig, in dollars", type: "number", defaultValue: tech.rateWithRigCents != null ? tech.rateWithRigCents / 100 : undefined, emptyValue: "null" },
                 { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: tech.travelRadiusMiles },
               ]}
             />

@@ -45,6 +45,21 @@ export const actorRoles = pgTable(
   (t) => [uniqueIndex("actor_roles_user_kind_uq").on(t.userId, t.kind)],
 );
 
+/**
+ * Identifiers whose account was suspended when it was deleted, hashed.
+ *
+ * Deactivation nulls email and phone, so without this a suspended user could
+ * delete their account and re-register on the same address as a clean one.
+ * Hashed because deactivation's whole purpose is that we stop holding the
+ * address — this answers "was this suspended before?" without keeping it.
+ */
+export const blockedIdentifiers = pgTable("blocked_identifiers", {
+  identifierHash: text("identifier_hash").primaryKey(),
+  reason: text("reason").notNull().default("suspended"),
+  blockedAt: ts("blocked_at").notNull().defaultNow(),
+  sourceUserId: text("source_user_id").references(() => users.id),
+});
+
 export const authOtps = pgTable(
   "auth_otps",
   {
@@ -88,7 +103,9 @@ export const performers = pgTable("performers", {
     .notNull()
     .default({ inputs: 0 }),
   reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
-  status: text("status").notNull().default("live"), // draft | pending_review | live
+  // `suspended` remembers which current profile an admin temporarily hid;
+  // `hidden` is historical/deactivated and must not be republished by mistake.
+  status: text("status").notNull().default("live"), // draft | pending_review | live | suspended | hidden
   stripeAccountId: text("stripe_account_id"), // Connect Express (payout destination)
   // Founding-Member offer: signup rank on the act side, assigned at creation.
   // foundingMember = number <= FOUNDING_LIMIT. Durable record of the promise so
@@ -96,7 +113,11 @@ export const performers = pgTable("performers", {
   foundingNumber: integer("founding_number"),
   foundingMember: boolean("founding_member").notNull().default(false),
   createdAt: ts("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  uniqueIndex("performers_owner_uq")
+    .on(t.ownerUserId)
+    .where(sql`status = 'live'`),
+]);
 
 // Split-payout seam (engineering-spec K3: "ledger rows per split from day
 // one"). Payouts stay single-target until P1; the table exists so splits are
@@ -152,15 +173,19 @@ export const venues = pgTable("venues", {
   reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
   stripeCustomerId: text("stripe_customer_id"), // saved payment method holder
   defaultPaymentMethodId: text("default_payment_method_id"), // pm_… captured via setup-mode Checkout
-  // live | hidden — hidden when the owner deactivates or is suspended, so the
-  // public page and every directory stop serving it (venues publish a street
-  // address; leaving that up after deactivation is the privacy problem).
+  // live | suspended | hidden — suspended remembers an admin-temporary state;
+  // hidden is historical/deactivated. Both keep the public page and every
+  // directory from serving a venue address.
   status: text("status").notNull().default("live"),
   // Founding-Member offer: signup rank on the venue side (see performers).
   foundingNumber: integer("founding_number"),
   foundingMember: boolean("founding_member").notNull().default(false),
   createdAt: ts("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  uniqueIndex("venues_owner_uq")
+    .on(t.ownerUserId)
+    .where(sql`status = 'live'`),
+]);
 
 export const techs = pgTable("techs", {
   id: text("id").primaryKey(),
@@ -174,9 +199,13 @@ export const techs = pgTable("techs", {
   rateWithRigCents: integer("rate_with_rig_cents"),
   travelRadiusMiles: integer("travel_radius_miles").notNull().default(30),
   reliabilityStrikes: integer("reliability_strikes").notNull().default(0),
-  status: text("status").notNull().default("live"), // live | hidden (see venues.status)
+  status: text("status").notNull().default("live"), // live | suspended | hidden (see venues.status)
   createdAt: ts("created_at").notNull().defaultNow(),
-});
+}, (t) => [
+  uniqueIndex("techs_owner_uq")
+    .on(t.ownerUserId)
+    .where(sql`status = 'live'`),
+]);
 
 export const mediaAssets = pgTable(
   "media_assets",
@@ -214,6 +243,8 @@ export const slotSeries = pgTable("slot_series", {
       freq: "weekly" | "monthly_dow";
       dayOfWeek: number;
       week?: 1 | 2 | 3 | 4 | 5;
+      /** Inclusive first-occurrence lower bound for anchored series. */
+      firstStartsAt?: string;
       /** Venue wall-clock time. New series always carry this + timeZone. */
       startTimeLocal?: string;
       timeZone?: string;
@@ -296,7 +327,7 @@ export const applications = pgTable(
     status: text("status").notNull().default("submitted"), // submitted | withdrawn | declined | offered
     // Why a decline happened, so reopening a cancelled slot can revive the acts
     // who were merely passed over without resurrecting ones a venue turned down.
-    declineReason: text("decline_reason"), // slot_filled | venue_declined
+    declineReason: text("decline_reason"), // slot_filled | slot_expired | slot_cancelled | venue_declined
     createdAt: ts("created_at").notNull().defaultNow(),
   },
   (t) => [
@@ -366,7 +397,12 @@ export const threads = pgTable(
     createdByUserId: text("created_by_user_id").references(() => users.id),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
-  (t) => [index("threads_author_idx").on(t.createdByUserId, t.scope, t.createdAt)],
+  (t) => [
+    index("threads_author_idx").on(t.createdByUserId, t.scope, t.createdAt),
+    uniqueIndex("threads_booking_subject_uq")
+      .on(t.scope, t.subjectId)
+      .where(sql`scope = 'booking' and subject_id is not null`),
+  ],
 );
 
 export const threadParticipants = pgTable(
@@ -503,7 +539,16 @@ export const techSubslots = pgTable(
     version: integer("version").notNull().default(1),
     createdAt: ts("created_at").notNull().defaultNow(),
   },
-  (t) => [index("tech_subslots_booking_idx").on(t.bookingId), index("tech_subslots_feed_idx").on(t.state)],
+  (t) => [
+    index("tech_subslots_booking_idx").on(t.bookingId),
+    index("tech_subslots_feed_idx").on(t.state),
+    // A booking can have sound-job history, but only one live selection round.
+    // The partial unique index is the final concurrency backstop; creation also
+    // locks the parent so callers receive a deliberate domain conflict.
+    uniqueIndex("tech_subslots_active_booking_uq")
+      .on(t.bookingId)
+      .where(sql`state in ('open','booked')`),
+  ],
 );
 
 export const techSubslotApplications = pgTable(

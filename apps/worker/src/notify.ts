@@ -35,6 +35,18 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "Payment didn't go through",
     body: "The charge for a booking failed, so it isn't confirmed. The slot is back on the board: {url}/bookings",
   },
+  booking_account_deactivated: {
+    subject: "This booking was cancelled",
+    body: "This booking closed because one of the accounts is no longer active. The date is no longer booked. If a payment was still processing, it will be refunded: {url}/bookings",
+  },
+  account_suspended: {
+    subject: "Your EightGig account was suspended",
+    body: "Your account is suspended. Your profiles are no longer public, and marketplace actions are unavailable. Any open offers, applications, future venue dates, or active booking or sound commitments were closed. Completed-gig and dispute records were kept. If you think this is a mistake, contact support: {url}/help",
+  },
+  payment_late_refunded: {
+    subject: "Payment refunded",
+    body: "The payment completed too late to confirm this booking, so the booking is closed and a full refund is processing: {url}/bookings",
+  },
   day_before: {
     subject: "Tomorrow night",
     body: "Gig tomorrow. Set times, contacts, and the terms are all here: {url}/bookings",
@@ -79,17 +91,29 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "That one went to another act",
     body: "The venue booked someone else for this night. Your profile stays ready — here are other open gigs near you: {url}/slots",
   },
+  application_not_selected: {
+    subject: "The venue passed on your application",
+    body: "This venue decided not to move ahead with your application. Your profile stays ready — here are other open gigs: {url}/slots",
+  },
+  application_expired: {
+    subject: "That gig date has passed",
+    body: "The night passed without a booking, so your application is closed. Your profile stays ready — here are other open gigs near you: {url}/slots",
+  },
+  application_cancelled: {
+    subject: "That gig date was cancelled",
+    body: "The venue took this date off the board, so your application is closed. Your profile stays ready — here are other open gigs: {url}/slots",
+  },
   new_application: {
     subject: "An act applied to your slot",
     body: "New applicant — profile, media, and reviews are all there: {url}",
   },
   new_inquiry: {
-    subject: "A venue messaged you",
-    body: "A venue wants to talk. No obligation, reply when you can: {url}",
+    subject: "New inquiry",
+    body: "Someone wants to talk about working together. No obligation, reply when you can: {url}/inbox/{threadId}",
   },
   new_message: {
     subject: "New message on EightGig",
-    body: "You have a new message waiting: {url}",
+    body: "You have a new message waiting: {url}/inbox/{threadId}",
   },
   slot_match: {
     subject: "A slot just posted that fits",
@@ -107,6 +131,10 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "Sound is covered",
     body: "The tech is booked. Room specs, input list, and set times are on the booking: {url}/bookings",
   },
+  subslot_new_application: {
+    subject: "A sound tech applied",
+    body: "A tech applied to cover this sound job. Review their profile and application: {url}/bookings",
+  },
   subslot_cancelled: {
     subject: "The sound booking was cancelled",
     body: "The cancellation policy decides what's owed, and it's already processing: {url}/bookings",
@@ -114,6 +142,14 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
   subslot_tech_cancelled: {
     subject: "Your tech cancelled",
     body: "Full refund processing. The sound slot is back open for other techs: {url}/bookings",
+  },
+  subslot_application_declined: {
+    subject: "That sound job went to another tech",
+    body: "The payer chose another tech for this job. Your profile stays ready — see other open sound jobs: {url}/techs",
+  },
+  subslot_application_cancelled: {
+    subject: "That sound job closed",
+    body: "The gig changed or closed before a tech was booked, so your application is closed. See other open sound jobs: {url}/techs",
   },
   media_rejected: {
     subject: "An upload didn't pass",
@@ -143,6 +179,13 @@ const DISCOVERY_OVERRIDES: Record<string, { subject?: string; body: string }> = 
   payment_failed: {
     subject: "That booking didn't get confirmed",
     body: "The booking never finished confirming, so it isn't on. The date is back on the board: {url}/bookings",
+  },
+  payment_late_refunded: {
+    subject: "That booking didn't get confirmed",
+    body: "This booking could not be confirmed before the date closed, so it is not booked. If you arranged payment directly, contact the other party: {url}/bookings",
+  },
+  booking_account_deactivated: {
+    body: "This booking closed because one of the accounts is no longer active. The date is no longer booked. If you arranged payment directly, contact the other party: {url}/bookings",
   },
   mark_played_prompt: {
     body: "How'd the night go? Mark the gig played and we'll ask the venue to confirm — and square up with the room if you haven't: {url}/bookings/{bookingId}",
@@ -274,16 +317,19 @@ export async function notifySubslotParties(
   for (const userId of userIds) await notifyUser(userId, template);
 }
 
-/** Resolve a template to copy, applying the payments-off overrides and vars. */
-function renderTemplate(
+/** Resolve template copy and vars; @internal export for copy regressions. */
+export function renderTemplate(
   template: string,
   vars: Record<string, string> = {},
+  paymentRailEnabled = paymentsEnabled(),
 ): { subject: string; body: string } {
   const base = TEMPLATES[template] ?? {
     subject: "EightGig update",
     body: `Update (${template}): {url}`,
   };
-  const override = paymentsEnabled() ? undefined : DISCOVERY_OVERRIDES[template];
+  const override = paymentRailEnabled
+    ? undefined
+    : DISCOVERY_OVERRIDES[template];
   const t = override
     ? { subject: override.subject ?? base.subject, body: override.body }
     : base;
@@ -298,25 +344,67 @@ function renderTemplate(
   return { subject, body };
 }
 
-export async function notifyUser(
+type NotificationRecipient = {
+  id: string;
+  status: string;
+  email: string | null;
+  phone: string | null;
+  smsOptedOutAt: Date | null;
+};
+
+async function notificationRecipient(
   userId: string,
+): Promise<NotificationRecipient | undefined> {
+  const [user] = await db()
+    .select({
+      id: schema.users.id,
+      status: schema.users.status,
+      email: schema.users.email,
+      phone: schema.users.phone,
+      smsOptedOutAt: schema.users.smsOptedOutAt,
+    })
+    .from(schema.users)
+    .where(eq(schema.users.id, userId));
+  return user;
+}
+
+async function deliverUserNotification(
+  user: NotificationRecipient,
   template: string,
   vars: Record<string, string> = {},
 ): Promise<void> {
   const t = renderTemplate(template, vars);
-  const [user] = await db()
-    .select()
-    .from(schema.users)
-    .where(eq(schema.users.id, userId));
-  if (!user) return;
-
   if (user.phone && smsConfigured() && !user.smsOptedOutAt) {
     await sendSms(user.phone, `${t.subject}. ${t.body}`);
   } else if (user.email && emailConfigured()) {
     await sendEmail(user.email, t.subject, t.body);
   } else {
-    log("notify.log_sink", { userId, template, subject: t.subject });
+    log("notify.log_sink", { userId: user.id, template, subject: t.subject });
   }
+}
+
+export async function notifyUser(
+  userId: string,
+  template: string,
+  vars: Record<string, string> = {},
+): Promise<void> {
+  const user = await notificationRecipient(userId);
+  // Account suspension/deletion can race any outbox lookup. Re-check at the
+  // delivery boundary so a user who can no longer act does not receive a stale
+  // proactive alert after a matcher or event resolver selected them.
+  if (!user || user.status !== "active") return;
+  await deliverUserNotification(user, template, vars);
+}
+
+/**
+ * The one customer-notification path allowed after suspension. It is purposely
+ * hard-coded to one template and status rather than exposing an `essential`
+ * flag that ordinary alert callers could accidentally use.
+ */
+export async function notifySuspendedAccount(userId: string): Promise<void> {
+  const user = await notificationRecipient(userId);
+  if (!user || user.status !== "suspended") return;
+  await deliverUserNotification(user, "account_suspended");
 }
 
 /**
@@ -406,6 +494,27 @@ export async function notifyApplicationPerformer(
   if (row) await notifyUser(row.owner, template, { slotId: row.slotId, ...vars });
 }
 
+/** A sound-job application outcome → the specific tech who applied. */
+export async function notifyTechApplicationApplicant(
+  applicationId: string,
+  template: string,
+): Promise<void> {
+  if (!applicationId) return;
+  const [row] = await db()
+    .select({
+      owner: schema.techs.ownerUserId,
+      subslotId: schema.techSubslotApplications.subslotId,
+    })
+    .from(schema.techSubslotApplications)
+    .innerJoin(
+      schema.techs,
+      eq(schema.techSubslotApplications.techId, schema.techs.id),
+    )
+    .where(eq(schema.techSubslotApplications.id, applicationId));
+  if (row)
+    await notifyUser(row.owner, template, { subslotId: row.subslotId });
+}
+
 /** A message/inquiry on a thread → notify every participant except the sender. */
 export async function notifyThreadCounterparties(
   threadId: string,
@@ -417,7 +526,8 @@ export async function notifyThreadCounterparties(
     .from(schema.threadParticipants)
     .where(eq(schema.threadParticipants.threadId, threadId));
   for (const p of parts)
-    if (p.userId !== senderUserId) await notifyUser(p.userId, template);
+    if (p.userId !== senderUserId)
+      await notifyUser(p.userId, template, { threadId });
 }
 
 async function sendSms(to: string, body: string): Promise<void> {

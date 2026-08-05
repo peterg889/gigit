@@ -18,6 +18,7 @@ describe("patternFromFirst", () => {
     expect(p).toEqual({
       freq: "weekly",
       dayOfWeek: 5,
+      firstStartsAt: "2026-06-20T01:00:00.000Z",
       startTimeLocal: "20:00",
       timeZone: "America/Chicago",
       durationMinutes: 120,
@@ -36,6 +37,7 @@ describe("patternFromFirst", () => {
       freq: "monthly_dow",
       dayOfWeek: 2,
       week: 1,
+      firstStartsAt: "2026-06-03T00:00:00.000Z",
       startTimeLocal: "19:00",
       timeZone: "America/Chicago",
       durationMinutes: 90,
@@ -45,17 +47,23 @@ describe("patternFromFirst", () => {
 
 describe("nextOccurrences weekly", () => {
   const p = patternFromFirst(new Date("2026-06-19T20:00:00Z"), 120, "weekly");
-  it("returns consecutive Fridays after the anchor", () => {
+  it("starts with the selected first Friday and never invents a pre-anchor night", () => {
     const occ = nextOccurrences(p, new Date("2026-06-12T00:00:00Z"), 3);
     expect(occ.map((d) => d.toISOString())).toEqual([
-      "2026-06-12T20:00:00.000Z",
       "2026-06-19T20:00:00.000Z",
       "2026-06-26T20:00:00.000Z",
+      "2026-07-03T20:00:00.000Z",
     ]);
   });
-  it("is strictly after `after` (same-day boundary)", () => {
-    const occ = nextOccurrences(p, new Date("2026-06-12T20:00:00Z"), 1);
-    expect(occ[0].toISOString()).toBe("2026-06-19T20:00:00.000Z");
+  it("includes the anchor just before it, then remains strictly after `after`", () => {
+    expect(
+      nextOccurrences(p, new Date("2026-06-19T19:59:59.999Z"), 1)[0]
+        .toISOString(),
+    ).toBe("2026-06-19T20:00:00.000Z");
+    expect(
+      nextOccurrences(p, new Date("2026-06-19T20:00:00.000Z"), 1)[0]
+        .toISOString(),
+    ).toBe("2026-06-26T20:00:00.000Z");
   });
 });
 
@@ -78,6 +86,49 @@ describe("nextOccurrences monthly_dow", () => {
     expect(occ.map((d) => d.toISOString())).toEqual([
       "2026-06-26T21:00:00.000Z",
       "2026-07-31T21:00:00.000Z",
+    ]);
+  });
+
+  it("does not emit matching nth weekdays from months before the selected anchor", () => {
+    const p = patternFromFirst(
+      new Date("2026-09-01T19:00:00Z"),
+      90,
+      "monthly_dow",
+    );
+    const occ = nextOccurrences(p, new Date("2026-07-01T00:00:00Z"), 3);
+    expect(occ.map((d) => d.toISOString())).toEqual([
+      "2026-09-01T19:00:00.000Z",
+      "2026-10-06T19:00:00.000Z",
+      "2026-11-03T19:00:00.000Z",
+    ]);
+  });
+
+  it("anchors a selected last weekday and crosses the year boundary", () => {
+    const lastFriday = patternFromFirst(
+      new Date("2026-10-30T21:00:00Z"),
+      60,
+      "monthly_dow",
+    );
+    expect(
+      nextOccurrences(lastFriday, new Date("2026-08-01T00:00:00Z"), 2)
+        .map((d) => d.toISOString()),
+    ).toEqual([
+      "2026-10-30T21:00:00.000Z",
+      "2026-11-27T21:00:00.000Z",
+    ]);
+
+    const yearBoundary = patternFromFirst(
+      new Date("2027-01-31T20:00:00Z"),
+      60,
+      "monthly_dow",
+    );
+    expect(
+      nextOccurrences(yearBoundary, new Date("2026-12-01T00:00:00Z"), 3)
+        .map((d) => d.toISOString()),
+    ).toEqual([
+      "2027-01-31T20:00:00.000Z",
+      "2027-02-28T20:00:00.000Z",
+      "2027-03-28T20:00:00.000Z",
     ]);
   });
 });
@@ -118,6 +169,22 @@ describe("venue-local recurrence through DST", () => {
     ]);
   });
 
+  it("does not backfill a spring-transition occurrence before a later selected anchor", () => {
+    const pattern = patternFromFirst(
+      new Date("2026-03-15T07:30:00.000Z"),
+      60,
+      "weekly",
+      "America/Chicago",
+    );
+    expect(
+      nextOccurrences(pattern, new Date("2026-03-01T00:00:00.000Z"), 2)
+        .map((d) => d.toISOString()),
+    ).toEqual([
+      "2026-03-15T07:30:00.000Z",
+      "2026-03-22T07:30:00.000Z",
+    ]);
+  });
+
   it("continues to materialize legacy UTC patterns", () => {
     const occ = nextOccurrences(
       { freq: "weekly", dayOfWeek: 5, startTimeUtc: "20:00", durationMinutes: 60 },
@@ -125,6 +192,18 @@ describe("venue-local recurrence through DST", () => {
       1,
     );
     expect(occ[0].toISOString()).toBe("2026-06-19T20:00:00.000Z");
+    expect(
+      nextOccurrences(
+        {
+          freq: "weekly",
+          dayOfWeek: 5,
+          startTimeUtc: "20:00",
+          durationMinutes: 60,
+        },
+        new Date("2026-06-01T00:00:00Z"),
+        1,
+      )[0].toISOString(),
+    ).toBe("2026-06-05T20:00:00.000Z");
   });
 });
 
@@ -175,5 +254,22 @@ describe("DST fall-back (an hour that happens twice)", () => {
     expect(after.toISOString()).toBe("2026-11-02T02:00:00.000Z"); // CST, -6
     expect(localDateTimeParts(before, CHI).hour).toBe(20);
     expect(localDateTimeParts(after, CHI).hour).toBe(20);
+  });
+
+  it("includes an ambiguous selected anchor once and keeps its wall time afterward", () => {
+    const pattern = patternFromFirst(
+      new Date("2026-11-01T06:30:00.000Z"),
+      60,
+      "weekly",
+      CHI,
+    );
+    expect(
+      nextOccurrences(pattern, new Date("2026-10-01T00:00:00.000Z"), 3)
+        .map((d) => d.toISOString()),
+    ).toEqual([
+      "2026-11-01T06:30:00.000Z",
+      "2026-11-08T07:30:00.000Z",
+      "2026-11-15T07:30:00.000Z",
+    ]);
   });
 });

@@ -102,9 +102,7 @@ describe("ledger invariants", () => {
       .from(bookings)
       .where(eq(bookings.id, bookingId));
     expect(l.chargedCents).toBe(b!.terms.amountCents);
-    expect(l.releasedCents + l.refundedCents + l.adjustedCents).toBe(
-      b!.terms.amountCents,
-    );
+    expect(l.releasedCents + l.refundedCents).toBe(b!.terms.amountCents);
   }
 
   it("full release: charge 500 → release 500", async () => {
@@ -143,6 +141,32 @@ describe("ledger invariants", () => {
       "admin",
     );
     await expectBalanced(id, { charged: 50_000, released: 30_000, refunded: 20_000 });
+  });
+
+  it("reports explicit adjustments separately from a balanced base settlement", async () => {
+    const id = await confirmedBooking(50_000, 24 * 30);
+    await runBookingTransition(id, { kind: "GIG_ENDED" }, "worker");
+    await runBookingTransition(id, { kind: "VENUE_CONFIRMED" }, userVenue);
+    const { recordLedgerEntry } = await import("./ledger.js");
+    await recordLedgerEntry(db(), {
+      bookingId: id,
+      entryType: "adjustment",
+      debitParty: "platform",
+      creditParty: `performer:${performerId}`,
+      amountCents: 5_000,
+      idempotencyKey: `${id}:adjustment:goodwill-test`,
+    });
+
+    const ledger = await bookingLedger(db(), id);
+    expect(ledger).toEqual({
+      chargedCents: 50_000,
+      releasedCents: 50_000,
+      refundedCents: 0,
+      adjustedCents: 5_000,
+    });
+    expect(ledger.chargedCents).toBe(
+      ledger.releasedCents + ledger.refundedCents,
+    );
   });
 
   it("ledger writes are idempotent (replayed transition effect is a no-op)", async () => {

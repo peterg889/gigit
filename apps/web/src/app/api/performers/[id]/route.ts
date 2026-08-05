@@ -1,6 +1,10 @@
-import { performerUpdateSchema } from "@gigit/domain";
+import {
+  performerRateOrderMessage,
+  performerRatesAreOrdered,
+  performerUpdateSchema,
+} from "@gigit/domain";
 import { appendEvent, db, schema } from "@gigit/db";
-import { and, eq  } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
@@ -46,14 +50,50 @@ export async function PATCH(req: Request, { params }: Params) {
     if (p.ownerUserId !== userId) return fail("forbidden", "That profile isn't yours.", 403);
     const parsed = await parseBody(req, performerUpdateSchema);
     if ("response" in parsed) return parsed.response;
-    await d.update(schema.performers).set(parsed.data).where(eq(schema.performers.id, id));
-    await appendEvent(d, {
-      actor: userId,
-      kind: "performer.updated",
-      subjectType: "performer",
-      subjectId: id,
-      payload: { fields: Object.keys(parsed.data) },
+    const updateResult = await d.transaction(async (tx) => {
+      // Serialize partial rate edits so two individually valid requests cannot
+      // both compare against stale bounds and commit an invalid final pair.
+      const [current] = await tx
+        .select({
+          ownerUserId: schema.performers.ownerUserId,
+          rateMinCents: schema.performers.rateMinCents,
+          rateMaxCents: schema.performers.rateMaxCents,
+        })
+        .from(schema.performers)
+        .where(eq(schema.performers.id, id))
+        .for("update");
+      if (!current) return "not_found" as const;
+      if (current.ownerUserId !== userId) return "forbidden" as const;
+
+      const nextRates = {
+        rateMinCents:
+          parsed.data.rateMinCents === undefined
+            ? current.rateMinCents
+            : parsed.data.rateMinCents,
+        rateMaxCents:
+          parsed.data.rateMaxCents === undefined
+            ? current.rateMaxCents
+            : parsed.data.rateMaxCents,
+      };
+      if (!performerRatesAreOrdered(nextRates)) return "invalid_rates" as const;
+
+      await tx.update(schema.performers).set(parsed.data).where(eq(schema.performers.id, id));
+      await appendEvent(tx, {
+        actor: userId,
+        kind: "performer.updated",
+        subjectType: "performer",
+        subjectId: id,
+        payload: { fields: Object.keys(parsed.data) },
+      });
+      return "updated" as const;
     });
+    if (updateResult === "not_found")
+      return fail("not_found", "We couldn't find that act.", 404);
+    if (updateResult === "forbidden")
+      return fail("forbidden", "That profile isn't yours.", 403);
+    if (updateResult === "invalid_rates") {
+      return fail("validation", performerRateOrderMessage, 422);
+    }
     return ok({ id });
   } catch (e) {
     return respondError(e);

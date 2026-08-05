@@ -1,7 +1,22 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@gigit/domain";
 import { eq } from "drizzle-orm";
-import { closeDb, createOffer, db, runBookingTransition, schema } from "@gigit/db";
+import {
+  VenuePaymentMethodRequiredError,
+  closeDb,
+  createOffer,
+  db,
+  runBookingTransition,
+  schema,
+} from "@gigit/db";
+
+const offerPaymentGate = vi.hoisted(() => ({ error: null as Error | null }));
+vi.mock("@gigit/db", async (original) => ({
+  ...(await original<typeof import("@gigit/db")>()),
+  assertVenueOfferPaymentReady: async () => {
+    if (offerPaymentGate.error) throw offerPaymentGate.error;
+  },
+}));
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
@@ -90,6 +105,9 @@ describe("web API authz matrix (audit #5)", () => {
   });
   afterAll(async () => {
     await closeDb();
+  });
+  afterEach(() => {
+    offerPaymentGate.error = null;
   });
 
   async function offeredBooking() {
@@ -191,6 +209,49 @@ describe("web API authz matrix (audit #5)", () => {
     expect((await post(offerPost, appId, { amountCents: 30_000 })).status).toBe(403);
   });
 
+  it("offer: requires venue payment readiness before creating a booking", async () => {
+    const slotId = newId("slot");
+    const applicationId = newId("application");
+    await db().insert(schema.slots).values({
+      id: slotId,
+      venueId,
+      metro: "authz-tv",
+      startsAt: new Date(Date.now() + 21 * 86_400_000),
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 30_000,
+    });
+    await db().insert(schema.applications).values({
+      id: applicationId,
+      slotId,
+      performerId: pBand,
+    });
+
+    offerPaymentGate.error = new VenuePaymentMethodRequiredError(venueId);
+    as(uVenue);
+    const response = await post(offerPost, applicationId, {
+      amountCents: 30_000,
+    });
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: {
+        code: "payment_method_required",
+        message: expect.stringMatching(/payment method/i),
+      },
+    });
+    const bookingRows = await db()
+      .select({ id: schema.bookings.id })
+      .from(schema.bookings)
+      .where(eq(schema.bookings.slotId, slotId));
+    expect(bookingRows).toHaveLength(0);
+    const [application] = await db()
+      .select({ status: schema.applications.status })
+      .from(schema.applications)
+      .where(eq(schema.applications.id, applicationId));
+    expect(application?.status).toBe("submitted");
+  });
+
   it("offer: enforces advertised pay and one firm offer per slot", async () => {
     const slotId = newId("slot");
     const firstApplicationId = newId("application");
@@ -232,6 +293,41 @@ describe("web API authz matrix (audit #5)", () => {
         amountCents: 30_000,
       })).status,
     ).toBe(409);
+  });
+
+  it("offer: rejects a stale open date after its start time with accurate copy", async () => {
+    const slotId = newId("slot");
+    const applicationId = newId("application");
+    await db().insert(schema.slots).values({
+      id: slotId,
+      venueId,
+      metro: "authz-tv",
+      startsAt: new Date(Date.now() - 60_000),
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 30_000,
+    });
+    await db()
+      .insert(schema.applications)
+      .values({ id: applicationId, slotId, performerId: pBand });
+
+    as(uVenue);
+    const response = await post(offerPost, applicationId, { amountCents: 30_000 });
+    expect(response.status).toBe(409);
+    expect(await response.json()).toMatchObject({
+      error: { code: "conflict", message: expect.stringMatching(/already passed/i) },
+    });
+
+    const [application] = await db()
+      .select({ status: schema.applications.status })
+      .from(schema.applications)
+      .where(eq(schema.applications.id, applicationId));
+    expect(application?.status).toBe("submitted");
+    const bookings = await db()
+      .select({ id: schema.bookings.id })
+      .from(schema.bookings)
+      .where(eq(schema.bookings.slotId, slotId));
+    expect(bookings).toHaveLength(0);
   });
 
   it("admin status: 403 for a non-admin, 200 for an admin", async () => {

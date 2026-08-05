@@ -1,6 +1,9 @@
 import { IllegalSubslotTransitionError, techSubslotBookSchema } from "@gigit/domain";
-import { ConcurrentUpdateError, db, runSubslotTransition, schema } from "@gigit/db";
-import { and, eq, ne } from "drizzle-orm";
+import {
+  bookTechApplicant,
+  ConcurrentUpdateError,
+  TechSubslotApplicationError,
+} from "@gigit/db";
 import { loadSubslotForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
@@ -12,7 +15,6 @@ export async function POST(req: Request, { params }: Params) {
     const { id: subslotId } = await params;
     const userId = await requireUser();
 
-    const d = db();
     const row = await loadSubslotForActor(subslotId, userId);
     if (!row) return fail("not_found", "We couldn't find that sound job.", 404);
     if (!row.isPayer)
@@ -22,37 +24,22 @@ export async function POST(req: Request, { params }: Params) {
     if ("response" in parsed) return parsed.response;
     const { techId } = parsed.data;
 
-    const [application] = await d
-      .select()
-      .from(schema.techSubslotApplications)
-      .where(
-        and(
-          eq(schema.techSubslotApplications.subslotId, subslotId),
-          eq(schema.techSubslotApplications.techId, techId),
-        ),
-      );
-    if (!application) return fail("not_found", "That sound tech hasn't applied to this job.", 404);
-
-    const result = await runSubslotTransition(
+    const result = await bookTechApplicant({
       subslotId,
-      { kind: "TECH_BOOKED", techId },
-      userId,
-    );
-    await d
-      .update(schema.techSubslotApplications)
-      .set({ status: "booked" })
-      .where(eq(schema.techSubslotApplications.id, application.id));
-    await d
-      .update(schema.techSubslotApplications)
-      .set({ status: "declined" })
-      .where(
-        and(
-          eq(schema.techSubslotApplications.subslotId, subslotId),
-          ne(schema.techSubslotApplications.id, application.id),
-        ),
-      );
+      techId,
+      actor: userId,
+    });
     return ok({ state: result.to });
   } catch (e) {
+    if (e instanceof TechSubslotApplicationError) {
+      if (e.reason === "not_found")
+        return fail("not_found", "That sound tech hasn't applied to this job.", 404);
+      return fail(
+        "conflict",
+        "That application is no longer pending. Reload the applicant list.",
+        409,
+      );
+    }
     if (e instanceof IllegalSubslotTransitionError)
       return fail("illegal_transition", e.message, 409);
     if (e instanceof ConcurrentUpdateError)

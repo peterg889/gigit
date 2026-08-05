@@ -3,7 +3,7 @@ import { Big_Shoulders, Libre_Franklin, Spline_Sans_Mono } from "next/font/googl
 import Link from "next/link";
 
 import { NavLink } from "@/components/NavLink";
-import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import "./globals.css";
 
@@ -34,14 +34,11 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const userId = await sessionUserId();
-  const [performer, venue, tech] = userId
-    ? await Promise.all([
-        performerOwnedBy(userId),
-        venueOwnedBy(userId),
-        techOwnedBy(userId),
-      ])
-    : [null, null, null];
-  const hasProfile = Boolean(performer || venue || tech);
+  const profiles = userId ? await profileCapabilitiesOwnedBy(userId) : null;
+  const hasProfile = Boolean(
+    profiles?.owned.performer || profiles?.owned.venue || profiles?.owned.tech,
+  );
+  const canPostOpenDate = Boolean(profiles?.live.venue);
 
   return (
     <html lang="en">
@@ -51,11 +48,11 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             EightGig
           </Link>
           <nav aria-label="Main navigation">
-            <NavLink href="/slots">Open gigs</NavLink>
+            <NavLink href="/slots" exclude={["/slots/new"]}>Open gigs</NavLink>
             <NavLink href="/performers">Find an act</NavLink>
             <NavLink href="/venues">Rooms</NavLink>
             <NavLink href="/techs">Sound techs</NavLink>
-            {venue && <NavLink href="/slots/new">Post an open date</NavLink>}
+            {canPostOpenDate && <NavLink href="/slots/new">Post an open date</NavLink>}
             {userId ? (
               <>
                 <NavLink href="/bookings">Bookings</NavLink>

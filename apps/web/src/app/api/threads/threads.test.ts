@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@gigit/domain";
-import { closeDb, db, schema } from "@gigit/db";
+import { closeDb, db, getPool, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
@@ -110,6 +110,65 @@ describe("threads and messages", () => {
     ]);
   });
 
+  it("rolls back a message when its outbox event cannot be written", async () => {
+    as(uVenue);
+    const opened = await inquiry({ performerId, body: "Atomic thread" });
+    const { threadId } = await opened.json();
+    const functionName = `fail_message_event_${threadId.slice(-12).toLowerCase()}`;
+    const triggerName = `${functionName}_trigger`;
+    const pool = getPool();
+    await pool.query(`
+      create function ${functionName}() returns trigger language plpgsql as $$
+      begin
+        if new.subject_id = '${threadId}' and new.kind = 'message.sent' then
+          raise exception 'forced message event failure';
+        end if;
+        return new;
+      end
+      $$
+    `);
+    await pool.query(`
+      create trigger ${triggerName}
+      before insert on events
+      for each row execute function ${functionName}()
+    `);
+    try {
+      await expect(message(threadId, "Must roll back")).rejects.toThrow();
+    } finally {
+      await pool.query(`drop trigger if exists ${triggerName} on events`);
+      await pool.query(`drop function if exists ${functionName}()`);
+    }
+    const rows = await db()
+      .select({ body: schema.messages.body })
+      .from(schema.messages)
+      .where(eq(schema.messages.threadId, threadId));
+    expect(rows).toEqual([{ body: "Atomic thread" }]);
+  });
+
+  it("does not add a message when another participant is no longer active", async () => {
+    as(uVenue);
+    const opened = await inquiry({ performerId, body: "Before deactivation" });
+    const { threadId } = await opened.json();
+    await db()
+      .update(schema.users)
+      .set({ status: "deleted" })
+      .where(eq(schema.users.id, uBand));
+    try {
+      const response = await message(threadId, "Are you there?");
+      expect(response.status).toBe(409);
+    } finally {
+      await db()
+        .update(schema.users)
+        .set({ status: "active" })
+        .where(eq(schema.users.id, uBand));
+    }
+    const rows = await db()
+      .select({ body: schema.messages.body })
+      .from(schema.messages)
+      .where(eq(schema.messages.threadId, threadId));
+    expect(rows).toEqual([{ body: "Before deactivation" }]);
+  });
+
   it("the daily cap counts inquiries you sent, not ones you received", async () => {
     // The cap joined through participants, so inbound inquiries counted against
     // your own send budget. Anyone holding both a venue and an act profile —
@@ -164,6 +223,94 @@ describe("threads and messages", () => {
     as(uBand);
     const res = await inquiry({ techId, body: "need sound for a bar gig" });
     expect(res.status).toBe(201);
+  });
+
+  it("rejects hidden and deactivated recipients without creating a thread", async () => {
+    const before = await db()
+      .select({ id: schema.threads.id })
+      .from(schema.threads)
+      .where(eq(schema.threads.createdByUserId, uVenue));
+    as(uVenue);
+
+    await db()
+      .update(schema.performers)
+      .set({ status: "hidden" })
+      .where(eq(schema.performers.id, performerId));
+    try {
+      const hidden = await inquiry({ performerId, body: "Still there?" });
+      expect(hidden.status).toBe(409);
+    } finally {
+      await db()
+        .update(schema.performers)
+        .set({ status: "live" })
+        .where(eq(schema.performers.id, performerId));
+    }
+
+    await db()
+      .update(schema.users)
+      .set({ status: "deleted" })
+      .where(eq(schema.users.id, uBand));
+    try {
+      const deleted = await inquiry({ performerId, body: "Still there?" });
+      expect(deleted.status).toBe(409);
+    } finally {
+      await db()
+        .update(schema.users)
+        .set({ status: "active" })
+        .where(eq(schema.users.id, uBand));
+    }
+
+    const after = await db()
+      .select({ id: schema.threads.id })
+      .from(schema.threads)
+      .where(eq(schema.threads.createdByUserId, uVenue));
+    expect(after).toHaveLength(before.length);
+  });
+
+  it("returns a clean conflict when a multi-role user targets their own profile", async () => {
+    const userId = newId("user");
+    const ownVenueId = newId("venue");
+    const ownPerformerId = newId("performer");
+    await db().insert(schema.users).values({
+      id: userId,
+      email: `${userId}@t.test`,
+    });
+    await db().insert(schema.venues).values({
+      id: ownVenueId,
+      ownerUserId: userId,
+      kind: "bar",
+      name: "Self Message Room",
+      metro: "thread-tv",
+      lat: 43,
+      lng: -88,
+      addressLine1: "2 Test St",
+      city: "Milwaukee",
+      region: "WI",
+      postalCode: "53202",
+      timeZone: "America/Chicago",
+    });
+    await db().insert(schema.performers).values({
+      id: ownPerformerId,
+      ownerUserId: userId,
+      kind: "solo",
+      name: "Self Message Act",
+      homeMetro: "thread-tv",
+    });
+
+    as(userId);
+    const res = await inquiry({
+      performerId: ownPerformerId,
+      body: "Message myself",
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: { code: "self_inquiry", message: "You can't message your own profile." },
+    });
+    const rows = await db()
+      .select({ id: schema.threads.id })
+      .from(schema.threads)
+      .where(eq(schema.threads.createdByUserId, userId));
+    expect(rows).toHaveLength(0);
   });
 
   it("a user with no profile at all cannot open inquiries", async () => {

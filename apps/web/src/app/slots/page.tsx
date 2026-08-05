@@ -1,11 +1,12 @@
 import { db, openSlotFeed, schema } from "@gigit/db";
 import { and, asc, eq, gte, inArray } from "drizzle-orm";
 import Link from "next/link";
-import { performerOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
 import {
   formatAddress,
+  formatAreaName,
   formatVenueDateTime,
   shortTimeZoneName,
 } from "@/lib/date-time";
@@ -13,10 +14,6 @@ import {
 export const dynamic = "force-dynamic";
 
 import { GIG_FORMAT_LABEL, VENUE_KIND_LABEL } from "@/lib/labels";
-
-function formatAreaName(value: string) {
-  return value.replace(/\b\w/g, (letter) => letter.toLocaleUpperCase("en-US"));
-}
 
 export default async function FeedPage({
   searchParams,
@@ -30,9 +27,11 @@ export default async function FeedPage({
     query.format === "music" || query.format === "comedy" ? query.format : null;
   const metroFilter = query.metro?.trim().toLocaleLowerCase("en-US") || null;
   const userId = await sessionUserId();
-  const [performer, venue] = userId
-    ? await Promise.all([performerOwnedBy(userId), venueOwnedBy(userId)])
-    : [null, null];
+  const profiles = userId ? await profileCapabilitiesOwnedBy(userId) : null;
+  const performer = profiles?.live.performer ?? null;
+  const venue = profiles?.live.venue ?? null;
+  const ownedPerformer = profiles?.owned.performer ?? null;
+  const ownedVenue = profiles?.owned.venue ?? null;
   const searches = performer
     ? await db()
         .select()
@@ -57,8 +56,8 @@ export default async function FeedPage({
     <div>
       <h1>Open gigs</h1>
       <p className="muted">
-        Every gig shows its pay up front. Your act profile is your application,
-        so applying takes one click.
+        Every gig shows its listed budget up front. Venues and acts settle the
+        agreed pay directly; your act profile makes applying one click.
       </p>
       <div className="filter-row">
         {(
@@ -98,12 +97,12 @@ export default async function FeedPage({
               below" to a venue or a signed-out visitor pointed at nothing. */}
           {performer ? (
             <p className="muted">
-              Or save an alert below and we&apos;ll email you when one fits.
+              Or save an alert below and we&apos;ll notify you when one fits.
             </p>
           ) : (
             <p className="muted">
-              <Link href="/venues">Browse the rooms</Link> in the meantime — pay,
-              capacity, and PA specs are listed whether or not they have a date up.
+              <Link href="/venues">Browse the rooms</Link> in the meantime —
+              capacity and PA specs are listed whether or not they have a date up.
             </p>
           )}
         </div>
@@ -122,9 +121,16 @@ export default async function FeedPage({
                 rooms come on.
               </p>
               <p className="muted">
-                Save an alert below and we&apos;ll email you the moment one fits.
+                Save an alert below and we&apos;ll notify you the moment one fits.
                 Meanwhile <Link href="/venues">have a look at the rooms</Link> —
                 capacity, house PA, and curfew are listed for each.
+              </p>
+            </>
+          ) : ownedPerformer || ownedVenue ? (
+            <>
+              <p>Your marketplace profile is not active right now.</p>
+              <p className="muted">
+                <Link href="/account">Review your account</Link> or contact support.
               </p>
             </>
           ) : (
@@ -139,8 +145,8 @@ export default async function FeedPage({
               <p className="muted">
                 <Link href="/venues">Browse the rooms</Link> to see who books live
                 music near you, or{" "}
-                <Link href="/onboarding?role=performer">set up your act</Link> and
-                we&apos;ll email you when a gig fits.
+                <Link href="/onboarding?role=performer">set up your act</Link> so
+                you can save a gig alert.
               </p>
               <p className="muted">
                 Run a room?{" "}

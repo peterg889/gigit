@@ -58,13 +58,21 @@ export function soundPlan(venue: VenuePA, needs: PerformerNeeds): SoundPlan {
     gaps.push(
       `mixer has ${venue.mixerChannels} channels, act needs ${needs.inputs}`,
     );
-  if ((venue.micsAvailable ?? 0) < (needs.micsNeeded ?? 0))
+  if (
+    venue.micsAvailable != null &&
+    needs.micsNeeded != null &&
+    venue.micsAvailable < needs.micsNeeded
+  )
     gaps.push(
-      `venue has ${venue.micsAvailable ?? 0} mics, act needs ${needs.micsNeeded}`,
+      `venue has ${venue.micsAvailable} mics, act needs ${needs.micsNeeded}`,
     );
-  if ((venue.monitors ?? 0) < (needs.monitorsNeeded ?? 0))
+  if (
+    venue.monitors != null &&
+    needs.monitorsNeeded != null &&
+    venue.monitors < needs.monitorsNeeded
+  )
     gaps.push(
-      `venue has ${venue.monitors ?? 0} monitors, act needs ${needs.monitorsNeeded}`,
+      `venue has ${venue.monitors} monitors, act needs ${needs.monitorsNeeded}`,
     );
   // Only a stated `false` means "there is nobody" — undefined means unanswered.
   if (venue.hasOperator === false) gaps.push("no one to run sound");
@@ -76,28 +84,27 @@ export function soundPlan(venue: VenuePA, needs: PerformerNeeds): SoundPlan {
   if (!(needs.inputs > 0)) unanswered.push("the act hasn't listed its input count");
   if (venue.hasOperator === undefined)
     unanswered.push("the room hasn't said whether anyone runs sound");
-  if (unanswered.length > 0)
-    return {
-      version: SOUND_PLAN_VERSION,
-      verdict: "unknown",
-      gaps: [...gaps, ...unanswered],
-    };
+  if ((needs.micsNeeded ?? 0) > 0 && venue.micsAvailable === undefined)
+    unanswered.push("the room hasn't listed its available microphones");
+  if ((needs.monitorsNeeded ?? 0) > 0 && venue.monitors === undefined)
+    unanswered.push("the room hasn't listed its available monitors");
 
-  if (gaps.length === 0)
-    return { version: SOUND_PLAN_VERSION, verdict: "covered", gaps };
-
-  // PA exists but is insufficient or unstaffed → a tech can bridge with the house rig
-  // unless the KNOWN channel deficit is severe (more than double), in which case bring a
-  // rig. An unspecified channel count is NOT a deficit: a staffed house PA that didn't
-  // fill in its channel count isn't "0 channels", and treating it so would spuriously
-  // inflate the conditional tech side.
+  // A known shortage remains actionable even when some other field is
+  // unanswered. Uncertainty can prevent a false "covered"; it must never erase
+  // a definite need for a tech or a rig.
   const severeChannelDeficit =
     venue.hasPA &&
     venue.mixerChannels != null &&
     needs.inputs > 2 * venue.mixerChannels;
-  return {
-    version: SOUND_PLAN_VERSION,
-    verdict: severeChannelDeficit ? "tech_and_rig_needed" : "tech_needed",
-    gaps,
-  };
+  if (gaps.length > 0)
+    return {
+      version: SOUND_PLAN_VERSION,
+      verdict: severeChannelDeficit ? "tech_and_rig_needed" : "tech_needed",
+      gaps: [...gaps, ...unanswered],
+    };
+
+  if (unanswered.length > 0)
+    return { version: SOUND_PLAN_VERSION, verdict: "unknown", gaps: unanswered };
+
+  return { version: SOUND_PLAN_VERSION, verdict: "covered", gaps };
 }

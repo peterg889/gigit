@@ -13,6 +13,7 @@ import { appendEvent } from "./events.js";
 import {
   applications,
   bookings,
+  events,
   performers,
   savedSearches,
   slots,
@@ -124,6 +125,8 @@ describe("night facts + saved-search matching (integration)", () => {
     const d = db();
     const past = newId("slot");
     const future = newId("slot");
+    const pastApplication = newId("application");
+    const futureApplication = newId("application");
     await d.insert(slots).values([
       {
         id: past, venueId, metro: "analytics-testville",
@@ -136,22 +139,71 @@ describe("night facts + saved-search matching (integration)", () => {
         durationMinutes: 90, format: "music", budgetCents: 20_000,
       },
     ]);
+    await d.insert(applications).values([
+      { id: pastApplication, slotId: past, performerId },
+      { id: futureApplication, slotId: future, performerId },
+    ]);
 
     await expirePastSlots();
     const statusOf = async (id: string) =>
       (await d.select({ s: slots.status }).from(slots).where(eq(slots.id, id)))[0]?.s;
     expect(await statusOf(past)).toBe("expired");
     expect(await statusOf(future)).toBe("open"); // and nothing else moves
+    const applicationStatus = async (id: string) =>
+      (
+        await d
+          .select({ status: applications.status, reason: applications.declineReason })
+          .from(applications)
+          .where(eq(applications.id, id))
+      )[0];
+    expect(await applicationStatus(pastApplication)).toEqual({
+      status: "declined",
+      reason: "slot_expired",
+    });
+    expect(await applicationStatus(futureApplication)).toEqual({
+      status: "submitted",
+      reason: null,
+    });
+    const [decline] = await d
+      .select({ kind: events.kind, payload: events.payload })
+      .from(events)
+      .where(eq(events.subjectId, past));
+    expect(decline).toMatchObject({
+      kind: "application.declined",
+      payload: {
+        applicationId: pastApplication,
+        reason: "slot_expired",
+        effects: [
+          { kind: "notify", template: "application_expired", to: "performer" },
+        ],
+      },
+    });
 
     // idempotent: a second sweep leaves the already-expired row alone
     await expirePastSlots();
     expect(await statusOf(past)).toBe("expired");
+    const duplicateDeclines = await d
+      .select({ id: events.id })
+      .from(events)
+      .where(eq(events.subjectId, past));
+    expect(duplicateDeclines).toHaveLength(1);
   });
 
   it("saved-search matching honors format/metro/budget and the `either` rule", async () => {
     // a second performer whose searches must NOT match — same run, so the
     // accreting dev/CI database can't contaminate the negative assertions
     const d = db();
+    const matchingSlot = newId("slot");
+    await d.insert(slots).values({
+      id: matchingSlot,
+      venueId,
+      metro: "analytics-testville",
+      startsAt: new Date("2031-03-14T20:00:00Z"),
+      durationMinutes: 120,
+      format: "comedy",
+      budgetCents: 30_000,
+      status: "open",
+    });
     const userNo = newId("user");
     const performerNo = newId("performer");
     await d.insert(users).values({ id: userNo, email: `${userNo}@t.test` });
@@ -180,7 +232,7 @@ describe("night facts + saved-search matching (integration)", () => {
     await mkSearch(performerNo, { format: "comedy", metro: "elsewhere" }); // wrong metro
     await mkSearch(performerNo, { minBudgetCents: 50_000, metro: "analytics-testville" }); // too pricey
 
-    const matched = await matchSavedSearches(gigSlotId);
+    const matched = await matchSavedSearches(matchingSlot);
     expect(matched).toContain(userId);
     expect(matched).not.toContain(userNo);
 
@@ -213,8 +265,43 @@ describe("night facts + saved-search matching (integration)", () => {
       techNeeds: { inputs: 1 },
     });
     await mkSearch(performerEither, { format: "either", metro: "analytics-testville" });
-    expect(await matchSavedSearches(gigSlotId)).toContain(userEither); // comedy slot
+    expect(await matchSavedSearches(matchingSlot)).toContain(userEither); // comedy slot
     expect(await matchSavedSearches(eitherSlot)).toContain(userEither); // either slot
+
+    // Proactive alerts must stay actionable. A historical/hidden profile and a
+    // suspended account can own saved searches, but neither should be fanned
+    // out when a new slot appears.
+    const hiddenOwner = newId("user");
+    const hiddenPerformer = newId("performer");
+    await d.insert(users).values({ id: hiddenOwner, email: `${hiddenOwner}@t.test` });
+    await d.insert(performers).values({
+      id: hiddenPerformer,
+      ownerUserId: hiddenOwner,
+      kind: "band",
+      name: "Hidden Saved Search",
+      homeMetro: "analytics-testville",
+      status: "hidden",
+    });
+    await mkSearch(hiddenPerformer, { format: "comedy", metro: "analytics-testville" });
+
+    const suspendedOwner = newId("user");
+    const suspendedPerformer = newId("performer");
+    await d.insert(users).values({
+      id: suspendedOwner,
+      email: `${suspendedOwner}@t.test`,
+      status: "suspended",
+    });
+    await d.insert(performers).values({
+      id: suspendedPerformer,
+      ownerUserId: suspendedOwner,
+      kind: "band",
+      name: "Suspended Saved Search",
+      homeMetro: "analytics-testville",
+    });
+    await mkSearch(suspendedPerformer, { format: "comedy", metro: "analytics-testville" });
+    const actionableMatches = await matchSavedSearches(matchingSlot);
+    expect(actionableMatches).not.toContain(hiddenOwner);
+    expect(actionableMatches).not.toContain(suspendedOwner);
   });
 
   it("matchOpenSlotsForPerformer: a new act fans out to venues with a fitting open slot", async () => {
@@ -275,6 +362,32 @@ describe("night facts + saved-search matching (integration)", () => {
     const comicId = await mkPerformer("comedian", metro);
     expect(await matchOpenSlotsForPerformer(comicId)).toContain(vOwner);
 
+    // Re-check both sides at matching time so a queued performer.created event
+    // cannot produce an alert after either account/profile becomes inactive.
+    await d.update(venues).set({ status: "suspended" }).where(eq(venues.id, vId));
+    expect(await matchOpenSlotsForPerformer(comicId)).not.toContain(vOwner);
+    await d.update(venues).set({ status: "live" }).where(eq(venues.id, vId));
+    await d.update(users).set({ status: "suspended" }).where(eq(users.id, vOwner));
+    expect(await matchOpenSlotsForPerformer(comicId)).not.toContain(vOwner);
+    await d.update(users).set({ status: "active" }).where(eq(users.id, vOwner));
+
+    const [comic] = await d
+      .select({ ownerUserId: performers.ownerUserId })
+      .from(performers)
+      .where(eq(performers.id, comicId));
+    await d
+      .update(performers)
+      .set({ status: "suspended" })
+      .where(eq(performers.id, comicId));
+    expect(await matchOpenSlotsForPerformer(comicId)).not.toContain(vOwner);
+    await d.update(performers).set({ status: "live" }).where(eq(performers.id, comicId));
+    await d
+      .update(users)
+      .set({ status: "suspended" })
+      .where(eq(users.id, comic!.ownerUserId));
+    expect(await matchOpenSlotsForPerformer(comicId)).not.toContain(vOwner);
+    await d.update(users).set({ status: "active" }).where(eq(users.id, comic!.ownerUserId));
+
     // band (→ music) vs comedy-only slot; comic in another metro; comic whose
     // floor exceeds the budget — none should be alerted about this venue
     const bandId = await mkPerformer("band", metro);
@@ -324,6 +437,13 @@ describe("night facts + saved-search matching (integration)", () => {
     let stale = await staleOpenSlots();
     expect(stale.map((s) => s.slotId)).toContain(aged);
     expect(stale.find((s) => s.slotId === aged)?.ownerUserId).toBe(userId);
+
+    await d.update(venues).set({ status: "suspended" }).where(eq(venues.id, venueId));
+    expect((await staleOpenSlots()).map((s) => s.slotId)).not.toContain(aged);
+    await d.update(venues).set({ status: "live" }).where(eq(venues.id, venueId));
+    await d.update(users).set({ status: "suspended" }).where(eq(users.id, userId));
+    expect((await staleOpenSlots()).map((s) => s.slotId)).not.toContain(aged);
+    await d.update(users).set({ status: "active" }).where(eq(users.id, userId));
 
     // a fresh slot (default created_at = now) is NOT stale
     const fresh = await mkOpen();

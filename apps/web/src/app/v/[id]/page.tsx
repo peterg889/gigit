@@ -5,6 +5,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
 import { formatAddress, formatVenueDateTime, shortTimeZoneName } from "@/lib/date-time";
+import { equipmentCount, houseOperatorLabel } from "@/lib/sound-display";
 
 export const dynamic = "force-dynamic";
 
@@ -118,8 +119,9 @@ export default async function VenuePage({
               {pa.mixerChannels != null
                 ? `${pa.mixerChannels} channels`
                 : "channel count not listed"}{" "}
-              · {pa.micsAvailable ?? 0} microphones · {pa.monitors ?? 0} monitors ·{" "}
-              {pa.hasOperator ? "house sound tech included" : "no house sound tech"}
+              · {equipmentCount(pa.micsAvailable, "microphone")} ·{" "}
+              {equipmentCount(pa.monitors, "monitor")} ·{" "}
+              {houseOperatorLabel(pa.hasOperator)}
             </>
           ) : (
             <>No house PA — bring your own or <Link href="/techs">find a sound tech</Link>.</>

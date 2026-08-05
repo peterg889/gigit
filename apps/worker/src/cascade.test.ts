@@ -23,7 +23,9 @@ import { drainOutboxOnce } from "./index.js";
  * effects, so the cascade branch is the only thing exercised → a stub boss is
  * fine.
  */
-const noBoss = {} as unknown as PgBoss;
+const noBoss = {
+  send: async () => null,
+} as unknown as PgBoss;
 
 describe("worker parent→subslot cascade for dispute outcomes (audit #1)", () => {
   const userV = newId("user");
@@ -136,7 +138,8 @@ describe("worker parent→subslot cascade for dispute outcomes (audit #1)", () =
     const { bookingId, subslotId } = await bookedSubslot();
     await clearOutbox();
     await injectParentTransition(bookingId, "refunded");
-    await drainOutboxOnce(noBoss);
+    const stats = await drainOutboxOnce(noBoss);
+    expect(stats).toMatchObject({ processed: 1, dispatched: 1, deadLettered: 0 });
 
     const [s] = await db()
       .select()
@@ -149,7 +152,8 @@ describe("worker parent→subslot cascade for dispute outcomes (audit #1)", () =
     const { bookingId, subslotId } = await bookedSubslot();
     await clearOutbox();
     await injectParentTransition(bookingId, "partially_released");
-    await drainOutboxOnce(noBoss);
+    const stats = await drainOutboxOnce(noBoss);
+    expect(stats).toMatchObject({ processed: 1, dispatched: 1, deadLettered: 0 });
 
     const [s] = await db()
       .select()

@@ -23,7 +23,7 @@ const timeZoneSchema = z
   .string()
   .min(1)
   .max(80)
-  .refine(isValidTimeZone, "must be a valid IANA timezone");
+  .refine(isValidTimeZone, "must be a valid IANA time zone");
 
 /** The same normalization metroSchema applies, for deriving a metro from a city. */
 export function normalizeMetro(value: string): string {
@@ -57,11 +57,37 @@ const performerObject = z.object({
     .default({ inputs: 0 }),
 });
 
-const rateOk = (v: { rateMinCents?: number | null; rateMaxCents?: number | null }) =>
-  v.rateMinCents == null || v.rateMaxCents == null || v.rateMinCents <= v.rateMaxCents;
-const rateMsg = { message: "rate floor must be at or below the ceiling", path: ["rateMaxCents"] };
-export const performerCreateSchema = performerObject.refine(rateOk, rateMsg);
-export const performerUpdateSchema = performerObject.partial().refine(rateOk, rateMsg);
+export const performerRateOrderMessage =
+  "Lowest rate must be at or below the highest rate.";
+
+export function performerRatesAreOrdered(value: {
+  rateMinCents?: number | null;
+  rateMaxCents?: number | null;
+}): boolean {
+  return (
+    value.rateMinCents == null ||
+    value.rateMaxCents == null ||
+    value.rateMinCents <= value.rateMaxCents
+  );
+}
+
+const rateOrderIssue = {
+  message: performerRateOrderMessage,
+  path: ["rateMaxCents"],
+};
+export const performerCreateSchema = performerObject.refine(
+  performerRatesAreOrdered,
+  rateOrderIssue,
+);
+export const performerUpdateSchema = performerObject
+  .partial()
+  .extend({
+    // PATCH uses null to explicitly clear a saved bound; omission still means
+    // "leave it unchanged".
+    rateMinCents: performerObject.shape.rateMinCents.nullable(),
+    rateMaxCents: performerObject.shape.rateMaxCents.nullable(),
+  })
+  .refine(performerRatesAreOrdered, rateOrderIssue);
 
 export const venueCreateSchema = z.object({
   kind: z.enum(venueKinds),
@@ -94,7 +120,9 @@ export const venueCreateSchema = z.object({
     .default({ hasPA: false }),
   noiseCurfew: z.string().max(80).optional(),
 });
-export const venueUpdateSchema = venueCreateSchema.partial();
+export const venueUpdateSchema = venueCreateSchema.partial().extend({
+  capacity: venueCreateSchema.shape.capacity.nullable(),
+});
 
 export const techCreateSchema = z.object({
   name: z.string().min(1).max(120),
@@ -104,7 +132,10 @@ export const techCreateSchema = z.object({
   rateWithRigCents: z.number().int().min(0).optional(),
   travelRadiusMiles: z.number().int().min(0).max(300).default(30),
 });
-export const techUpdateSchema = techCreateSchema.partial();
+export const techUpdateSchema = techCreateSchema.partial().extend({
+  rateLaborCents: techCreateSchema.shape.rateLaborCents.nullable(),
+  rateWithRigCents: techCreateSchema.shape.rateWithRigCents.nullable(),
+});
 
 export const slotCreateSchema = z
   .object({

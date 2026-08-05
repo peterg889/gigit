@@ -1,5 +1,5 @@
 import { messageCreateSchema, newId } from "@gigit/domain";
-import { appendEvent, db, schema } from "@gigit/db";
+import { appendEvent, db, lockActiveAccounts, schema } from "@gigit/db";
 import { and, desc, eq } from "drizzle-orm";
 import { requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
@@ -44,28 +44,56 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { id: threadId } = await params;
     const userId = await requireUser();
-    if (!(await assertParticipant(threadId, userId)))
-      return fail("forbidden", "This conversation isn't yours.", 403);
     const parsed = await parseBody(req, messageCreateSchema);
     if ("response" in parsed) return parsed.response;
     const id = newId("message");
-    const d = db();
-    await d.insert(schema.messages).values({
-      id,
-      threadId,
-      senderUserId: userId,
-      body: parsed.data.body,
+    return await db().transaction(async (tx) => {
+      const initialParticipants = await tx
+        .select({ userId: schema.threadParticipants.userId })
+        .from(schema.threadParticipants)
+        .where(eq(schema.threadParticipants.threadId, threadId));
+      if (!initialParticipants.some((row) => row.userId === userId))
+        return fail("forbidden", "This conversation isn't yours.", 403);
+      await lockActiveAccounts(
+        tx,
+        initialParticipants.map((row) => row.userId),
+      );
+      const [thread] = await tx
+        .select({ id: schema.threads.id })
+        .from(schema.threads)
+        .where(eq(schema.threads.id, threadId))
+        .for("update");
+      if (!thread) return fail("not_found", "We couldn't find that conversation.", 404);
+      const [participant] = await tx
+        .select({ userId: schema.threadParticipants.userId })
+        .from(schema.threadParticipants)
+        .where(
+          and(
+            eq(schema.threadParticipants.threadId, threadId),
+            eq(schema.threadParticipants.userId, userId),
+          ),
+        )
+        .for("update");
+      if (!participant)
+        return fail("forbidden", "This conversation isn't yours.", 403);
+
+      await tx.insert(schema.messages).values({
+        id,
+        threadId,
+        senderUserId: userId,
+        body: parsed.data.body,
+      });
+      await appendEvent(tx, {
+        actor: userId,
+        kind: "message.sent",
+        subjectType: "thread",
+        subjectId: threadId,
+        payload: {
+          effects: [{ kind: "notify", template: "new_message", to: "both" }],
+        },
+      });
+      return ok({ id }, 201);
     });
-    await appendEvent(d, {
-      actor: userId,
-      kind: "message.sent",
-      subjectType: "thread",
-      subjectId: threadId,
-      payload: {
-        effects: [{ kind: "notify", template: "new_message", to: "both" }],
-      },
-    });
-    return ok({ id }, 201);
   } catch (e) {
     return respondError(e);
   }

@@ -25,10 +25,26 @@ export interface PaymentGateway {
   readonly name: "null" | "stripe";
   /** Charge the venue for a booking. Pending = webhook will deliver the outcome. */
   charge(bookingId: string): Promise<ChargeResult>;
-  /** Transfer released funds to the performer's connected account. */
-  transfer(bookingId: string, amountCents: number): Promise<void>;
-  /** Refund (part of) the original charge to the venue. */
-  refund(bookingId: string, amountCents: number): Promise<void>;
+  /**
+   * Transfer released funds to the performer's connected account.
+   *
+   * operationKey distinguishes two intentional transfers of the same amount;
+   * lifecycle effects omit it and retain the established default key.
+   */
+  transfer(
+    bookingId: string,
+    amountCents: number,
+    operationKey?: string,
+  ): Promise<void>;
+  /**
+   * Refund (part of) the original charge to the venue. See transfer's
+   * operationKey contract.
+   */
+  refund(
+    bookingId: string,
+    amountCents: number,
+    operationKey?: string,
+  ): Promise<void>;
   /** Create/refresh a Connect Express onboarding link for a performer. */
   connectOnboardingLink(performerId: string, returnUrl: string): Promise<string | null>;
   /** Can this performer receive money? Gates offer acceptance (spec §6). */
@@ -109,7 +125,11 @@ class StripeGateway implements PaymentGateway {
     return { status: "pending", paymentRef: pi.id };
   }
 
-  async transfer(bookingId: string, amountCents: number): Promise<void> {
+  async transfer(
+    bookingId: string,
+    amountCents: number,
+    operationKey?: string,
+  ): Promise<void> {
     const d = db();
     const [row] = await d
       .select({ booking: bookings, performer: performers })
@@ -126,11 +146,20 @@ class StripeGateway implements PaymentGateway {
         transfer_group: bookingId,
         metadata: { bookingId },
       },
-      { idempotencyKey: `transfer:${bookingId}:${amountCents}` },
+      {
+        idempotencyKey:
+          operationKey !== undefined
+            ? `transfer:${bookingId}:op:${operationKey}`
+            : `transfer:${bookingId}:${amountCents}`,
+      },
     );
   }
 
-  async refund(bookingId: string, amountCents: number): Promise<void> {
+  async refund(
+    bookingId: string,
+    amountCents: number,
+    operationKey?: string,
+  ): Promise<void> {
     const [row] = await db()
       .select({ paymentRef: bookings.paymentRef })
       .from(bookings)
@@ -138,7 +167,12 @@ class StripeGateway implements PaymentGateway {
     if (!row?.paymentRef) throw new Error(`booking ${bookingId} has no charge`);
     await this.stripe.refunds.create(
       { payment_intent: row.paymentRef, amount: amountCents },
-      { idempotencyKey: `refund:${bookingId}:${amountCents}` },
+      {
+        idempotencyKey:
+          operationKey !== undefined
+            ? `refund:${bookingId}:op:${operationKey}`
+            : `refund:${bookingId}:${amountCents}`,
+      },
     );
   }
 
@@ -240,6 +274,13 @@ export function paymentsEnabled(): boolean {
   return env().PAYMENTS_ENABLED && !!env().STRIPE_SECRET_KEY;
 }
 
+export class VenuePaymentMethodRequiredError extends Error {
+  readonly code = "payment_method_required";
+  constructor(readonly venueId: string) {
+    super(`venue ${venueId} needs a payment method before sending an offer`);
+  }
+}
+
 let gateway: PaymentGateway | undefined;
 
 export function paymentGateway(): PaymentGateway {
@@ -248,6 +289,21 @@ export function paymentGateway(): PaymentGateway {
     gateway = env().PAYMENTS_ENABLED && key ? new StripeGateway(key) : new NullGateway();
   }
   return gateway;
+}
+
+/**
+ * Every firm-offer creator passes through the same charge-readiness gate.
+ *
+ * The Null gateway returns true, preserving discovery-first behavior while
+ * payments are disabled. With Stripe enabled, this prevents an invite or
+ * re-book from becoming an offer that can only collapse after acceptance.
+ */
+export async function assertVenueOfferPaymentReady(
+  venueId: string,
+  readinessGateway: Pick<PaymentGateway, "venuePaymentReady"> = paymentGateway(),
+): Promise<void> {
+  if (!(await readinessGateway.venuePaymentReady(venueId)))
+    throw new VenuePaymentMethodRequiredError(venueId);
 }
 
 

@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { authVerifySchema, venueCreateSchema } from "./schemas.js";
+import {
+  authVerifySchema,
+  techUpdateSchema,
+  venueCreateSchema,
+  venueUpdateSchema,
+} from "./schemas.js";
 
 const venue = {
   kind: "bar" as const,
@@ -33,6 +38,14 @@ describe("venue profile validation", () => {
   it("requires enough address data to tell people where the gig is", () => {
     const { addressLine1: _omitted, ...missingAddress } = venue;
     expect(venueCreateSchema.safeParse(missingAddress).success).toBe(false);
+  });
+});
+
+describe("profile update clearing", () => {
+  it("accepts explicit nulls only for nullable PATCH fields", () => {
+    expect(venueUpdateSchema.parse({ capacity: null })).toEqual({ capacity: null });
+    expect(techUpdateSchema.parse({ rateLaborCents: null })).toEqual({ rateLaborCents: null });
+    expect(venueCreateSchema.safeParse({ ...venue, capacity: null }).success).toBe(false);
   });
 });
 

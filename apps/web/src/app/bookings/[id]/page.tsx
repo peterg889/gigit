@@ -1,4 +1,5 @@
 import {
+  ACTIVE_SUBSLOT_STATES,
   AUTO_CONFIRM_HOURS,
   isReviewableBookingState,
   renderAgreement,
@@ -7,11 +8,16 @@ import {
 import type { BookingState } from "@gigit/domain";
 import {
   bookingThreadId,
-  ensureBookingThread, db, findRebookTarget, paymentsEnabled, schema } from "@gigit/db";
-import { and, eq, inArray } from "drizzle-orm";
+  db,
+  findRebookTarget,
+  paymentsEnabled,
+  schema,
+} from "@gigit/db";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { performerOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
+import { accountCanAct } from "@/lib/profile-capabilities";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
 import {
@@ -20,6 +26,18 @@ import {
   formatVenueDateTime,
   shortTimeZoneName,
 } from "@/lib/date-time";
+import {
+  bookingContactsAreVisible,
+  confirmedCancellationCopy,
+} from "@/lib/booking-display";
+import { bookingWasConfirmed } from "@/lib/booking-history";
+import {
+  isSoundApplicantBookable,
+  isSoundJobActionable,
+  isPayerSoundCancellationActionable,
+  isSoundParentActionable,
+  payerSoundCancellationConfirmation,
+} from "@/lib/sound-display";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +75,11 @@ export default async function BookingPage({
       venueRegion: schema.venues.region,
       venuePostalCode: schema.venues.postalCode,
       venueTimeZone: schema.venues.timeZone,
+      venueProfileStatus: schema.venues.status,
+      venueOwnerUserId: schema.venues.ownerUserId,
       performerName: schema.performers.name,
+      performerProfileStatus: schema.performers.status,
+      performerOwnerUserId: schema.performers.ownerUserId,
       paInventory: schema.venues.paInventory,
       techNeeds: schema.performers.techNeeds,
     })
@@ -68,10 +90,11 @@ export default async function BookingPage({
   if (!row) notFound();
   const b = row.booking;
 
-  const [performer, venue] = await Promise.all([
-    performerOwnedBy(userId),
-    venueOwnedBy(userId),
-  ]);
+  const profiles = await profileCapabilitiesOwnedBy(userId);
+  const performer = profiles.owned.performer;
+  const venue = profiles.owned.venue;
+  const accountActive = accountCanAct(profiles.accountStatus);
+  const canStartVenueMarketplaceAction = profiles.live.venue?.id === b.venueId;
   const asPerformer = performer?.id === b.performerId;
   const asVenue = venue?.id === b.venueId;
   if (!asPerformer && !asVenue) notFound();
@@ -96,20 +119,49 @@ export default async function BookingPage({
   );
   const acceptConfirmation =
     `Accept this firm offer? ${row.performerName} at ${row.venueName} / ${offerDateTime} / ${venueAddress} / $${(b.terms.amountCents / 100).toFixed(0)}. This creates a binding booking.`;
+  const platformPaymentsEnabled = paymentsEnabled();
+  const cancellationCopy = confirmedCancellationCopy({
+    role: asVenue ? "venue" : "performer",
+    paymentsEnabled: platformPaymentsEnabled,
+    startsAt: b.terms.startsAt,
+  });
 
+  // A cancelled state alone is ambiguous: an offer can be cancelled before or
+  // after confirmation. Check history only in those two states so an unaccepted
+  // offer never unlocks day-of details that were not previously visible.
+  const cancellationWasConfirmed =
+    state === "cancelled_by_venue" || state === "cancelled_by_performer"
+      ? await bookingWasConfirmed(id)
+      : false;
   // Contact reveal at confirmation (PRD F5.1): day-of phones, not before.
-  const contactsRevealed = state === "confirmed" || state === "awaiting_confirmation";
+  const contactsRevealed = bookingContactsAreVisible(
+    state,
+    cancellationWasConfirmed,
+  );
 
   // These reads are independent of one another — one round-trip of latency,
   // not five, on the busiest page in the product.
-  const [rebookTarget, subslots, venueOwner, performerOwner, myReview] =
+  const [
+    rebookTarget,
+    subslots,
+    venueOwner,
+    performerOwner,
+    myReview,
+    soundOwnerRows,
+  ] =
     await Promise.all([
-      // Recurring-series re-book (PRD F2.2): one-tap re-offer of this act into
-      // the next open series night, at the same pay — the residency
-      // anti-leakage hook.
-      asVenue ? findRebookTarget(id) : Promise.resolve(null),
+      // Re-offer this act into the best matching open date. The target listing
+      // supplies its own date and budget, including for one-off nights.
+      canStartVenueMarketplaceAction ? findRebookTarget(id) : Promise.resolve(null),
       // Tech sub-slots on this booking (PRD F6.2/F6.3)
-      d.select().from(schema.techSubslots).where(eq(schema.techSubslots.bookingId, id)),
+      d
+        .select()
+        .from(schema.techSubslots)
+        .where(eq(schema.techSubslots.bookingId, id))
+        .orderBy(
+          desc(schema.techSubslots.createdAt),
+          desc(schema.techSubslots.id),
+        ),
       contactsRevealed
         ? d
             .select({ phone: schema.users.phone, email: schema.users.email })
@@ -135,32 +187,74 @@ export default async function BookingPage({
             )
             .then((r) => r[0])
         : Promise.resolve(undefined),
+      d
+        .select({ id: schema.users.id, status: schema.users.status })
+        .from(schema.users)
+        .where(
+          inArray(schema.users.id, [
+            row.venueOwnerUserId,
+            row.performerOwnerUserId,
+          ]),
+        ),
     ]);
 
-  const activeSubslot = subslots.find((s) => s.state === "open" || s.state === "booked");
-  const subslotApplicants = activeSubslot
+  // Only the paying party reviews applications and applicant notes. The other
+  // booking party can still see each sound job's state and history.
+  const applicantVisibleSubslotIds = subslots
+    .filter((subslot) =>
+      subslot.payer === "venue" ? asVenue : asPerformer,
+    )
+    .map((subslot) => subslot.id);
+  const subslotApplicants = applicantVisibleSubslotIds.length
     ? await d
-        .select({ application: schema.techSubslotApplications, tech: schema.techs })
+        .select({
+          application: schema.techSubslotApplications,
+          tech: schema.techs,
+          techOwnerStatus: schema.users.status,
+        })
         .from(schema.techSubslotApplications)
         .innerJoin(schema.techs, eq(schema.techSubslotApplications.techId, schema.techs.id))
+        .innerJoin(schema.users, eq(schema.techs.ownerUserId, schema.users.id))
         .where(
-          and(
-            eq(schema.techSubslotApplications.subslotId, activeSubslot.id),
-            inArray(schema.techSubslotApplications.status, ["submitted", "booked"]),
+          inArray(
+            schema.techSubslotApplications.subslotId,
+            applicantVisibleSubslotIds,
           ),
         )
     : [];
+  const applicantsBySubslot = new Map<string, typeof subslotApplicants>();
+  for (const applicant of subslotApplicants) {
+    const applicants =
+      applicantsBySubslot.get(applicant.application.subslotId) ?? [];
+    applicants.push(applicant);
+    applicantsBySubslot.set(applicant.application.subslotId, applicants);
+  }
+  const hasActiveSubslot = subslots.some(
+    (subslot) =>
+      (ACTIVE_SUBSLOT_STATES as readonly string[]).includes(subslot.state),
+  );
+  const soundOwnerStatus = new Map(
+    soundOwnerRows.map((owner) => [owner.id, owner.status]),
+  );
+  const soundParentAvailability = {
+    bookingState: b.state,
+    startsAt: b.terms.startsAt,
+    venueProfileStatus: row.venueProfileStatus,
+    performerProfileStatus: row.performerProfileStatus,
+    venueOwnerStatus:
+      soundOwnerStatus.get(row.venueOwnerUserId) ?? "missing",
+    performerOwnerStatus:
+      soundOwnerStatus.get(row.performerOwnerUserId) ?? "missing",
+  };
+  const soundParentIsActionable = isSoundParentActionable(
+    soundParentAvailability,
+  );
+  const canPostSoundJob = accountActive && soundParentIsActionable && !hasActiveSubslot;
   const plan = soundPlan(row.paInventory, row.techNeeds);
-  const amPayer =
-    activeSubslot &&
-    (activeSubslot.payer === "venue" ? asVenue : asPerformer);
 
-  // The worker opens this on confirmation, but ensure it here too: bookings
-  // confirmed before this shipped have no thread, and a page view is a fine
-  // place to backfill one lazily. Idempotent either way.
-  const threadId = contactsRevealed
-    ? ((await bookingThreadId(id)) ?? (await ensureBookingThread(id, userId)))
-    : null;
+  // The offer transaction creates this conversation. Page reads stay pure;
+  // legacy rows are backfilled idempotently by the outbox worker.
+  const threadId = await bookingThreadId(id);
 
   let contacts: { role: string; name: string; phone: string | null; email: string | null }[] = [];
   if (contactsRevealed) {
@@ -181,6 +275,11 @@ export default async function BookingPage({
   }
   return (
     <div>
+      {!accountActive && (
+        <div className="notice">
+          Your account is not active. This booking history is read-only.
+        </div>
+      )}
       <div className="card">
         <h1>
           {row.performerName} at {row.venueName} <span className="badge">
@@ -211,38 +310,27 @@ export default async function BookingPage({
             </span>
           </p>
         )}
-        <p>
-          {state === "offered" && asVenue && (
+        <div className="booking-actions">
+          {accountActive && state === "offered" && asVenue && (
             <ActionButton
               endpoint={`/api/bookings/${id}/cancel`}
               label="Withdraw firm offer" variant="quiet"
               confirm="Withdraw this firm offer? The act will be notified and you can then offer the date to someone else."
             />
           )}{" "}
-          {state === "confirmed" && (
+          {accountActive && state === "confirmed" && (
             <>
               <ActionButton
                 endpoint={`/api/bookings/${id}/cancel`}
                 label="Cancel booking" variant="quiet"
-                confirm={
-                  asVenue
-                    ? "Cancel this booking? The date reopens. " +
-                      (paymentsEnabled()
-                        ? "Per the agreement, the closer to the date the more of the act's fee is owed."
-                        : "Settle any pay directly with the act.")
-                    : "Cancel this booking? The date reopens for the venue, and a cancellation counts against your reliability."
-                }
+                confirm={cancellationCopy.confirm}
               />{" "}
               <span className="muted">
-                {asVenue
-                  ? paymentsEnabled()
-                    ? "Reopens the date; per the agreement you owe more of the fee the closer to the date."
-                    : "Reopens the date; settle anything arranged with the act directly."
-                  : "Reopens the date; counts against your reliability. No fee owed."}
+                {cancellationCopy.consequence}
               </span>
             </>
           )}{" "}
-          {state === "awaiting_confirmation" && asPerformer && (
+          {accountActive && state === "awaiting_confirmation" && asPerformer && (
             // Pressing this doesn't change state, so without the recorded
             // timestamp the page re-rendered the same button and the act had no
             // way to know it worked — several pressed it repeatedly.
@@ -258,25 +346,25 @@ export default async function BookingPage({
               />
             )
           )}{" "}
-          {state === "awaiting_confirmation" && asVenue && (
+          {accountActive && state === "awaiting_confirmation" && asVenue && (
             <>
               <ActionButton
                 endpoint={`/api/bookings/${id}/confirm`}
-                label={paymentsEnabled() ? "Confirm & release pay" : "Confirm it played"}
+                label={platformPaymentsEnabled ? "Confirm & release pay" : "Confirm it played"}
               />{" "}
-              <span className="notice warn">
-                {paymentsEnabled()
+              <p className="notice warn">
+                {platformPaymentsEnabled
                   ? `Or the pay releases automatically ${AUTO_CONFIRM_HOURS} hours after the set ends, unless you open a dispute.`
                   : `Or this auto-confirms ${AUTO_CONFIRM_HOURS} hours after the set ends, unless you open a dispute. You and the act settle pay directly.`}
-              </span>
+              </p>
             </>
           )}
-        </p>
-        {state === "awaiting_confirmation" && (
+        </div>
+        {accountActive && state === "awaiting_confirmation" && (
           <>
             <p className="muted">
               Something go wrong? Opening a dispute{" "}
-              {paymentsEnabled() ? "pauses the payout" : "flags it for review"}. A person
+              {platformPaymentsEnabled ? "pauses the payout" : "flags it for review"}. A person
               looks at it within 5 business days.
             </p>
             <ApiForm
@@ -291,7 +379,8 @@ export default async function BookingPage({
         )}
       </div>
 
-      {(state === "offered" || state === "confirmed") && !activeSubslot && (
+      {(state === "offered" ||
+        (state === "confirmed" && !hasActiveSubslot)) && (
         <div className="card">
           <h2>Sound</h2>
           <p>
@@ -316,87 +405,135 @@ export default async function BookingPage({
               the missing equipment or tech before accepting.
             </p>
           )}
-          {state === "confirmed" && plan.verdict !== "covered" && (
-            <>
+          {state === "confirmed" && plan.verdict !== "covered" &&
+            (canPostSoundJob ? (
+              <>
+                <p className="muted">
+                  Post a sound job for this night — techs see the room, the
+                  input list, and the pay before they say yes.
+                </p>
+                <ApiForm
+                  endpoint={`/api/bookings/${id}/tech-subslot`}
+                  submitLabel="Post the sound job"
+                  fields={[
+                    {
+                      // Default to whoever is filling this in. It was always
+                      // "venue", so an ACT's default action committed the venue to
+                      // paying a tech — a bill they never agreed to. Either side
+                      // can still choose the other explicitly.
+                      name: "payer",
+                      label: "Who pays the tech",
+                      type: "select",
+                      options: asPerformer
+                        ? ["performer", "venue"]
+                        : ["venue", "performer"],
+                      defaultValue: asPerformer ? "performer" : "venue",
+                      required: true,
+                    },
+                    { name: "budgetCents", label: "Tech pay, in dollars", type: "number", required: true },
+                    { name: "notes", label: "Anything the tech should know", type: "textarea" },
+                  ]}
+                />
+              </>
+            ) : (
               <p className="muted">
-                Post a sound job for this night — techs see the room, the
-                input list, and the pay before they say yes.
+                This sound plan is read-only because the gig has started or a
+                booking profile is no longer active.
               </p>
-              <ApiForm
-                endpoint={`/api/bookings/${id}/tech-subslot`}
-                submitLabel="Post the sound job"
-                fields={[
-                  {
-                    // Default to whoever is filling this in. It was always
-                    // "venue", so an ACT's default action committed the venue to
-                    // paying a tech — a bill they never agreed to. Either side
-                    // can still choose the other explicitly.
-                    name: "payer",
-                    label: "Who pays the tech",
-                    type: "select",
-                    options: asPerformer
-                      ? ["performer", "venue"]
-                      : ["venue", "performer"],
-                    defaultValue: asPerformer ? "performer" : "venue",
-                    required: true,
-                  },
-                  { name: "budgetCents", label: "Tech pay, in dollars", type: "number", required: true },
-                  { name: "notes", label: "Anything the tech should know", type: "textarea" },
-                ]}
-              />
-            </>
-          )}
+            ))}
         </div>
       )}
 
-      {activeSubslot && (
-        <div className="card">
-          <h2>Sound</h2>
-          <p>
-            <span className="badge">
-              {friendlyLabel(SOUND_STATE_LABELS, activeSubslot.state)}
-            </span>{" "}
-            <span className="money">
-              ${(activeSubslot.budgetCents / 100).toFixed(0)}
-            </span>{" "}
-            <span className="muted">
-              / paid by the {friendlyLabel(PARTY_LABELS, activeSubslot.payer)}
-            </span>
-          </p>
-          {activeSubslot.needs.gaps.length > 0 && (
-            <p className="muted">Gaps: {activeSubslot.needs.gaps.join("; ")}</p>
-          )}
-          {subslotApplicants.map(({ application, tech }) => (
-            <p key={application.id}>
-              <strong>{tech.name}</strong>{" "}
-              <span className="badge">{friendlyLabel(GEAR_LABELS, tech.gear)}</span>{" "}
+      {subslots.map((subslot) => {
+        const applicants = applicantsBySubslot.get(subslot.id) ?? [];
+        const soundAvailability = {
+          ...soundParentAvailability,
+          subslotState: subslot.state,
+        };
+        const jobIsActionable = isSoundJobActionable(soundAvailability);
+        const cancellationIsActionable =
+          isPayerSoundCancellationActionable(soundAvailability);
+        const amPayer =
+          subslot.payer === "venue" ? asVenue : asPerformer;
+        return (
+          <div className="card" key={subslot.id}>
+            <h2>Sound job</h2>
+            <p>
               <span className="badge">
-                {friendlyLabel(SOUND_APPLICATION_LABELS_REVIEW, application.status)}
+                {friendlyLabel(SOUND_STATE_LABELS, subslot.state)}
+              </span>{" "}
+              <span className="money">
+                ${(subslot.budgetCents / 100).toFixed(0)}
+              </span>{" "}
+              <span className="muted">
+                / paid by the {friendlyLabel(PARTY_LABELS, subslot.payer)}
               </span>
-              {application.note && <span className="muted"> / “{application.note}”</span>}{" "}
-              {amPayer && activeSubslot.state === "open" && application.status === "submitted" && (
-                <ActionButton
-                  endpoint={`/api/tech-subslots/${activeSubslot.id}/book`}
-                  label="Book this tech"
-                  body={{ techId: tech.id }}
-                />
-              )}
             </p>
-          ))}
-          {activeSubslot.state === "open" && subslotApplicants.length === 0 && (
-            <p className="muted">
-              No techs have applied yet — this appears with their open sound gigs.
+            {subslot.needs.gaps.length > 0 && (
+              <p className="muted">
+                Gaps: {subslot.needs.gaps.join("; ")}
+              </p>
+            )}
+            {amPayer &&
+              applicants.map(({ application, tech, techOwnerStatus }) => {
+                const applicantIsBookable = isSoundApplicantBookable({
+                  applicationStatus: application.status,
+                  techProfileStatus: tech.status,
+                  techOwnerStatus,
+                  jobIsActionable,
+                });
+                return (
+                  <p key={application.id}>
+                    <strong>{tech.name}</strong>{" "}
+                    <span className="badge">
+                      {friendlyLabel(GEAR_LABELS, tech.gear)}
+                    </span>{" "}
+                    <span className="badge">
+                      {friendlyLabel(
+                        SOUND_APPLICATION_LABELS_REVIEW,
+                        application.status,
+                      )}
+                    </span>
+                    {application.note && (
+                      <span className="muted"> / “{application.note}”</span>
+                    )}{" "}
+                    {accountActive && applicantIsBookable && (
+                      <ActionButton
+                        endpoint={`/api/tech-subslots/${subslot.id}/book`}
+                        label="Book this tech"
+                        body={{ techId: tech.id }}
+                      />
+                    )}
+                    {jobIsActionable &&
+                      application.status === "submitted" &&
+                      !applicantIsBookable && (
+                        <span className="muted">
+                          {" "}/ This tech is not currently available to book.
+                        </span>
+                      )}
+                  </p>
+                );
+              })}
+            {amPayer && subslot.state === "open" && applicants.length === 0 && (
+              <p className="muted">
+                {jobIsActionable
+                  ? "No techs have applied yet — this appears with their open sound gigs."
+                  : "This sound job is no longer accepting applications."}
+              </p>
+            )}
+            <p>
+              <Link href={`/sound/${subslot.id}`}>Open sound job details</Link>
             </p>
-          )}
-          {amPayer && (
-            <ActionButton
-              endpoint={`/api/tech-subslots/${activeSubslot.id}/cancel`}
-              label="Cancel sound job" variant="quiet"
-              confirm="Cancel this sound job? Any booked tech will be notified and the listing will close."
-            />
-          )}
-        </div>
-      )}
+            {accountActive && amPayer && cancellationIsActionable && (
+              <ActionButton
+                endpoint={`/api/tech-subslots/${subslot.id}/cancel`}
+                label="Cancel sound job" variant="quiet"
+                confirm={payerSoundCancellationConfirmation(soundAvailability)}
+              />
+            )}
+          </div>
+        );
+      })}
 
       {state === "confirmed" && (
         <div className="card">
@@ -436,9 +573,8 @@ export default async function BookingPage({
             <Link href={`/inbox/${threadId}`}>Open the conversation</Link>
           </p>
           <p className="muted">
-            Set time moved, load-in changed, pay renegotiated — put it here and
-            both of you have the same record of it. EightGig doesn&rsquo;t hold the
-            money, so what&rsquo;s written down is what you&rsquo;ve got.
+            Ask about the offer, then keep set-time, load-in, and pay changes
+            here so both of you have the same written record.
           </p>
         </div>
       )}
@@ -459,7 +595,7 @@ export default async function BookingPage({
         </div>
       )}
 
-      {reviewable && !myReview && (
+      {accountActive && reviewable && !myReview && (
         <div className="card">
           <h2>Leave a review</h2>
           <p className="muted">
@@ -506,8 +642,8 @@ export default async function BookingPage({
             />
           </p>
           <p className="muted">
-            Send {row.performerName} an offer for your next recurring night at the
-            same pay (${(rebookTarget.amountCents / 100).toFixed(0)}).
+            Send {row.performerName} a firm offer for this open night. Its listed
+            budget is ${(rebookTarget.amountCents / 100).toFixed(0)}.
           </p>
         </div>
       )}
@@ -519,11 +655,11 @@ export default async function BookingPage({
             venueName: row.venueName,
             performerName: row.performerName,
             terms: b.terms,
-            paymentsEnabled: paymentsEnabled(),
+            paymentsEnabled: platformPaymentsEnabled,
             templateVersion: b.agreementTemplateVer,
           })}
         </pre>
-        {state === "offered" && asPerformer && (
+        {accountActive && state === "offered" && asPerformer && (
           <div>
             <p>
               Review the complete deal above. Accepting confirms the venue,

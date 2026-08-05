@@ -6,16 +6,26 @@ import {
   InvalidResolutionError,
   offerCreatedEffects,
   newId,
+  SLOT_HOLDING_BOOKING_STATES,
   type BookingEvent,
   type BookingSnapshot,
   type BookingTerms,
   type Effect,
 } from "@gigit/domain";
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
-import { db } from "./client.js";
+import { and, eq, gt, inArray, ne, sql } from "drizzle-orm";
+import { db, type Tx } from "./client.js";
+import { lockActiveProfileOwners } from "./account-gate.js";
+import { ensureBookingThreadInTx } from "./booking-thread.js";
 import { appendEvent } from "./events.js";
 import { recordLedgerEntry } from "./ledger.js";
-import { applications, bookings, performers, slots, venues } from "./schema.js";
+import {
+  applications,
+  bookings,
+  events as eventRows,
+  performers,
+  slots,
+  venues,
+} from "./schema.js";
 
 export class BookingNotFoundError extends Error {
   readonly code = "booking_not_found";
@@ -50,6 +60,18 @@ export class OfferExpiredError extends Error {
     super(`offer ${bookingId} has expired`);
   }
 }
+export class PaymentReferenceConflictError extends Error {
+  readonly code = "payment_reference_conflict";
+  constructor(
+    readonly bookingId: string,
+    readonly existingRef: string,
+    readonly incomingRef: string,
+  ) {
+    super(
+      `booking ${bookingId} already references ${existingRef}, not ${incomingRef}`,
+    );
+  }
+}
 
 /** Dig the Postgres SQLSTATE out of a (possibly drizzle-wrapped) error chain. */
 export function pgErrorCode(e: unknown): string | undefined {
@@ -69,6 +91,11 @@ export interface TransitionResult {
   effects: Effect[];
 }
 
+export interface BookingTransitionLifecycleHooks {
+  /** @internal Deterministic seam for booking/resource lock-order tests. */
+  afterBookingLock?: () => Promise<void>;
+}
+
 /**
  * The ONLY way booking state changes (engineering-spec §5).
  * One transaction: row lock → pure domain decision → versioned update →
@@ -81,14 +108,54 @@ export async function runBookingTransition(
   event: BookingEvent,
   actor: string,
   now: Date = new Date(),
+  existingTx?: Tx,
+  lifecycleHooks: BookingTransitionLifecycleHooks = {},
 ): Promise<TransitionResult> {
-  return db().transaction(async (tx) => {
+  const apply = async (tx: Tx) => {
+    if (event.kind === "PERFORMER_ACCEPTED") {
+      // Discover immutable party IDs without taking the booking lock, then
+      // serialize with suspension/deactivation before the resource lock. An
+      // acceptance must not create payment work for an inactive party.
+      const [parties] = await tx
+        .select({
+          performerId: bookings.performerId,
+          venueId: bookings.venueId,
+        })
+        .from(bookings)
+        .where(eq(bookings.id, bookingId));
+      if (!parties) throw new BookingNotFoundError(bookingId);
+      await lockActiveProfileOwners(tx, {
+        performerIds: [parties.performerId],
+        venueIds: [parties.venueId],
+        additionalUserIds: [actor],
+      });
+    }
     const [row] = await tx
       .select()
       .from(bookings)
       .where(eq(bookings.id, bookingId))
       .for("update");
     if (!row) throw new BookingNotFoundError(bookingId);
+    await lifecycleHooks.afterBookingLock?.();
+
+    const incomingPaymentRef =
+      event.kind === "PAYMENT_SUCCEEDED" && event.paymentRef
+        ? event.paymentRef
+        : undefined;
+    if (
+      incomingPaymentRef &&
+      row.paymentRef &&
+      row.paymentRef !== incomingPaymentRef
+    )
+      throw new PaymentReferenceConflictError(
+        bookingId,
+        row.paymentRef,
+        incomingPaymentRef,
+      );
+    // The webhook can beat StripeGateway.charge's post-create UPDATE. Resolve
+    // the provider reference while this booking row is locked, then persist it
+    // with the transition and ledger entry in this same transaction.
+    const successfulPaymentRef = incomingPaymentRef ?? row.paymentRef ?? undefined;
 
     const snapshot: BookingSnapshot = {
       id: row.id,
@@ -101,7 +168,14 @@ export async function runBookingTransition(
     };
 
     if (event.kind === "PERFORMER_ACCEPTED") {
-      if (now.getTime() >= row.offerExpiresAt.getTime())
+      const startsAt = new Date(snapshot.terms.startsAt).getTime();
+      // Legacy close-in offers could have an expiry after downbeat. Treat the
+      // gig itself as the hard deadline even before those rows are swept.
+      if (
+        now.getTime() >= row.offerExpiresAt.getTime() ||
+        !Number.isFinite(startsAt) ||
+        now.getTime() >= startsAt
+      )
         throw new OfferExpiredError(bookingId);
       // Serialize accepts for this performer, even when two different booking
       // rows are accepted concurrently. Row locks alone only protect one
@@ -127,7 +201,99 @@ export async function runBookingTransition(
         throw new PerformerUnavailableError(row.performerId, overlap.id);
     }
 
-    const decision = decide(snapshot, event, now); // throws IllegalTransitionError
+    // A payment provider can complete after downbeat even though acceptance was
+    // timely. Close that race immediately: record the successful charge and a
+    // compensating full refund in this transaction, collapse the booking, and
+    // let the outbox execute the refund. Throwing here left `confirming` stuck
+    // for 24 hours while real money could already have moved.
+    let latePaymentShouldResolveSlot = false;
+    let paymentArrivedTooLate = false;
+    let compensatingCollapsedPayment = false;
+    if (
+      event.kind === "PAYMENT_SUCCEEDED" &&
+      snapshot.state === "collapsed" &&
+      successfulPaymentRef
+    ) {
+      // The reconcile sweep can close a pending payment at downbeat just before
+      // Stripe delivers success. Only resurrect PAYMENT_SUCCEEDED processing
+      // when durable history proves this booking collapsed FROM confirming for
+      // that specific timeout/window reason and has a real provider reference.
+      // An arbitrary declined/expired offer in `collapsed` must stay illegal.
+      const [paymentWindowCollapse] = await tx
+        .select({ id: eventRows.id })
+        .from(eventRows)
+        .where(
+          and(
+            eq(eventRows.kind, "booking.transition"),
+            eq(eventRows.subjectType, "booking"),
+            eq(eventRows.subjectId, bookingId),
+            sql`${eventRows.payload}->>'event' = 'PAYMENT_FAILED'`,
+            sql`${eventRows.payload}->>'from' = 'confirming'`,
+            sql`${eventRows.payload}->>'to' = 'collapsed'`,
+            sql`${eventRows.payload}->>'reason' in
+                ('payment_window_closed', 'payment_timeout',
+                 'account_deactivated', 'account_suspended')`,
+          ),
+        )
+        .limit(1);
+      const [priorCompensation] = await tx
+        .select({ id: eventRows.id })
+        .from(eventRows)
+        .where(
+          and(
+            eq(eventRows.kind, "booking.transition"),
+            eq(eventRows.subjectType, "booking"),
+            eq(eventRows.subjectId, bookingId),
+            sql`${eventRows.payload}->>'event' = 'PAYMENT_SUCCEEDED'`,
+            sql`${eventRows.payload}->>'from' = 'collapsed'`,
+            sql`${eventRows.payload}->>'to' = 'collapsed'`,
+          ),
+        )
+        .limit(1);
+      compensatingCollapsedPayment =
+        !!paymentWindowCollapse && !priorCompensation;
+    }
+    if (
+      event.kind === "PAYMENT_SUCCEEDED" &&
+      (snapshot.state === "confirming" || compensatingCollapsedPayment)
+    ) {
+      if (compensatingCollapsedPayment) {
+        // The earlier PAYMENT_FAILED already reopened/expired the slot and
+        // resolved its applications. This pass owns money compensation only.
+        paymentArrivedTooLate = true;
+      } else {
+        const [paymentSlot] = await tx
+          .select({ status: slots.status, startsAt: slots.startsAt })
+          .from(slots)
+          .where(eq(slots.id, row.slotId))
+          .for("update");
+        const termsStart = new Date(snapshot.terms.startsAt).getTime();
+        paymentArrivedTooLate =
+          !paymentSlot ||
+          paymentSlot.status !== "open" ||
+          !Number.isFinite(termsStart) ||
+          termsStart <= now.getTime() ||
+          paymentSlot.startsAt.getTime() <= now.getTime();
+        latePaymentShouldResolveSlot =
+          !!paymentSlot &&
+          (paymentSlot.status === "open" || paymentSlot.status === "expired") &&
+          (termsStart <= now.getTime() ||
+            paymentSlot.startsAt.getTime() <= now.getTime());
+      }
+    }
+
+    let decision: ReturnType<typeof decide>;
+    if (paymentArrivedTooLate) {
+      const effects: Effect[] = [];
+      if (latePaymentShouldResolveSlot) effects.push({ kind: "reopen_slot" });
+      effects.push(
+        { kind: "refund_funds", amountCents: snapshot.terms.amountCents },
+        { kind: "notify", template: "payment_late_refunded", to: "both" },
+      );
+      decision = { next: "collapsed", effects };
+    } else {
+      decision = decide(snapshot, event, now); // throws IllegalTransitionError
+    }
 
     let updated;
     try {
@@ -140,6 +306,7 @@ export async function runBookingTransition(
           ...(event.kind === "PERFORMER_MARKED_PLAYED"
             ? { performerMarkedPlayedAt: now }
             : {}),
+          ...(incomingPaymentRef ? { paymentRef: incomingPaymentRef } : {}),
         })
         .where(and(eq(bookings.id, bookingId), eq(bookings.version, row.version)))
         .returning({ id: bookings.id });
@@ -162,7 +329,7 @@ export async function runBookingTransition(
         debitParty: venueParty,
         creditParty: "platform",
         amountCents: snapshot.terms.amountCents,
-        ...(row.paymentRef ? { paymentRef: row.paymentRef } : {}),
+        ...(successfulPaymentRef ? { paymentRef: successfulPaymentRef } : {}),
       });
     }
 
@@ -203,6 +370,63 @@ export async function runBookingTransition(
         });
       }
       if (fx.kind === "reopen_slot") {
+        const gigStartsAt = new Date(snapshot.terms.startsAt).getTime();
+        const gigHasStarted =
+          !Number.isFinite(gigStartsAt) || gigStartsAt <= now.getTime();
+        if (gigHasStarted) {
+          // A cancellation/decline/expiry after downbeat must never resurrect
+          // the night in the feed. Resolve the offered application and any
+          // remaining pending applicants instead.
+          await tx
+            .update(slots)
+            .set({ status: "expired" })
+            .where(eq(slots.id, row.slotId));
+          await tx
+            .update(applications)
+            .set({
+              status:
+                event.kind === "PERFORMER_DECLINED" ? "withdrawn" : "declined",
+              declineReason:
+                event.kind === "PERFORMER_DECLINED" ? null : "slot_expired",
+            })
+            .where(
+              and(
+                eq(applications.slotId, row.slotId),
+                eq(applications.performerId, row.performerId),
+                eq(applications.status, "offered"),
+              ),
+            );
+          const expiredApplicants = await tx
+            .update(applications)
+            .set({ status: "declined", declineReason: "slot_expired" })
+            .where(
+              and(
+                eq(applications.slotId, row.slotId),
+                eq(applications.status, "submitted"),
+              ),
+            )
+            .returning({ id: applications.id });
+          for (const app of expiredApplicants)
+            await appendEvent(tx, {
+              actor,
+              kind: "application.declined",
+              subjectType: "slot",
+              subjectId: row.slotId,
+              payload: {
+                applicationId: app.id,
+                reason: "slot_expired",
+                effects: [
+                  {
+                    kind: "notify",
+                    template: "application_expired",
+                    to: "performer",
+                  },
+                ],
+              },
+            });
+          continue;
+        }
+
         await tx
           .update(slots)
           .set({ status: "open" })
@@ -270,10 +494,18 @@ export async function runBookingTransition(
     }
     // Entering `confirmed` fills the slot and declines the other applicants.
     if (decision.next === "confirmed") {
-      await tx
+      const filled = await tx
         .update(slots)
         .set({ status: "filled" })
-        .where(eq(slots.id, row.slotId));
+        .where(
+          and(
+            eq(slots.id, row.slotId),
+            eq(slots.status, "open"),
+            gt(slots.startsAt, now),
+          ),
+        )
+        .returning({ id: slots.id });
+      if (filled.length === 0) throw new SlotUnavailableError(row.slotId);
       // The losing applicants: decline them AND tell them. This bulk path is
       // the high-volume way an application ends, and it used to emit no event
       // at all — so most acts never heard anything back.
@@ -325,6 +557,9 @@ export async function runBookingTransition(
         ...(event.kind === "PAYMENT_FAILED" && event.reason
           ? { reason: event.reason }
           : {}),
+        ...(event.kind === "PAYMENT_SUCCEEDED" && successfulPaymentRef
+          ? { paymentRef: successfulPaymentRef }
+          : {}),
       },
     });
 
@@ -334,7 +569,8 @@ export async function runBookingTransition(
       to: decision.next,
       effects: decision.effects,
     };
-  });
+  };
+  return existingTx ? apply(existingTx) : db().transaction(apply);
 }
 
 export interface CreateOfferInput {
@@ -345,10 +581,41 @@ export interface CreateOfferInput {
   terms: BookingTerms;
   actor: string;
   offerTtlHours?: number;
+  /** @internal Deterministic seam for account-gate integration tests. */
+  lifecycleHooks?: {
+    afterAccountLock?: () => Promise<void>;
+    afterSlotLock?: () => Promise<void>;
+  };
 }
 
-/** Creates the booking row in `offered` + marks the application, atomically. */
-export async function createOffer(input: CreateOfferInput): Promise<string> {
+async function slotHoldingBookingId(
+  tx: Tx,
+  slotId: string,
+): Promise<string | undefined> {
+  const [holder] = await tx
+    .select({ id: bookings.id })
+    .from(bookings)
+    .where(
+      and(
+        eq(bookings.slotId, slotId),
+        inArray(bookings.state, SLOT_HOLDING_BOOKING_STATES),
+      ),
+    )
+    .limit(1);
+  return holder?.id;
+}
+
+/**
+ * Creates the booking row in `offered` + marks the application, atomically.
+ *
+ * Callers that must prepare the application in the same unit of work (the
+ * venue-initiated invite path) may supply an existing transaction. All other
+ * callers retain the usual self-contained transaction.
+ */
+export async function createOffer(
+  input: CreateOfferInput,
+  existingTx?: Tx,
+): Promise<string> {
   // A money-releasing timer (gig_ended -> auto_confirm) is scheduled off endsAt,
   // so it must be after startsAt. Guard the invariant at the single entry point.
   const startsAtMs = new Date(input.terms.startsAt).getTime();
@@ -366,21 +633,45 @@ export async function createOffer(input: CreateOfferInput): Promise<string> {
   if (!Number.isFinite(offerTtlHours) || offerTtlHours <= 0)
     throw new InvalidOfferTermsError("offer TTL must be positive");
   const bookingId = newId("booking");
+  const offeredAt = new Date();
   // A live offer holds the slot exclusively, so an unclamped 72h TTL meant a
   // venue posting Wednesday for Friday and offering that night was locked out
   // of every other act until Saturday — 48h AFTER the gig — unless they
   // remembered to withdraw by hand. One unresponsive act killed the night.
-  // Never let an offer outlive its own gig: give the act until 12h before
-  // downbeat, and at least an hour to answer at all.
+  // Never let an offer outlive its own gig: aim for 12h before downbeat and at
+  // least an hour to answer, but when a venue is filling a truly close-in slot,
+  // downbeat wins as the hard deadline.
   const gigStart = new Date(input.terms.startsAt).getTime();
   const offerExpiresAt = new Date(
-    Math.max(
-      Date.now() + 3_600_000,
-      Math.min(Date.now() + offerTtlHours * 3_600_000, gigStart - 12 * 3_600_000),
+    Math.min(
+      gigStart,
+      Math.max(
+        offeredAt.getTime() + 3_600_000,
+        Math.min(
+          offeredAt.getTime() + offerTtlHours * 3_600_000,
+          gigStart - 12 * 3_600_000,
+        ),
+      ),
     ),
   );
   try {
-    await db().transaction(async (tx) => {
+    const persist = async (tx: Tx) => {
+      const activeProfiles = await lockActiveProfileOwners(tx, {
+        performerIds: [input.performerId],
+        venueIds: [input.venueId],
+      });
+      await input.lifecycleHooks?.afterAccountLock?.();
+      const offerVenue = activeProfiles.venues.get(input.venueId)!;
+
+      // A booking transition owns booking → slot ordering. Looking for a
+      // committed holder BEFORE taking the slot prevents this creator from
+      // holding slot → waiting on the partial-unique booking entry while the
+      // transition holds booking → waiting on this same slot. This read does
+      // not lock or wait on the transitioning row; under READ COMMITTED its
+      // prior committed live state is enough to conservatively reject.
+      if (await slotHoldingBookingId(tx, input.slotId))
+        throw new SlotUnavailableError(input.slotId);
+
       // Lock the advertised slot so edits and competing offers cannot race the
       // terms snapshot. Pay, time, and duration must be exactly what the
       // performer saw on the open slot.
@@ -389,14 +680,24 @@ export async function createOffer(input: CreateOfferInput): Promise<string> {
         .from(slots)
         .where(eq(slots.id, input.slotId))
         .for("update");
+      await input.lifecycleHooks?.afterSlotLock?.();
       if (!slot || slot.status !== "open")
         throw new SlotUnavailableError(input.slotId);
+      // A competing creator can have committed while this transaction waited
+      // for the slot. Recheck before inserting so the unique index remains the
+      // last-resort invariant rather than the normal control-flow boundary.
+      if (await slotHoldingBookingId(tx, input.slotId))
+        throw new SlotUnavailableError(input.slotId);
+      // Re-check after acquiring the lock. A close-in slot can cross downbeat
+      // while this transaction waits behind an edit or competing offer.
+      const persistedAt = new Date();
+      if (
+        slot.startsAt.getTime() <= persistedAt.getTime() ||
+        offerExpiresAt.getTime() <= persistedAt.getTime()
+      )
+        throw new SlotUnavailableError(input.slotId);
 
-      const [offerVenue] = await tx
-        .select()
-        .from(venues)
-        .where(eq(venues.id, input.venueId));
-      if (!offerVenue || offerVenue.id !== slot.venueId)
+      if (offerVenue.id !== slot.venueId)
         throw new InvalidOfferTermsError("venue does not match the slot");
       const locality = [
         [offerVenue.city, offerVenue.region].filter(Boolean).join(", "),
@@ -496,12 +797,13 @@ export async function createOffer(input: CreateOfferInput): Promise<string> {
         terms: lockedTerms,
         offerExpiresAt,
         agreementTemplateVer: AGREEMENT_TEMPLATE_VERSION,
-        venueAcceptedAt: new Date(),
+        venueAcceptedAt: offeredAt,
       });
       await tx
         .update(applications)
         .set({ status: "offered" })
         .where(eq(applications.id, input.applicationId));
+      await ensureBookingThreadInTx(tx, bookingId, input.actor);
       await appendEvent(tx, {
         actor: input.actor,
         kind: "booking.offered",
@@ -515,7 +817,9 @@ export async function createOffer(input: CreateOfferInput): Promise<string> {
           effects: offerCreatedEffects(offerExpiresAt.toISOString()),
         },
       });
-    });
+    };
+    if (existingTx) await persist(existingTx);
+    else await db().transaction(persist);
   } catch (e) {
     // The partial unique index includes 'offered', so only one firm offer may
     // be outstanding for a slot. Keep this mapping at the persistence edge so

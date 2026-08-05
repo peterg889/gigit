@@ -1,5 +1,7 @@
-import { db, getPool, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { db, getPool, paymentsEnabled, schema } from "@gigit/db";
+import { MONEY_SETTLED_STATES } from "@gigit/domain";
+import { and, eq } from "drizzle-orm";
 import Link from "next/link";
 import { isAdmin } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
@@ -50,6 +52,27 @@ export default async function AdminSearchPage({
   const booking = q?.startsWith("bkg_")
     ? (await db().select().from(schema.bookings).where(eq(schema.bookings.id, q)))[0]
     : null;
+  const platformPaymentsOn = paymentsEnabled();
+  const charge =
+    booking?.paymentRef && platformPaymentsOn
+      ? (
+          await db()
+            .select({ id: schema.ledgerEntries.id })
+            .from(schema.ledgerEntries)
+            .where(
+              and(
+                eq(schema.ledgerEntries.bookingId, booking.id),
+                eq(schema.ledgerEntries.entryType, "charge"),
+                eq(schema.ledgerEntries.paymentRef, booking.paymentRef),
+                eq(schema.ledgerEntries.idempotencyKey, `${booking.id}:charge`),
+              ),
+            )
+            .limit(1)
+        )[0]
+      : null;
+  const canAdjust = !!booking?.paymentRef && !!charge && platformPaymentsOn;
+  const canRefundVenue =
+    !!booking && MONEY_SETTLED_STATES.some((state) => state === booking.state);
 
   return (
     <div>
@@ -70,11 +93,15 @@ export default async function AdminSearchPage({
         <div className="card" key={u.id}>
           <strong>{u.email ?? u.phone}</strong> <span className="badge">{u.status}</span>{" "}
           <span className="muted">{u.id}</span>{" "}
-          <ActionButton
-            endpoint={`/api/admin/users/${u.id}/status`}
-            label={u.status === "suspended" ? "Reinstate" : "Suspend"}
-            body={{ status: u.status === "suspended" ? "active" : "suspended" }}
-          />
+          {u.status === "deleted" ? (
+            <span className="muted">Deactivated permanently</span>
+          ) : (
+            <ActionButton
+              endpoint={`/api/admin/users/${u.id}/status`}
+              label={u.status === "suspended" ? "Reinstate" : "Suspend"}
+              body={{ status: u.status === "suspended" ? "active" : "suspended" }}
+            />
+          )}
         </div>
       ))}
       {profiles.map((p) => (
@@ -93,15 +120,43 @@ export default async function AdminSearchPage({
           <span className="money">
             ${(booking.terms.amountCents / 100).toFixed(0)}
           </span>
-          <ApiForm
-            endpoint={`/api/admin/bookings/${booking.id}/adjust`}
-            submitLabel="Record adjustment"
-            fields={[
-              { name: "direction", label: "Direction", type: "select", options: ["refund_venue", "pay_performer"], required: true },
-              { name: "amountCents", label: "Amount, in dollars", type: "number", required: true },
-              { name: "reason", label: "Reason (goes in the record)", type: "textarea", required: true },
-            ]}
-          />
+          {canAdjust ? (
+            <>
+              <p className="muted">
+                {canRefundVenue
+                  ? "This moves money: refund returns part of the original charge to the venue; pay act sends a separate platform-funded transfer to the performer."
+                  : "Pay act sends a separate platform-funded transfer to the performer. Venue refunds become available after cancellation or settlement finishes."}{" "}
+                The reason stays in the audit trail.
+              </p>
+              <ApiForm
+                endpoint={`/api/admin/bookings/${booking.id}/adjust`}
+                submitLabel="Execute adjustment"
+                confirm="Execute this money adjustment? Verify the direction, amount, and reason before continuing."
+                resetOnSuccess
+                successMessage="Adjustment submitted. Enter new details to make another adjustment."
+                extra={{ idempotencyKey: randomUUID() }}
+                fields={[
+                  {
+                    name: "direction",
+                    label: "Direction",
+                    type: "select",
+                    options: canRefundVenue
+                      ? ["refund_venue", "pay_performer"]
+                      : ["pay_performer"],
+                    required: true,
+                  },
+                  { name: "amountCents", label: "Amount, in dollars", type: "number", required: true },
+                  { name: "reason", label: "Reason (saved to the audit trail)", type: "textarea", required: true },
+                ]}
+              />
+            </>
+          ) : (
+            <p className="muted">
+              {platformPaymentsOn
+                ? "No completed platform charge is available to adjust."
+                : "Money adjustments are unavailable while platform payments are turned off."}
+            </p>
+          )}
         </div>
       )}
       {q && users.length === 0 && profiles.length === 0 && !booking && (

@@ -51,7 +51,9 @@ describe("stripe webhook idempotency vs transient failures", () => {
   const piEvent = (id: string) => ({
     id,
     type: "payment_intent.succeeded",
-    data: { object: { metadata: { bookingId: "bkg_idem_test" } } },
+    data: {
+      object: { id: `pi_${id}`, metadata: { bookingId: "bkg_idem_test" } },
+    },
   });
 
   it("releases the idempotency row on failure so the retry reprocesses", async () => {

@@ -6,9 +6,9 @@ import { recordLedgerEntry } from "./ledger.js";
 import { applications, bookings, performers, slots, users, venues } from "./schema.js";
 
 /**
- * M1 exit criterion: "reconciliation catches seeded faults." We seed three
- * bookings — one balanced, one short-settled, one with a settlement and no
- * charge — and assert exactly the right two are flagged.
+ * M1 exit criterion: "reconciliation catches seeded faults." The fixtures
+ * distinguish contractual settlement from explicit, additional admin money
+ * movements so one cannot hide corruption in the other.
  */
 describe("money reconciliation (seeded faults)", () => {
   const userId = newId("user");
@@ -18,6 +18,7 @@ describe("money reconciliation (seeded faults)", () => {
   const shortSettled = newId("booking");
   const orphanSettled = newId("booking");
   const adjustedToBalance = newId("booking");
+  const balancedWithGoodwill = newId("booking");
   const feeAndRefund = newId("booking");
   const adjustmentOnly = newId("booking");
 
@@ -77,10 +78,9 @@ describe("money reconciliation (seeded faults)", () => {
       });
     };
 
-    // Balanced only because an adjustment closed the gap. `adjustment` is newly
-    // in the settled side of the balance check — it's the one entry type a human
-    // types a free-form number into, and it used to be invisible here, so every
-    // manually-corrected booking was flagged forever.
+    // An extra adjustment must never conceal a short BASE settlement. The
+    // booking still owes 3,000 on its contractual release even though ops sent
+    // a separate 3,000 goodwill transfer.
     await mkBooking(adjustedToBalance, "released");
     await recordLedgerEntry(d, {
       bookingId: adjustedToBalance, entryType: "charge",
@@ -96,6 +96,33 @@ describe("money reconciliation (seeded faults)", () => {
       idempotencyKey: `${adjustedToBalance}:adjustment:test`,
     });
 
+
+    // Conversely, a fully settled booking remains clean after an explicit
+    // additional goodwill payment. Adjustments are accounted for, but outside
+    // the charge == base release/refund/fee conservation equation.
+    await mkBooking(balancedWithGoodwill, "released");
+    await recordLedgerEntry(d, {
+      bookingId: balancedWithGoodwill,
+      entryType: "charge",
+      debitParty: `venue:${venueId}`,
+      creditParty: "platform",
+      amountCents: 10_000,
+    });
+    await recordLedgerEntry(d, {
+      bookingId: balancedWithGoodwill,
+      entryType: "release",
+      debitParty: "platform",
+      creditParty: `performer:${performerId}`,
+      amountCents: 10_000,
+    });
+    await recordLedgerEntry(d, {
+      bookingId: balancedWithGoodwill,
+      entryType: "adjustment",
+      debitParty: "platform",
+      creditParty: `performer:${performerId}`,
+      amountCents: 3_000,
+      idempotencyKey: `${balancedWithGoodwill}:adjustment:test`,
+    });
     // A cancellation settles as fee + refund, which must also balance.
     await mkBooking(feeAndRefund, "cancelled_by_venue");
     await recordLedgerEntry(d, {
@@ -182,10 +209,15 @@ describe("money reconciliation (seeded faults)", () => {
     const orphan = byBooking(orphanSettled);
     expect(orphan.some((m) => m.kind === "settlement_without_charge")).toBe(true);
 
-    // A booking that balances only via an adjustment is CLEAN. Before adjustment
-    // joined the settled side, this was flagged every night forever, which is how
-    // a real alarm becomes noise somebody mutes.
-    expect(byBooking(adjustedToBalance)).toHaveLength(0);
+    // A short base release cannot be laundered into balance by an adjustment.
+    const maskedShortfall = byBooking(adjustedToBalance);
+    expect(maskedShortfall.some((m) => m.kind === "unbalanced_terminal")).toBe(true);
+    expect(maskedShortfall[0]?.detail).toMatchObject({
+      charged: 10_000,
+      settled: 7_000,
+    });
+
+    expect(byBooking(balancedWithGoodwill)).toHaveLength(0);
 
     // A cancellation's fee + refund also balances against the charge.
     expect(byBooking(feeAndRefund)).toHaveLength(0);

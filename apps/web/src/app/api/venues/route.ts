@@ -1,14 +1,24 @@
 import {
   normalizeMetro, newId, venueCreateSchema } from "@gigit/domain";
-import { appendEvent, assignFounding, db, schema } from "@gigit/db";
-import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
+import {
+  appendEvent,
+  assignFounding,
+  db,
+  lockActiveAccounts,
+  schema,
+} from "@gigit/db";
+import { requireUser, venueOwnedBy } from "@/lib/auth";
+import { respondProfileCreateError } from "@/lib/profile-create";
 import { fail, ok, parseBody } from "@/lib/respond";
+
+const PROFILE_EXISTS_MESSAGE =
+  "You already have a venue profile — edit it from your profile page.";
 
 export async function POST(req: Request) {
   try {
     const userId = await requireUser();
     if (await venueOwnedBy(userId))
-      return fail("conflict", "You already have a venue profile — edit it from your profile page.", 409);
+      return fail("conflict", PROFILE_EXISTS_MESSAGE, 409);
     const parsed = await parseBody(req, venueCreateSchema);
     if ("response" in parsed) return parsed.response;
     const id = newId("venue");
@@ -19,6 +29,7 @@ export async function POST(req: Request) {
     const metro = profile.metro ?? normalizeMetro(profile.city);
     const fallback = metroCentroid(metro);
     const founding = await db().transaction(async (tx) => {
+      await lockActiveAccounts(tx, [userId]);
       const rank = await assignFounding(tx, "venue");
       await tx.insert(schema.venues).values({
         id,
@@ -48,7 +59,7 @@ export async function POST(req: Request) {
     });
     return ok({ id, ...founding }, 201);
   } catch (e) {
-    return respondError(e);
+    return respondProfileCreateError(e, PROFILE_EXISTS_MESSAGE);
   }
 }
 

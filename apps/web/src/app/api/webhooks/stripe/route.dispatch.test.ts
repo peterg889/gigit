@@ -1,6 +1,6 @@
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { newId } from "@gigit/domain";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 
 // Mock ONLY constructStripeEvent; db/schema/runBookingTransition stay real so
 // the webhook actually drives the booking state machine.
@@ -103,12 +103,17 @@ describe("stripe webhook → booking state machine dispatch", () => {
     mockConstruct.mockReturnValue({
       id: `evt_ok_${bookingId}`,
       type: "payment_intent.succeeded",
-      data: { object: { metadata: { bookingId } } },
+      data: { object: { id: `pi_ok_${bookingId}`, metadata: { bookingId } } },
     });
     const res = await send();
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ received: true });
     expect(await bookingState(bookingId)).toBe("confirmed");
+    const [persisted] = await db()
+      .select({ paymentRef: schema.bookings.paymentRef })
+      .from(schema.bookings)
+      .where(eq(schema.bookings.id, bookingId));
+    expect(persisted?.paymentRef).toBe(`pi_ok_${bookingId}`);
   });
 
   it("payment_intent.payment_failed collapses the booking", async () => {
@@ -122,13 +127,71 @@ describe("stripe webhook → booking state machine dispatch", () => {
     expect(await bookingState(bookingId)).toBe("collapsed");
   });
 
+  it("a success just after payment-window collapse is charged and refunded once", async () => {
+    const bookingId = await confirmingBooking();
+    const [booking] = await db()
+      .select({ terms: schema.bookings.terms })
+      .from(schema.bookings)
+      .where(eq(schema.bookings.id, bookingId));
+    const paymentRef = `pi_late_${bookingId}`;
+    const afterDownbeat = new Date(
+      new Date(booking!.terms.startsAt).getTime() + 1,
+    );
+    await runBookingTransition(
+      bookingId,
+      { kind: "PAYMENT_FAILED", reason: "payment_window_closed" },
+      "worker",
+      afterDownbeat,
+    );
+    expect(await bookingState(bookingId)).toBe("collapsed");
+
+    mockConstruct.mockReturnValue({
+      id: `evt_late_ok_${bookingId}`,
+      type: "payment_intent.succeeded",
+      data: { object: { id: paymentRef, metadata: { bookingId } } },
+    });
+    expect((await send()).status).toBe(200);
+    expect(await bookingState(bookingId)).toBe("collapsed");
+    const money = await db()
+      .select({
+        type: schema.ledgerEntries.entryType,
+        amount: schema.ledgerEntries.amountCents,
+        paymentRef: schema.ledgerEntries.paymentRef,
+      })
+      .from(schema.ledgerEntries)
+      .where(eq(schema.ledgerEntries.bookingId, bookingId))
+      .orderBy(asc(schema.ledgerEntries.id));
+    expect(money).toEqual([
+      {
+        type: "charge",
+        amount: 30_000,
+        paymentRef,
+      },
+      { type: "refund", amount: 30_000, paymentRef: null },
+    ]);
+
+    // A differently-ID'd webhook replay for the same PaymentIntent reaches the transition runner, but
+    // the prior collapsed→collapsed compensation makes it a stale no-op.
+    mockConstruct.mockReturnValue({
+      id: `evt_late_replay_${bookingId}`,
+      type: "payment_intent.succeeded",
+      data: { object: { id: paymentRef, metadata: { bookingId } } },
+    });
+    expect((await send()).status).toBe(200);
+    const afterReplay = await db()
+      .select({ id: schema.ledgerEntries.id })
+      .from(schema.ledgerEntries)
+      .where(eq(schema.ledgerEntries.bookingId, bookingId));
+    expect(afterReplay).toHaveLength(2);
+  });
+
   it("a stale succeeded delivery for an already-confirmed booking is swallowed (200, no change)", async () => {
     const bookingId = await confirmingBooking();
     await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker"); // already confirmed
     mockConstruct.mockReturnValue({
       id: `evt_stale_${bookingId}`,
       type: "payment_intent.succeeded",
-      data: { object: { metadata: { bookingId } } },
+      data: { object: { id: `pi_stale_${bookingId}`, metadata: { bookingId } } },
     });
     expect((await send()).status).toBe(200); // IllegalTransitionError swallowed, not re-thrown
     expect(await bookingState(bookingId)).toBe("confirmed");

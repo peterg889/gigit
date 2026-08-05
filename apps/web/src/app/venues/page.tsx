@@ -1,9 +1,10 @@
-import { db, schema } from "@gigit/db";
-import { and, asc, eq, gte, sql } from "drizzle-orm";
+import { db } from "@gigit/db";
 import Link from "next/link";
 
 import { formatAreaName } from "@/lib/date-time";
 import { VENUE_KIND_LABEL } from "@/lib/labels";
+import { houseOperatorLabel } from "@/lib/sound-display";
+import { venueDirectoryRows } from "./directory";
 
 export const dynamic = "force-dynamic";
 
@@ -24,21 +25,7 @@ export const metadata = {
  * affordance, so the no-cold-DM policy (F5.1) stays intact.
  */
 export default async function VenuesPage() {
-  const d = db();
-  const rooms = await d
-    .select({
-      venue: schema.venues,
-      openSlots: sql<number>`(
-        select count(*)::int from ${schema.slots}
-         where ${schema.slots.venueId} = ${schema.venues.id}
-           and ${schema.slots.status} = 'open'
-           and ${schema.slots.startsAt} >= now()
-      )`,
-    })
-    .from(schema.venues)
-    .where(eq(schema.venues.status, "live"))
-    .orderBy(asc(schema.venues.name))
-    .limit(100);
+  const rooms = await venueDirectoryRows(db());
 
   return (
     <div>
@@ -85,7 +72,7 @@ export default async function VenuesPage() {
               {pa.hasPA
                 ? `House PA${
                     pa.mixerChannels != null ? ` · ${pa.mixerChannels} channels` : ""
-                  }${pa.hasOperator ? " · house sound tech" : " · no house tech"}`
+                  } · ${houseOperatorLabel(pa.hasOperator)}`
                 : "No house PA — bring your own or find a tech"}
             </p>
             <p>

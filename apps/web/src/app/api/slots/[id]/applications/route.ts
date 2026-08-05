@@ -1,5 +1,5 @@
 import { applicationCreateSchema, newId } from "@gigit/domain";
-import { appendEvent, db, pgErrorCode, schema } from "@gigit/db";
+import { appendEvent, db, lockActiveProfileOwners, schema } from "@gigit/db";
 import { and, eq } from "drizzle-orm";
 import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
@@ -13,56 +13,83 @@ export async function POST(req: Request, { params }: Params) {
     const userId = await requireUser();
     const performer = await performerOwnedBy(userId);
     if (!performer) return fail("forbidden", "Create an act profile first.", 403);
-
-    const d = db();
-    const [slot] = await d.select().from(schema.slots).where(eq(schema.slots.id, slotId));
-    if (!slot) return fail("not_found", "We couldn't find that date.", 404);
-    if (slot.status !== "open") return fail("conflict", "This date is no longer open.", 409);
-
     const parsed = await parseBody(req, applicationCreateSchema);
     if ("response" in parsed) return parsed.response;
 
-    let id: string = newId("application");
-    try {
-      await d.insert(schema.applications).values({
-        id,
-        slotId,
-        performerId: performer.id,
-        note: parsed.data.note ?? null,
+    return await db().transaction(async (tx) => {
+      const [candidate] = await tx
+        .select({ venueId: schema.slots.venueId })
+        .from(schema.slots)
+        .where(eq(schema.slots.id, slotId));
+      if (!candidate) return fail("not_found", "We couldn't find that date.", 404);
+      await lockActiveProfileOwners(tx, {
+        performerIds: [performer.id],
+        venueIds: [candidate.venueId],
+        additionalUserIds: [userId],
       });
-    } catch (err) {
-      // constraint name is on the wrapped cause; match SQLSTATE 23505 instead
-      if (pgErrorCode(err) !== "23505") throw err;
-      // A withdrawn application (performer declined an offer, or withdrew)
-      // must not lock the pairing out of a reopened slot forever: re-applying
-      // revives it. Anything else on file is a real duplicate.
-      const revived = await d
-        .update(schema.applications)
-        .set({ status: "submitted", note: parsed.data.note ?? null })
-        .where(
-          and(
-            eq(schema.applications.slotId, slotId),
-            eq(schema.applications.performerId, performer.id),
-            eq(schema.applications.status, "withdrawn"),
-          ),
-        )
+      // A stale page can submit between downbeat and the hourly expiry sweep.
+      // Lock and re-check both status and time in the same unit as the insert.
+      const [slot] = await tx
+        .select()
+        .from(schema.slots)
+        .where(eq(schema.slots.id, slotId))
+        .for("update");
+      if (!slot) return fail("not_found", "We couldn't find that date.", 404);
+      if (slot.status !== "open")
+        return fail("conflict", "This date is no longer open.", 409);
+      if (slot.startsAt.getTime() <= Date.now())
+        return fail("conflict", "This date has already passed.", 409);
+
+      const candidateId = newId("application");
+      const inserted = await tx
+        .insert(schema.applications)
+        .values({
+          id: candidateId,
+          slotId,
+          performerId: performer.id,
+          note: parsed.data.note ?? null,
+        })
+        .onConflictDoNothing({
+          target: [schema.applications.slotId, schema.applications.performerId],
+        })
         .returning({ id: schema.applications.id });
-      if (revived.length === 0)
-        return fail("conflict", "You've already applied to this date.", 409);
-      id = revived[0]!.id;
-    }
-    await appendEvent(d, {
-      actor: userId,
-      kind: "application.submitted",
-      subjectType: "slot",
-      subjectId: slotId,
-      payload: {
-        applicationId: id,
-        performerId: performer.id,
-        effects: [{ kind: "notify", template: "new_application", to: "venue" }],
-      },
+      let id = inserted[0]?.id;
+      if (!id) {
+        // A withdrawn application (performer declined an offer, or withdrew)
+        // must not lock the pairing out of a reopened slot forever: re-applying
+        // revives it. Anything else on file is a real duplicate.
+        const revived = await tx
+          .update(schema.applications)
+          .set({
+            status: "submitted",
+            declineReason: null,
+            note: parsed.data.note ?? null,
+          })
+          .where(
+            and(
+              eq(schema.applications.slotId, slotId),
+              eq(schema.applications.performerId, performer.id),
+              eq(schema.applications.status, "withdrawn"),
+            ),
+          )
+          .returning({ id: schema.applications.id });
+        if (revived.length === 0)
+          return fail("conflict", "You've already applied to this date.", 409);
+        id = revived[0]!.id;
+      }
+      await appendEvent(tx, {
+        actor: userId,
+        kind: "application.submitted",
+        subjectType: "slot",
+        subjectId: slotId,
+        payload: {
+          applicationId: id,
+          performerId: performer.id,
+          effects: [{ kind: "notify", template: "new_application", to: "venue" }],
+        },
+      });
+      return ok({ id }, 201);
     });
-    return ok({ id }, 201);
   } catch (e) {
     return respondError(e);
   }

@@ -1,6 +1,17 @@
-import { db, schema } from "@gigit/db";
-import { asc, eq } from "drizzle-orm";
+import {
+  AccountUnavailableError,
+  db,
+  MarketplaceProfileUnavailableError,
+  OpenSlotStartTimeError,
+  schema,
+  TechSubslotAlreadyActiveError,
+  TechSubslotParentUnavailableError,
+  TechUnavailableError,
+  VenuePaymentMethodRequiredError,
+} from "@gigit/db";
+import { asc, desc, eq } from "drizzle-orm";
 import type { NextResponse } from "next/server";
+import { liveProfileForActiveAccount } from "./profile-capabilities";
 import { sessionUserId } from "./session";
 import { fail } from "./respond";
 
@@ -17,6 +28,48 @@ export class AuthError extends Error {
  */
 export function respondError(e: unknown): NextResponse {
   if (e instanceof AuthError) return fail("auth", e.message, e.status);
+  if (e instanceof AccountUnavailableError)
+    return fail(
+      e.code,
+      "This account is no longer active. Reload the page and try again.",
+      409,
+    );
+  if (e instanceof MarketplaceProfileUnavailableError)
+    return fail(
+      e.code,
+      "That profile is no longer available. Reload the page and try again.",
+      409,
+    );
+  if (e instanceof TechSubslotParentUnavailableError)
+    return fail(
+      e.code,
+      "This sound job is no longer available because its booking changed or the gig has passed. Reload the page.",
+      409,
+    );
+  if (e instanceof TechSubslotAlreadyActiveError)
+    return fail(
+      e.code,
+      "This booking already has an active sound job. Open it instead of posting another.",
+      409,
+    );
+  if (e instanceof TechUnavailableError)
+    return fail(
+      e.code,
+      "That sound tech is already booked for an overlapping gig. Choose another tech or a different time.",
+      409,
+    );
+  if (e instanceof VenuePaymentMethodRequiredError)
+    return fail(
+      e.code,
+      "Add a payment method first — the booking is charged when the act accepts. Go to Profile → Add a payment method.",
+      409,
+    );
+  if (e instanceof OpenSlotStartTimeError)
+    return fail(
+      e.code,
+      "This date has already passed. Choose a future date and try again.",
+      409,
+    );
   throw e;
 }
 
@@ -53,10 +106,15 @@ export async function performerOwnedBy(userId: string) {
     .select()
     .from(schema.performers)
     .where(eq(schema.performers.ownerUserId, userId))
-    // Oldest wins, deterministically. A bare rows[0] with no ordering
-    // meant a duplicate (possible before performers_owner_uq) resolved
-    // differently per request.
-    .orderBy(asc(schema.performers.createdAt));
+    // A retained historical/hidden row may be older than the current profile.
+    // Live wins, followed by the profile temporarily suspended by an admin;
+    // created_at + ID makes the legacy hidden fallback stable.
+    .orderBy(
+      desc(eq(schema.performers.status, "live")),
+      desc(eq(schema.performers.status, "suspended")),
+      asc(schema.performers.createdAt),
+      asc(schema.performers.id),
+    );
   return rows[0] ?? null;
 }
 
@@ -65,10 +123,12 @@ export async function venueOwnedBy(userId: string) {
     .select()
     .from(schema.venues)
     .where(eq(schema.venues.ownerUserId, userId))
-    // Oldest wins, deterministically. A bare rows[0] with no ordering
-    // meant a duplicate (possible before performers_owner_uq) resolved
-    // differently per request.
-    .orderBy(asc(schema.venues.createdAt));
+    .orderBy(
+      desc(eq(schema.venues.status, "live")),
+      desc(eq(schema.venues.status, "suspended")),
+      asc(schema.venues.createdAt),
+      asc(schema.venues.id),
+    );
   return rows[0] ?? null;
 }
 
@@ -86,11 +146,44 @@ export async function techOwnedBy(userId: string) {
     .select()
     .from(schema.techs)
     .where(eq(schema.techs.ownerUserId, userId))
-    // Oldest wins, deterministically. A bare rows[0] with no ordering
-    // meant a duplicate (possible before performers_owner_uq) resolved
-    // differently per request.
-    .orderBy(asc(schema.techs.createdAt));
+    .orderBy(
+      desc(eq(schema.techs.status, "live")),
+      desc(eq(schema.techs.status, "suspended")),
+      asc(schema.techs.createdAt),
+      asc(schema.techs.id),
+    );
   return rows[0] ?? null;
+}
+
+/**
+ * Load both durable ownership identities and the profiles that can advertise a
+ * new marketplace action right now.
+ *
+ * `owned` intentionally keeps suspended/hidden fallbacks for booking history.
+ * `live` is the UI capability boundary: an active account plus a live profile.
+ * API routes still enforce the authoritative transactional boundary.
+ */
+export async function profileCapabilitiesOwnedBy(userId: string) {
+  const [[account], performer, venue, tech] = await Promise.all([
+    db()
+      .select({ status: schema.users.status })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1),
+    performerOwnedBy(userId),
+    venueOwnedBy(userId),
+    techOwnedBy(userId),
+  ]);
+  const accountStatus = account?.status ?? null;
+  return {
+    accountStatus,
+    owned: { performer, venue, tech },
+    live: {
+      performer: liveProfileForActiveAccount(accountStatus, performer),
+      venue: liveProfileForActiveAccount(accountStatus, venue),
+      tech: liveProfileForActiveAccount(accountStatus, tech),
+    },
+  };
 }
 
 /**

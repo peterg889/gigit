@@ -1,5 +1,5 @@
 import { inquiryCreateSchema, newId } from "@gigit/domain";
-import { appendEvent, db, schema } from "@gigit/db";
+import { appendEvent, db, lockActiveProfileOwners, schema } from "@gigit/db";
 import { and, eq, gte, inArray, sql } from "drizzle-orm";
 import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
@@ -18,60 +18,70 @@ export async function POST(req: Request) {
 
     // Who may open what: venues message performers/techs; performers message
     // techs (to hire sound). Performer→venue cold messaging stays off (F5.1).
-    const allowed =
-      (venue && (parsed.data.performerId || parsed.data.techId)) ||
-      (performer && parsed.data.techId);
-    if (!allowed)
+    let senderVenueId: string | undefined;
+    let senderPerformerId: string | undefined;
+    if (parsed.data.performerId) senderVenueId = venue?.id;
+    else if (parsed.data.techId) {
+      // An account can have both profiles. Prefer its live venue identity for
+      // tech outreach, then its performer identity; the transaction gate below
+      // authoritatively rechecks whichever role was selected.
+      if (venue?.status === "live") senderVenueId = venue.id;
+      else if (performer) senderPerformerId = performer.id;
+      else if (venue) senderVenueId = venue.id;
+    }
+    if (!senderVenueId && !senderPerformerId)
       return fail(
         "forbidden",
         "venues can message performers and techs; performers can message techs",
         403,
       );
 
-    // Recipient is a performer or a sound tech (PRD F5.1 / F6 invites).
-    const d = db();
-    let recipientUserId: string | undefined;
-    let recipientRef: Record<string, string> = {};
-    if (parsed.data.performerId) {
-      const [p] = await d
-        .select()
-        .from(schema.performers)
-        .where(eq(schema.performers.id, parsed.data.performerId));
-      if (!p) return fail("not_found", "We couldn't find that act.", 404);
-      recipientUserId = p.ownerUserId;
-      recipientRef = { performerId: p.id };
-    } else {
-      const [t] = await d
-        .select()
-        .from(schema.techs)
-        .where(eq(schema.techs.id, parsed.data.techId!));
-      if (!t) return fail("not_found", "We couldn't find that sound tech.", 404);
-      recipientUserId = t.ownerUserId;
-      recipientRef = { techId: t.id };
-    }
-
-    // Count what this user SENT. Joining through participants counted inquiries
-    // other people opened with them too, so an act that got 10 inquiries in a
-    // day was locked out of sending its own — and it never cleared while the
-    // inbox stayed busy. Anyone holding both a venue and an act profile (which
-    // onboarding actively invites) could hit this having sent nothing.
-    const since = new Date(Date.now() - 24 * 3_600_000);
-    const [{ count }] = (await d
-      .select({ count: sql<number>`count(*)::int` })
-      .from(schema.threads)
-      .where(
-        and(
-          eq(schema.threads.scope, "inquiry"),
-          eq(schema.threads.createdByUserId, userId),
-          gte(schema.threads.createdAt, since),
-        ),
-      )) as [{ count: number }];
-    if (count >= DAILY_INQUIRY_CAP)
-      return fail("rate_limited", "You've hit today's message limit. Try again tomorrow.", 429);
-
     const threadId = newId("thread");
     const messageId = newId("message");
-    await d.transaction(async (tx) => {
+    return await db().transaction(async (tx) => {
+      const active = await lockActiveProfileOwners(tx, {
+        performerIds: [
+          ...(senderPerformerId ? [senderPerformerId] : []),
+          ...(parsed.data.performerId ? [parsed.data.performerId] : []),
+        ],
+        venueIds: senderVenueId ? [senderVenueId] : [],
+        techIds: parsed.data.techId ? [parsed.data.techId] : [],
+        additionalUserIds: [userId],
+      });
+      const recipient = parsed.data.performerId
+        ? active.performers.get(parsed.data.performerId)!
+        : active.techs.get(parsed.data.techId!)!;
+      const recipientRef = parsed.data.performerId
+        ? { performerId: parsed.data.performerId }
+        : { techId: parsed.data.techId! };
+      if (recipient.ownerUserId === userId)
+        return fail(
+          "self_inquiry",
+          "You can't message your own profile.",
+          409,
+        );
+
+      // Count what this user SENT. Joining through participants counted
+      // inquiries other people opened with them too, so a popular act was
+      // locked out of sending its own messages despite having sent nothing.
+      const since = new Date(Date.now() - 24 * 3_600_000);
+      const [{ count }] = (await tx
+        .select({ count: sql<number>`count(*)::int` })
+        .from(schema.threads)
+        .where(
+          and(
+            eq(schema.threads.scope, "inquiry"),
+            eq(schema.threads.createdByUserId, userId),
+            gte(schema.threads.createdAt, since),
+          ),
+        )) as [{ count: number }];
+      if (count >= DAILY_INQUIRY_CAP)
+        return fail(
+          "rate_limited",
+          "You've hit today's message limit. Try again tomorrow.",
+          429,
+        );
+
       await tx.insert(schema.threads).values({
         id: threadId,
         scope: "inquiry",
@@ -80,7 +90,7 @@ export async function POST(req: Request) {
       });
       await tx.insert(schema.threadParticipants).values([
         { threadId, userId },
-        { threadId, userId: recipientUserId },
+        { threadId, userId: recipient.ownerUserId },
       ]);
       await tx.insert(schema.messages).values({
         id: messageId,
@@ -98,8 +108,8 @@ export async function POST(req: Request) {
           effects: [{ kind: "notify", template: "new_inquiry", to: "performer" }],
         },
       });
+      return ok({ threadId }, 201);
     });
-    return ok({ threadId }, 201);
   } catch (e) {
     return respondError(e);
   }

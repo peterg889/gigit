@@ -83,6 +83,40 @@ describe("sound plan v0", () => {
       expect(plan.gaps).not.toContain("no one to run sound");
     });
 
+    it("a known severe channel gap still requires a rig when staffing is unanswered", () => {
+      const plan = soundPlan(
+        { hasPA: true, mixerChannels: 4 },
+        { inputs: 12 },
+      );
+      expect(plan.verdict).toBe("tech_and_rig_needed");
+      expect(plan.gaps).toContain("mixer has 4 channels, act needs 12");
+      expect(plan.gaps).toContain(
+        "the room hasn't said whether anyone runs sound",
+      );
+    });
+
+    it("a known microphone shortage remains actionable when inputs are unanswered", () => {
+      const plan = soundPlan(
+        { hasPA: true, micsAvailable: 1, hasOperator: true },
+        { inputs: 0, micsNeeded: 3 },
+      );
+      expect(plan.verdict).toBe("tech_needed");
+      expect(plan.gaps).toContain("venue has 1 mics, act needs 3");
+      expect(plan.gaps).toContain("the act hasn't listed its input count");
+    });
+
+    it("unlisted microphone inventory stays unknown instead of becoming zero", () => {
+      const plan = soundPlan(
+        { hasPA: true, mixerChannels: 8, hasOperator: true },
+        { inputs: 4, micsNeeded: 2 },
+      );
+      expect(plan.verdict).toBe("unknown");
+      expect(plan.gaps).toContain(
+        "the room hasn't listed its available microphones",
+      );
+      expect(plan.gaps.some((gap) => gap.includes("venue has 0 mics"))).toBe(false);
+    });
+
     it("an act that never listed its inputs is unknown", () => {
       const plan = soundPlan(
         { hasPA: true, mixerChannels: 8, hasOperator: true },

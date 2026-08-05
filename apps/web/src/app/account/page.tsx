@@ -35,6 +35,15 @@ export default async function AccountPage() {
     <div>
       <span className="eyebrow">Account</span>
       <h1>Your account</h1>
+      {user?.status === "suspended" && (
+        <div className="notice warn" role="status">
+          <strong>Account suspended.</strong> Your profiles are not public and
+          marketplace actions are unavailable. Any open marketplace commitments
+          were closed when the suspension took effect. You can still deactivate
+          your account below or <Link href="/help">contact support</Link>.
+        </div>
+      )}
+
       <div className="card">
         <h2>Sign-in details</h2>
         <p>{user?.email ?? user?.phone ?? "No sign-in address on file"}</p>

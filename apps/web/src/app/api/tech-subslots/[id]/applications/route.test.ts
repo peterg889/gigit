@@ -1,11 +1,12 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@gigit/domain";
 import { closeDb, db, schema } from "@gigit/db";
+import { and, eq } from "drizzle-orm";
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
 
-import { POST } from "./route";
+import { DELETE, POST } from "./route";
 
 const as = (uid: string | null) => sessionUserId.mockResolvedValue(uid);
 const apply = (id: string, body: unknown = {}) =>
@@ -17,6 +18,10 @@ const apply = (id: string, body: unknown = {}) =>
     }),
     { params: Promise.resolve({ id }) },
   );
+const withdraw = (id: string) =>
+  DELETE(new Request(`http://test/x/${id}`, { method: "DELETE" }), {
+    params: Promise.resolve({ id }),
+  });
 
 /**
  * Tech sub-slot apply: a re-apply by the same tech must 409, not fabricate a
@@ -115,10 +120,13 @@ describe("tech sub-slot apply route", () => {
     await closeDb();
   });
 
-  it("first apply 201, second apply by the same tech 409 (no fabricated id)", async () => {
+  it("applies once and withdraws only while the application is pending", async () => {
     as(uTech);
     expect((await apply(openSubslot, { note: "I have a rig" })).status).toBe(201);
     expect((await apply(openSubslot)).status).toBe(409);
+    expect((await withdraw(openSubslot)).status).toBe(200);
+    expect((await withdraw(openSubslot)).status).toBe(404);
+    expect((await apply(openSubslot, { note: "Available again" })).status).toBe(201);
   });
 
   it("403 without a tech profile, 409 when the sub-slot isn't open, 401 unauthenticated", async () => {
@@ -126,6 +134,26 @@ describe("tech sub-slot apply route", () => {
     expect((await apply(openSubslot)).status).toBe(403);
     as(uTech);
     expect((await apply(closedSubslot)).status).toBe(409);
+    const closedRows = await db()
+      .select({ id: schema.techSubslotApplications.id })
+      .from(schema.techSubslotApplications)
+      .where(
+        and(
+          eq(schema.techSubslotApplications.subslotId, closedSubslot),
+          eq(schema.techSubslotApplications.techId, techId),
+        ),
+      );
+    expect(closedRows).toHaveLength(0);
+    const closedEvents = await db()
+      .select({ id: schema.events.id })
+      .from(schema.events)
+      .where(
+        and(
+          eq(schema.events.subjectId, closedSubslot),
+          eq(schema.events.kind, "subslot.application"),
+        ),
+      );
+    expect(closedEvents).toHaveLength(0);
     as(null);
     expect((await apply(openSubslot)).status).toBe(401);
   });

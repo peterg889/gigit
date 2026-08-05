@@ -20,7 +20,7 @@ export async function POST(req: Request) {
     if (!venueLocationIsComplete(venue))
       return fail(
         "venue_location_required",
-        "Add your venue's address and timezone first — a draft needs to know when and where.",
+        "Add your venue's address and time zone first — a draft needs to know when and where.",
         409,
       );
     const parsed = await parseBody(req, bodySchema);

@@ -1,6 +1,26 @@
-import { afterAll, describe, expect, it, vi } from "vitest";
-import { closeDb, db, makePerformer, makeUser, makeVenue, schema } from "@gigit/db";
+import { afterAll, afterEach, describe, expect, it, vi } from "vitest";
+import {
+  OpenSlotStartTimeError,
+  closeDb,
+  db,
+  makePerformer,
+  makeUser,
+  makeVenue,
+  schema,
+} from "@gigit/db";
 import { eq } from "drizzle-orm";
+
+const openSlotBoundary = vi.hoisted(() => ({ error: null as Error | null }));
+vi.mock("@gigit/db", async (original) => {
+  const actual = await original<typeof import("@gigit/db")>();
+  return {
+    ...actual,
+    createOpenSlot: async (...args: Parameters<typeof actual.createOpenSlot>) => {
+      if (openSlotBoundary.error) throw openSlotBoundary.error;
+      return actual.createOpenSlot(...args);
+    },
+  };
+});
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
@@ -29,6 +49,9 @@ const post = (body: unknown) =>
  * room, which makes the realistic path the easy one to test.
  */
 describe("posting an open date", () => {
+  afterEach(() => {
+    openSlotBoundary.error = null;
+  });
   afterAll(async () => {
     await closeDb();
   });
@@ -89,6 +112,26 @@ describe("posting an open date", () => {
       budgetCents: 30_000,
     });
     expect(res.status).toBe(422);
+  });
+
+  it("returns a clean conflict when the date passes at the persistence boundary", async () => {
+    const venue = await makeVenue({ name: "Boundary Room" });
+    as(venue.ownerUserId);
+    openSlotBoundary.error = new OpenSlotStartTimeError(new Date());
+
+    const res = await post({
+      startsAt: nextMonth(),
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 30_000,
+    });
+    expect(res.status).toBe(409);
+    expect(await res.json()).toMatchObject({
+      error: {
+        code: "slot_not_future",
+        message: expect.stringMatching(/future date/i),
+      },
+    });
   });
 
   it("refuses a caller with no venue profile", async () => {

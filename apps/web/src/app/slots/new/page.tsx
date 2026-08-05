@@ -1,19 +1,33 @@
 import { aiConfigured } from "@gigit/db";
 import { ApiForm } from "@/components/ApiForm";
 import { SlotParseWidget } from "@/components/AiAssist";
-import { venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import Link from "next/link";
 import { friendlyTimeZoneName, venueLocationIsComplete } from "@/lib/date-time";
 
 export default async function NewSlotPage() {
   const userId = await sessionUserId();
-  const venue = userId ? await venueOwnedBy(userId) : null;
+  const profiles = userId ? await profileCapabilitiesOwnedBy(userId) : null;
+  const venue = profiles?.live.venue ?? null;
+  const ownedVenue = profiles?.owned.venue ?? null;
   if (!venue)
     return (
       <div className="card">
-        <Link href="/onboarding?role=venue">Create a venue profile</Link> before
-        posting an open date.
+        {ownedVenue ? (
+          <>
+            <p>Your venue profile is not active, so posting is unavailable.</p>
+            <p className="muted">
+              <Link href="/account">Review your account</Link> or{" "}
+              <Link href="/help">contact support</Link>.
+            </p>
+          </>
+        ) : (
+          <>
+            <Link href="/onboarding?role=venue">Create a venue profile</Link>{" "}
+            before posting an open date.
+          </>
+        )}
       </div>
     );
   if (!venueLocationIsComplete(venue))
@@ -21,7 +35,7 @@ export default async function NewSlotPage() {
       <div className="card">
         <h1>Finish your venue location</h1>
         <p>
-          Add the street address and timezone on <Link href="/me">your venue profile</Link>{" "}
+          Add the street address and time zone on <Link href="/me">your venue profile</Link>{" "}
           before posting. They keep the listing, offer, and calendar invite aligned.
         </p>
       </div>

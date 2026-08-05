@@ -7,7 +7,7 @@
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 
-import { ACT_KIND_LABEL, GIG_FORMAT_LABEL } from "@/lib/labels";
+import { ACT_KIND_OPTIONS, GIG_FORMAT_LABEL } from "@/lib/labels";
 import { formatVenueDateTime } from "@/lib/date-time";
 
 async function post(url: string, body: unknown, method: "POST" | "PATCH" = "POST") {
@@ -44,7 +44,9 @@ export function ProfileIngestWidget() {
         Or paste your YouTube / Bandcamp / website link — we&apos;ll draft the
         profile, you approve every word. Nothing publishes until you say so.
       </p>
+      <label htmlFor={`${uid}-source-url`}>Profile or media link</label>
       <input
+        id={`${uid}-source-url`}
         placeholder="https://…"
         value={url}
         onChange={(e) => setUrl(e.target.value)}
@@ -83,8 +85,8 @@ export function ProfileIngestWidget() {
             value={draft.kind}
             onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
           >
-            {["band", "solo", "comedian", "other"].map((k) => (
-              <option key={k} value={k}>{ACT_KIND_LABEL[k]}</option>
+            {ACT_KIND_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
             ))}
           </select>
           <label htmlFor={`${uid}-f3`}>Bio</label>
@@ -160,7 +162,15 @@ export function SlotParseWidget({ timeZone }: { timeZone: string }) {
         Describe the date, time, format, and pay in a sentence. We&apos;ll turn it
         into a draft you can review.
       </p>
-      <textarea rows={2} value={text} onChange={(e) => setText(e.target.value)} />
+      <label htmlFor={`${uid}-night-description`}>
+        Date, time, format, and pay
+      </label>
+      <textarea
+        id={`${uid}-night-description`}
+        rows={2}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
       <button
         disabled={busy || text.length < 5}
         onClick={async () => {
@@ -250,13 +260,19 @@ export function GearExtractWidget({ venueId }: { venueId: string }) {
         you confirm. This is what tells acts and techs what they&apos;re
         walking into.
       </p>
+      <label htmlFor={`${uid}-gear-description`}>
+        Describe your PA and gear (optional)
+      </label>
       <textarea
+        id={`${uid}-gear-description`}
         rows={2}
         placeholder="e.g. 12-channel Mackie, two mains, two wedges, 3 SM58s, nobody runs it"
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
+      <label htmlFor={`${uid}-gear-photo`}>Add a gear photo (optional)</label>
       <input
+        id={`${uid}-gear-photo`}
         type="file"
         accept="image/jpeg,image/png,image/webp"
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}

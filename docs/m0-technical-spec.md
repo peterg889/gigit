@@ -110,7 +110,7 @@ Single process, two loops + pg-boss:
 
 ## 7. Local dev & testing
 
-- `docker compose up db` → Postgres 16 on 5433; `pnpm db:migrate` (drizzle-kit); `pnpm db:seed` (demo venue, 2 performers, tech, open slots); `pnpm dev` (web+worker concurrently).
+- `docker compose up db` → Postgres 16 on 5433; `pnpm db:migrate` (drizzle-kit); `pnpm db:seed` (3 isolated E2E venue/act pairs, demo comic, tech, core open slots); `pnpm dev` (web+worker concurrently).
 - Tests: **domain** — vitest, no I/O, exhaustive machine tables; **db** — vitest against dockerized Postgres (transition runner: concurrency/version-conflict test, outbox atomicity test); **web** — route-handler tests for auth + the offer→accept happy path (vitest + test client against the dev DB).
 - CI (`ci.yml`): pnpm install → typecheck all → domain tests → db+web tests with Postgres service container → build web.
 

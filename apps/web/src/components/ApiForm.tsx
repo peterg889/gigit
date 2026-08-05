@@ -4,17 +4,21 @@ import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 
 import {
-  ACT_KIND_LABEL,
   GEAR_LABELS,
   GIG_FORMAT_LABEL,
-  VENUE_KIND_LABEL,
 } from "@/lib/labels";
 import { venueLocalInputToIso } from "@/lib/date-time";
 import { applyTransform, type TransformName } from "@/lib/form-transforms";
 
 type SelectOption = string | { value: string; label: string };
 
-interface Field {
+export type EmptyValueBehavior =
+  | "omit"
+  | "empty-string"
+  | "null"
+  | "empty-array";
+
+export interface Field {
   name: string;
   label: string;
   type?: "text" | "number" | "datetime-local" | "textarea" | "select";
@@ -22,21 +26,23 @@ interface Field {
   required?: boolean;
   placeholder?: string;
   defaultValue?: string | number;
+  /**
+   * What an explicitly blank control means. Omission remains the default so
+   * create forms retain their schema defaults; PATCH fields opt into clearing.
+   */
+  emptyValue?: EmptyValueBehavior;
 }
 
-// Built FROM the canonical maps, not alongside them. These were restated here
-// with different wording, so a venue picked "Music" in this dropdown and the
-// feed card it produced was badged "Live music" — and `other` was "Other" here
-// and "Other act" on the profile. labels.ts exists to prevent exactly that; its
-// own docstring cites the last time this drifted.
+// Only globally unambiguous values belong here. Domain-specific options pass
+// `{ value, label }` objects: act kind and venue kind both use `other`, so a
+// value-only map cannot label both correctly.
 const OPTION_LABELS: Record<string, string> = {
   "": "Any",
   false: "No",
   true: "Yes",
-  ...ACT_KIND_LABEL,
-  ...VENUE_KIND_LABEL,
   ...GEAR_LABELS,
   ...GIG_FORMAT_LABEL,
+  other: "Other",
   weekly: "Weekly",
   monthly_dow: "Monthly — same week and weekday",
   no_show: "No-show",
@@ -72,6 +78,95 @@ function optionDetails(option: SelectOption): { value: string; label: string } {
  * Tiny JSON form: posts field values to an API route. Numeric fields are sent
  * as numbers; *_cents fields accept dollars in the UI and convert.
  */
+export function submissionIsConfirmed(
+  message: string | undefined,
+  confirmImpl: (message: string) => boolean,
+): boolean {
+  return !message || confirmImpl(message);
+}
+
+export function completeSuccessfulSubmission(
+  form: { reset(): void },
+  resetOnSuccess: boolean | undefined,
+  successMessage: string | undefined,
+): string | null {
+  if (resetOnSuccess) form.reset();
+  return successMessage ?? null;
+}
+
+export function serializeApiFormBody({
+  fields,
+  form,
+  extra,
+  dateTimeZone,
+  transform,
+}: {
+  fields: Field[];
+  form: Pick<FormData, "get">;
+  extra?: Record<string, unknown>;
+  dateTimeZone?: string;
+  transform?: TransformName;
+}): Record<string, unknown> {
+  const body: Record<string, unknown> = { ...extra };
+  for (const field of fields) {
+    const raw = String(form.get(field.name) ?? "").trim();
+    if (raw === "") {
+      if (field.emptyValue === "empty-string") body[field.name] = "";
+      else if (field.emptyValue === "null") body[field.name] = null;
+      else if (field.emptyValue === "empty-array") body[field.name] = [];
+      continue;
+    }
+    if (field.name.endsWith("Cents"))
+      body[field.name] = Math.round(Number(raw) * 100);
+    else if (field.type === "number") body[field.name] = Number(raw);
+    else if (field.type === "datetime-local")
+      body[field.name] = dateTimeZone
+        ? venueLocalInputToIso(raw, dateTimeZone)
+        : new Date(raw).toISOString();
+    else body[field.name] = raw;
+  }
+  return applyTransform(body, transform);
+}
+
+type ApiResponse = {
+  ok: boolean;
+  json(): Promise<unknown>;
+};
+
+export async function runApiRequest({
+  request,
+  onBusy,
+  onError,
+  onSuccess,
+}: {
+  request: () => Promise<ApiResponse>;
+  onBusy: (busy: boolean) => void;
+  onError: (message: string | null) => void;
+  onSuccess: (response: ApiResponse) => void | Promise<void>;
+}): Promise<boolean> {
+  onBusy(true);
+  onError(null);
+  try {
+    const response = await request();
+    if (!response.ok) {
+      const data = (await response.json().catch(() => null)) as {
+        error?: { message?: string };
+      } | null;
+      onError(
+        data?.error?.message ??
+          "Something went wrong on our end — give it another try in a moment.",
+      );
+      return false;
+    }
+    await onSuccess(response);
+    return true;
+  } catch {
+    onError("Could not reach EightGig. Check your connection and try again.");
+    return false;
+  } finally {
+    onBusy(false);
+  }
+}
 export function ApiForm({
   endpoint,
   fields,
@@ -80,6 +175,9 @@ export function ApiForm({
   transform,
   extra,
   dateTimeZone,
+  confirm,
+  resetOnSuccess,
+  successMessage,
   method = "POST",
 }: {
   endpoint: string;
@@ -90,38 +188,40 @@ export function ApiForm({
   extra?: Record<string, unknown>; // constant fields merged into the payload
   /** Interpret datetime-local fields in this venue timezone, not the browser timezone. */
   dateTimeZone?: string;
+  confirm?: string;
+  resetOnSuccess?: boolean;
+  successMessage?: string;
   method?: "POST" | "PATCH"; // PATCH for edit-in-place (partial update) forms
 }) {
   const router = useRouter();
   const uid = useId();
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    setBusy(true);
+    if (
+      !submissionIsConfirmed(confirm, (message) => window.confirm(message))
+    )
+      return;
+    const formElement = e.currentTarget;
     setError(null);
-    const form = new FormData(e.currentTarget);
-    const body: Record<string, unknown> = { ...extra };
-    for (const f of fields) {
-      const raw = String(form.get(f.name) ?? "").trim();
-      if (raw === "") continue;
-      if (f.name.endsWith("Cents")) body[f.name] = Math.round(Number(raw) * 100);
-      else if (f.type === "number") body[f.name] = Number(raw);
-      else if (f.type === "datetime-local") {
-        try {
-          body[f.name] = dateTimeZone
-            ? venueLocalInputToIso(raw, dateTimeZone)
-            : new Date(raw).toISOString();
-        } catch (err) {
-          setBusy(false);
-          setError(err instanceof Error ? err.message : "Enter a valid date and time.");
-          return;
-        }
-      }
-      else body[f.name] = raw;
+    setSuccess(null);
+    const form = new FormData(formElement);
+    let body: Record<string, unknown>;
+    try {
+      body = serializeApiFormBody({
+        fields,
+        form,
+        extra,
+        dateTimeZone,
+        transform: transform as TransformName | undefined,
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Enter a valid date and time.");
+      return;
     }
-    applyTransform(body, transform as TransformName | undefined);
     // `:name` placeholders in the endpoint are filled from the body and then
     // dropped from it — so a form can pick WHICH resource it posts to (invite
     // this act to *that* night) without a client component per row.
@@ -132,23 +232,26 @@ export function ApiForm({
       delete body[key];
     }
     if (url.includes("/:")) {
-      setBusy(false);
       setError("Pick an option before submitting.");
       return;
     }
-    const res = await fetch(url, {
-      method,
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+    await runApiRequest({
+      request: () =>
+        fetch(url, {
+          method,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        }),
+      onBusy: setBusy,
+      onError: setError,
+      onSuccess: () => {
+        setSuccess(
+          completeSuccessfulSubmission(formElement, resetOnSuccess, successMessage),
+        );
+        if (redirectTo) router.push(redirectTo);
+        router.refresh();
+      },
     });
-    setBusy(false);
-    if (!res.ok) {
-      const data = await res.json().catch(() => null);
-      setError(data?.error?.message ?? "Something went wrong on our end — give it another try in a moment.");
-      return;
-    }
-    if (redirectTo) router.push(redirectTo);
-    router.refresh();
   }
 
   return (
@@ -167,6 +270,7 @@ export function ApiForm({
               id={`${uid}-${f.name}`}
               name={f.name}
               rows={3}
+              required={f.required}
               placeholder={f.placeholder}
               defaultValue={f.defaultValue}
             />
@@ -197,6 +301,7 @@ export function ApiForm({
           live region a screen-reader user submits and hears nothing. */}
       <div aria-live="polite" role="status">
         {error && <p className="error">{error}</p>}
+        {success && <p className="notice success">{success}</p>}
       </div>
       <button disabled={busy}>{busy ? "Working…" : submitLabel}</button>
     </form>
@@ -218,22 +323,25 @@ export function RedirectButton({
       <button
         disabled={busy}
         onClick={async () => {
-          setBusy(true);
-          setNote(null);
-          const res = await fetch(endpoint, { method: "POST" });
-          const data = await res.json().catch(() => null);
-          setBusy(false);
-          if (!res.ok) {
-            setNote(data?.error?.message ?? "Something went wrong on our end — try again in a moment.");
-            return;
-          }
-          if (data?.url) window.location.href = data.url;
-          else setNote("Payment setup is unavailable right now. Please contact support.");
+          await runApiRequest({
+            request: () => fetch(endpoint, { method: "POST" }),
+            onBusy: setBusy,
+            onError: setNote,
+            onSuccess: async (response) => {
+              const data = (await response.json().catch(() => null)) as {
+                url?: string;
+              } | null;
+              if (data?.url) window.location.href = data.url;
+              else setNote("Payment setup is unavailable right now. Please contact support.");
+            },
+          });
         }}
       >
         {busy ? "Working…" : label}
       </button>
-      {note && <span className="muted"> {note}</span>}
+      <span aria-live="polite" role="status">
+        {note && <span className="muted"> {note}</span>}
+      </span>
     </span>
   );
 }
@@ -265,19 +373,16 @@ export function ActionButton({
         disabled={busy}
         onClick={async () => {
           if (confirm && !window.confirm(confirm)) return;
-          setBusy(true);
-          const res = await fetch(endpoint, {
-            method,
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body ?? {}),
+          await runApiRequest({
+            request: () => fetch(endpoint, {
+              method,
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify(body ?? {}),
+            }),
+            onBusy: setBusy,
+            onError: setError,
+            onSuccess: () => router.refresh(),
           });
-          setBusy(false);
-          if (!res.ok) {
-            const data = await res.json().catch(() => null);
-            setError(data?.error?.message ?? "Something went wrong on our end — try again in a moment.");
-            return;
-          }
-          router.refresh();
         }}
       >
         {busy ? "…" : label}

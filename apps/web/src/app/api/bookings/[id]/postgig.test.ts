@@ -1,7 +1,15 @@
-import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@gigit/domain";
-import { closeDb, createOffer, db, makeUser, makeVenue, runBookingTransition, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { VenuePaymentMethodRequiredError, closeDb, createOffer, db, getPool, makeUser, makeVenue, runBookingTransition, schema } from "@gigit/db";
+import { and, eq } from "drizzle-orm";
+
+const offerPaymentGate = vi.hoisted(() => ({ error: null as Error | null }));
+vi.mock("@gigit/db", async (original) => ({
+  ...(await original<typeof import("@gigit/db")>()),
+  assertVenueOfferPaymentReady: async () => {
+    if (offerPaymentGate.error) throw offerPaymentGate.error;
+  },
+}));
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
@@ -122,6 +130,9 @@ describe("post-gig routes", () => {
       defaults: { format: "music", genrePrefs: [], budgetCents: 20_000, provides: {} },
     });
   });
+  afterEach(() => {
+    offerPaymentGate.error = null;
+  });
   afterAll(async () => {
     await closeDb();
   });
@@ -213,11 +224,176 @@ describe("post-gig routes", () => {
     expect((await rebookNext(bookingId)).status).toBe(409);
   });
 
+  it("rebook will not offer a hidden act or an act whose account is suspended", async () => {
+    const { bookingId } = await makeConfirmed();
+    const targetSlotId = newId("slot");
+    await db().insert(schema.slots).values({
+      id: targetSlotId,
+      venueId,
+      metro: "postgig-tv",
+      startsAt: new Date(Date.now() + 150 * 86_400_000),
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 22_000,
+    });
+
+    as(uVenue);
+    try {
+      await db()
+        .update(schema.performers)
+        .set({ status: "hidden" })
+        .where(eq(schema.performers.id, performerId));
+      let response = await rebookNext(bookingId);
+      expect(response.status).toBe(409);
+      expect((await response.json()).error.code).toBe("no_rebook_target");
+
+      await db()
+        .update(schema.performers)
+        .set({ status: "live" })
+        .where(eq(schema.performers.id, performerId));
+      await db()
+        .update(schema.users)
+        .set({ status: "suspended" })
+        .where(eq(schema.users.id, uBand));
+      response = await rebookNext(bookingId);
+      expect(response.status).toBe(409);
+      expect((await response.json()).error.code).toBe("no_rebook_target");
+
+      const applications = await db()
+        .select({ id: schema.applications.id })
+        .from(schema.applications)
+        .where(
+          and(
+            eq(schema.applications.slotId, targetSlotId),
+            eq(schema.applications.performerId, performerId),
+          ),
+        );
+      expect(applications).toHaveLength(0);
+    } finally {
+      await db()
+        .update(schema.users)
+        .set({ status: "active" })
+        .where(eq(schema.users.id, uBand));
+      await db()
+        .update(schema.performers)
+        .set({ status: "live" })
+        .where(eq(schema.performers.id, performerId));
+      await db()
+        .update(schema.slots)
+        .set({ status: "cancelled" })
+        .where(eq(schema.slots.id, targetSlotId));
+    }
+  });
+
   it("rebook on a non-series booking is a clean 409", async () => {
     const { bookingId } = await makeConfirmed();
     as(uVenue);
     const res = await rebookNext(bookingId);
     expect(res.status).toBe(409);
-    expect((await res.json()).error.code).toBe("no_rebook_target");
+    const body = await res.json();
+    expect(body.error.code).toBe("no_rebook_target");
+    expect(body.error.message).toMatch(/at this venue/i);
+    expect(body.error.message).not.toMatch(/this series/i);
+  });
+
+  it("does not rebook when the venue cannot be charged", async () => {
+    const { bookingId } = await makeConfirmed();
+    const targetSlotId = newId("slot");
+    await db().insert(schema.slots).values({
+      id: targetSlotId,
+      venueId,
+      metro: "postgig-tv",
+      startsAt: new Date(Date.now() + 170 * 86_400_000),
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 23_000,
+    });
+
+    try {
+      offerPaymentGate.error = new VenuePaymentMethodRequiredError(venueId);
+      as(uVenue);
+      const response = await rebookNext(bookingId);
+      expect(response.status).toBe(409);
+      expect(await response.json()).toMatchObject({
+        error: {
+          code: "payment_method_required",
+          message: expect.stringMatching(/payment method/i),
+        },
+      });
+      const applications = await db()
+        .select({ id: schema.applications.id })
+        .from(schema.applications)
+        .where(eq(schema.applications.slotId, targetSlotId));
+      expect(applications).toHaveLength(0);
+      const bookings = await db()
+        .select({ id: schema.bookings.id })
+        .from(schema.bookings)
+        .where(eq(schema.bookings.slotId, targetSlotId));
+      expect(bookings).toHaveLength(0);
+    } finally {
+      await db()
+        .update(schema.slots)
+        .set({ status: "cancelled" })
+        .where(eq(schema.slots.id, targetSlotId));
+    }
+  });
+
+  it("rebook returns a clean conflict and rolls back its synthetic application", async () => {
+    const { bookingId } = await makeConfirmed();
+    const targetSlotId = newId("slot");
+    await db().insert(schema.slots).values({
+      id: targetSlotId,
+      venueId,
+      metro: "postgig-tv",
+      startsAt: new Date(Date.now() + 180 * 86_400_000),
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 24_000,
+    });
+
+    // Simulate the target losing a uniqueness race after findRebookTarget but
+    // while the atomic helper is inserting the offer. Raising SQLSTATE 23505
+    // through a trigger also pins the wrapped-error mapping used in production.
+    const suffix = targetSlotId.slice(-16).toLowerCase();
+    const functionName = `fail_rebook_offer_${suffix}`;
+    const triggerName = `fail_rebook_offer_trigger_${suffix}`;
+    const pool = getPool();
+    await pool.query(`
+      create function ${functionName}() returns trigger language plpgsql as $$
+      begin
+        if new.slot_id = '${targetSlotId}' then
+          raise exception 'forced competing offer' using errcode = '23505';
+        end if;
+        return new;
+      end
+      $$
+    `);
+    await pool.query(`
+      create trigger ${triggerName}
+      before insert on bookings
+      for each row execute function ${functionName}()
+    `);
+
+    let response: Response;
+    try {
+      as(uVenue);
+      response = await rebookNext(bookingId);
+    } finally {
+      await pool.query(`drop trigger if exists ${triggerName} on bookings`);
+      await pool.query(`drop function if exists ${functionName}()`);
+    }
+
+    expect(response!.status).toBe(409);
+    expect((await response!.json()).error.code).toBe("slot_unavailable");
+    const applications = await db()
+      .select({ id: schema.applications.id })
+      .from(schema.applications)
+      .where(
+        and(
+          eq(schema.applications.slotId, targetSlotId),
+          eq(schema.applications.performerId, performerId),
+        ),
+      );
+    expect(applications).toHaveLength(0);
   });
 });

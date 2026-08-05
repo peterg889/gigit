@@ -43,12 +43,21 @@ export async function POST(req: Request, { params }: Params) {
     const id = newId("message"); // reviews reuse the ULID generator
     const d = db();
     try {
-      await d.insert(schema.reviews).values({
-        id,
-        bookingId,
-        authorRole,
-        ratings: parsed.data.ratings,
-        body: parsed.data.body,
+      await d.transaction(async (tx) => {
+        await tx.insert(schema.reviews).values({
+          id,
+          bookingId,
+          authorRole,
+          ratings: parsed.data.ratings,
+          body: parsed.data.body,
+        });
+        await appendEvent(tx, {
+          actor: userId,
+          kind: "review.submitted",
+          subjectType: "booking",
+          subjectId: bookingId,
+          payload: { authorRole, overall: parsed.data.ratings.overall },
+        });
       });
     } catch (err) {
       // drizzle wraps the pg error, so the constraint name lives on .cause —
@@ -57,13 +66,6 @@ export async function POST(req: Request, { params }: Params) {
         return fail("conflict", "You've already reviewed this gig.", 409);
       throw err;
     }
-    await appendEvent(d, {
-      actor: userId,
-      kind: "review.submitted",
-      subjectType: "booking",
-      subjectId: bookingId,
-      payload: { authorRole, overall: parsed.data.ratings.overall },
-    });
     return ok({ id }, 201);
   } catch (e) {
     return respondError(e);

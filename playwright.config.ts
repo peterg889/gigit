@@ -1,4 +1,5 @@
 import { defineConfig } from "@playwright/test";
+import { createPlaywrightSupervisorCommand } from "./scripts/playwright-supervisor-command.cjs";
 
 /**
  * E2E (engineering-spec §13): local runs build and supervise the production
@@ -20,7 +21,7 @@ export default defineConfig({
   webServer: externalBaseURL
     ? undefined
     : {
-        command: "pnpm e2e:server",
+        command: createPlaywrightSupervisorCommand(),
         url: `${localBaseURL}/api/health`,
         reuseExistingServer: false,
         timeout: 240_000,

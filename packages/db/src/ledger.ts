@@ -2,7 +2,9 @@
  * Intent ledger (engineering-spec K3): Stripe holds the funds; this table is
  * the record of who is owed what and why. Append-only; idempotency keys make
  * every write safe to retry. Invariant (tested): at terminal booking states,
- * charge total == release total + refund total.
+ * charge total == base release + refund + fee. Explicit admin adjustments are
+ * reported separately because they are additional movements, not a way to
+ * rewrite or conceal the booking's contractual settlement.
  */
 import { eq, sql } from "drizzle-orm";
 import type { Db, Tx } from "./client.js";
@@ -21,12 +23,13 @@ export interface LedgerWrite {
   idempotencyKey?: string;
 }
 
+/** True only when this call inserted the intent; false for a replay or zero value. */
 export async function recordLedgerEntry(
   tx: Tx | Db,
   w: LedgerWrite,
-): Promise<void> {
-  if (w.amountCents <= 0) return; // zero-amount intents are not recorded
-  await tx
+): Promise<boolean> {
+  if (w.amountCents <= 0) return false; // zero-amount intents are not recorded
+  const inserted = await tx
     .insert(ledgerEntries)
     .values({
       bookingId: w.bookingId,
@@ -37,15 +40,19 @@ export async function recordLedgerEntry(
       paymentRef: w.paymentRef ?? null,
       idempotencyKey: w.idempotencyKey ?? `${w.bookingId}:${w.entryType}`,
     })
-    .onConflictDoNothing({ target: ledgerEntries.idempotencyKey });
+    .onConflictDoNothing({ target: ledgerEntries.idempotencyKey })
+    .returning({ id: ledgerEntries.id });
+  return inserted.length > 0;
 }
 
 export interface BookingLedgerSummary {
   chargedCents: number;
   releasedCents: number;
   refundedCents: number;
-  /** Manual admin corrections. Omitting these made the one entry type a human
-   *  types a free-form number into invisible to the only balance summary. */
+  /**
+   * Explicit extra platform-funded admin movements. This is deliberately not
+   * part of the base booking conservation equation above.
+   */
   adjustedCents: number;
 }
 

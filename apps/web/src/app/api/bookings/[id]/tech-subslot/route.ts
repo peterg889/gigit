@@ -1,6 +1,5 @@
 import { techSubslotCreateSchema } from "@gigit/domain";
-import { createTechSubslot, db, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { createTechSubslot } from "@gigit/db";
 import { loadBookingForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 

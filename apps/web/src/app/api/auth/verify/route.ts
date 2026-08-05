@@ -1,5 +1,6 @@
 import { authVerifySchema, newId } from "@gigit/domain";
-import { appendEvent, db, schema } from "@gigit/db";
+import {
+  identifierIsBlocked, appendEvent, db, schema } from "@gigit/db";
 import { and, desc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import { createSession } from "@/lib/session";
 import { consentVersions } from "@/lib/legal";
@@ -67,6 +68,12 @@ export async function POST(req: Request) {
   if (user?.status === "suspended")
     return fail("suspended", "This account is suspended. Contact support.", 403);
   if (!user) {
+    // Deactivation nulls email and phone, so a suspended user who deleted their
+    // own account leaves no row to match — and would land here, getting a fresh
+    // active account on the same address. The blocklist is the durable half of
+    // the suspension.
+    if (await identifierIsBlocked(destination, d))
+      return fail("suspended", "This account is suspended. Contact support.", 403);
     const id = newId("user");
     [user] = await d
       .insert(schema.users)

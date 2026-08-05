@@ -1,10 +1,12 @@
 import crypto from "node:crypto";
-import { newId } from "@gigit/domain";
 import {
-  appendEvent,
+  AccountUnavailableError,
+  createOpenSlot,
   createSupportRequest,
   db,
   env,
+  MarketplaceProfileUnavailableError,
+  OpenSlotStartTimeError,
   schema,
   slotParse,
   supportTriage,
@@ -106,28 +108,34 @@ async function route(phone: string, body: string): Promise<string | null> {
   if (session?.activeContext?.kind === "slot_draft") {
     if (["YES", "Y", "POST", "POST IT", "CONFIRM"].includes(upper)) {
       const { draft, venueId } = session.activeContext;
-      const slotId = newId("slot");
       const [v] = await d.select().from(schema.venues).where(eq(schema.venues.id, venueId));
-      await d.insert(schema.slots).values({
-        id: slotId,
-        venueId,
-        metro: v?.metro ?? "unknown",
-        startsAt: new Date(draft.startsAt),
-        durationMinutes: draft.durationMinutes,
-        format: draft.format,
-        genrePrefs: [],
-        budgetCents: draft.budgetCents,
-        provides: {},
-        notes: draft.notes ?? null,
-        source: "sms",
-      });
-      await appendEvent(d, {
-        actor: user.id,
-        kind: "slot.created",
-        subjectType: "slot",
-        subjectId: slotId,
-        payload: { venueId, source: "sms" },
-      });
+      try {
+        await createOpenSlot({
+          venueId,
+          actor: user.id,
+          startsAt: new Date(draft.startsAt),
+          durationMinutes: draft.durationMinutes,
+          format: draft.format,
+          genrePrefs: [],
+          budgetCents: draft.budgetCents,
+          provides: {},
+          notes: draft.notes ?? null,
+          source: "sms",
+        });
+      } catch (error) {
+        if (error instanceof OpenSlotStartTimeError) {
+          await clearSession(phone);
+          return "That date has already passed, so it wasn't posted. Text a new future date when you're ready.";
+        }
+        if (
+          error instanceof AccountUnavailableError ||
+          error instanceof MarketplaceProfileUnavailableError
+        ) {
+          await clearSession(phone);
+          return "Your account or venue profile isn't active, so this night wasn't posted. Contact support if that doesn't look right.";
+        }
+        throw error;
+      }
       await clearSession(phone);
       return `Posted: ${summarize(draft, v?.timeZone ?? "UTC")}. We'll text you when acts apply.`;
     }
@@ -141,7 +149,7 @@ async function route(phone: string, body: string): Promise<string | null> {
   // 3. Venue numbers: plain-English slot posting.
   if (venue && !explicitSupport && body.length >= 5) {
     if (!venueLocationIsComplete(venue))
-      return "Add your venue address and timezone on EightGig before posting a night by text.";
+      return "Add your venue address and time zone on EightGig before posting a night by text.";
     try {
       const draft = await slotParse(body, user.id, new Date(), venue.timeZone);
       if (draft.clarificationNeeded) {

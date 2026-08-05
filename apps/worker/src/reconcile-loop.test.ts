@@ -47,16 +47,20 @@ describe("reconcile sweep", () => {
     state: string;
     acceptedAt?: Date | null;
     createdAt?: Date;
+    startsAt?: Date;
+    slotStatus?: string;
     endsAt?: Date;
   }) {
     const d = db();
     const slotId = newId("slot");
     const bookingId = newId("booking");
-    const startsAt = new Date(Date.now() + (100 + seq++) * 86_400_000);
+    const startsAt =
+      opts.startsAt ?? new Date(Date.now() + (100 + seq++) * 86_400_000);
     const endsAt = opts.endsAt ?? new Date(startsAt.getTime() + 2 * 3_600_000);
     await d.insert(schema.slots).values({
       id: slotId, venueId, metro: "reconcile-tv", startsAt,
-      durationMinutes: 120, format: "music", budgetCents: 40_000, status: "filled",
+      durationMinutes: 120, format: "music", budgetCents: 40_000,
+      status: opts.slotStatus ?? "filled",
     });
     await d.insert(schema.bookings).values({
       id: bookingId, slotId, venueId, performerId,
@@ -116,6 +120,22 @@ describe("reconcile sweep", () => {
     });
     await sweep();
     expect(await stateOf(bookingId)).toBe("confirming");
+  });
+
+  it("closes a pending payment at downbeat even inside the generic timeout", async () => {
+    const { bookingId, slotId } = await parked({
+      state: "confirming",
+      acceptedAt: new Date(Date.now() - 5 * 60_000),
+      startsAt: new Date(Date.now() - 60_000),
+      slotStatus: "open",
+    });
+    await sweep();
+    expect(await stateOf(bookingId)).toBe("collapsed");
+    const [slot] = await db()
+      .select({ status: schema.slots.status })
+      .from(schema.slots)
+      .where(eq(schema.slots.id, slotId));
+    expect(slot?.status).toBe("expired");
   });
 
   it("still drains a `confirming` booking with no recorded acceptance", async () => {

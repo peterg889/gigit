@@ -1,11 +1,11 @@
 import {
   InvalidOfferTermsError,
   SlotUnavailableError,
-  createOffer,
+  assertVenueOfferPaymentReady,
+  createInvitedOffer,
   db,
   schema,
 } from "@gigit/db";
-import { newId } from "@gigit/domain";
 import { and, eq, gte } from "drizzle-orm";
 import { z } from "zod";
 import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
@@ -61,54 +61,13 @@ export async function POST(req: Request, { params }: Params) {
     if (!performer || performer.status !== "live")
       return fail("not_found", "We couldn't find that act.", 404);
 
-    // A venue-initiated application, then a firm offer on it — the same rails an
-    // act's own application takes, so nothing downstream has to know the
-    // difference. An act who already applied keeps their existing application.
-    const existing = await d
-      .select({ id: schema.applications.id, status: schema.applications.status })
-      .from(schema.applications)
-      .where(
-        and(
-          eq(schema.applications.slotId, slotId),
-          eq(schema.applications.performerId, performerId),
-        ),
-      );
-    let applicationId = existing[0]?.id;
-    if (!applicationId) {
-      applicationId = newId("application");
-      try {
-        await d.insert(schema.applications).values({
-          id: applicationId,
-          slotId,
-          performerId,
-          status: "submitted",
-        });
-      } catch (err) {
-        // They applied between the read and the insert — use theirs.
-        if ((err as { code?: string })?.code !== "23505") throw err;
-        const [raced] = await d
-          .select({ id: schema.applications.id })
-          .from(schema.applications)
-          .where(
-            and(
-              eq(schema.applications.slotId, slotId),
-              eq(schema.applications.performerId, performerId),
-            ),
-          );
-        applicationId = raced!.id;
-      }
-    } else if (existing[0]!.status !== "submitted") {
-      // Revive a withdrawn or passed-over application rather than dead-ending:
-      // inviting somebody is a clear signal the venue wants them now.
-      await d
-        .update(schema.applications)
-        .set({ status: "submitted", declineReason: null })
-        .where(eq(schema.applications.id, applicationId));
-    }
+    await assertVenueOfferPaymentReady(venue.id);
 
     const endsAt = new Date(slot.startsAt.getTime() + slot.durationMinutes * 60_000);
-    const bookingId = await createOffer({
-      applicationId,
+    // Application preparation and offer creation share one transaction. A
+    // competing live offer therefore cannot leave behind a synthetic or
+    // spuriously revived application when this request returns 409.
+    const { bookingId, applicationId } = await createInvitedOffer({
       slotId,
       performerId,
       venueId: venue.id,

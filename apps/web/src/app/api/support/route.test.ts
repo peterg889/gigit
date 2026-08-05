@@ -1,6 +1,6 @@
 import { newId } from "@gigit/domain";
 import { closeDb, db, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, like, or } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 const { supportTriage } = vi.hoisted(() => ({
@@ -20,10 +20,12 @@ vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
 
 import { POST } from "./route";
 
-// A fresh random IP by default so unrelated cases can't consume each other's
+const createdRequestIds = new Set<string>();
+
+// A fresh random IP by default so unrelated cases cannot consume each other's
 // per-IP budget; pass one explicitly when the address is the thing under test.
-const post = (body: unknown, ip?: string) =>
-  POST(
+const post = async (body: unknown, ip?: string) => {
+  const response = await POST(
     new Request("http://test/api/support", {
       method: "POST",
       headers: {
@@ -34,11 +36,59 @@ const post = (body: unknown, ip?: string) =>
       body: JSON.stringify(body),
     }),
   );
+  const payload = await response
+    .clone()
+    .json()
+    .catch(() => null);
+  if (typeof payload?.requestId === "string")
+    createdRequestIds.add(payload.requestId);
+  return response;
+};
+
+async function deleteFixtureRequests(ids: string[]) {
+  if (ids.length === 0) return;
+  await db()
+    .delete(schema.supportRequestNotes)
+    .where(inArray(schema.supportRequestNotes.supportRequestId, ids));
+  await db()
+    .delete(schema.events)
+    .where(
+      and(
+        eq(schema.events.subjectType, "support_request"),
+        inArray(schema.events.subjectId, ids),
+      ),
+    );
+  await db()
+    .delete(schema.supportRequests)
+    .where(inArray(schema.supportRequests.id, ids));
+}
+
+/** Remove only rows identifiable as fixtures from prior interrupted/repeated runs. */
+async function purgePersistedFixtureRequests() {
+  const rows = await db()
+    .select({ id: schema.supportRequests.id })
+    .from(schema.supportRequests)
+    .where(
+      or(
+        like(schema.supportRequests.id, "spr_nonpublic_%"),
+        like(schema.supportRequests.id, "spr_public_%"),
+        like(
+          schema.supportRequests.contactEmail,
+          "locked-out-%@example.test",
+        ),
+        like(schema.supportRequests.contactEmail, "quota-%@example.test"),
+        like(schema.supportRequests.contactEmail, "capped-%@example.test"),
+        like(schema.supportRequests.contactEmail, "other-%@example.test"),
+      ),
+    );
+  await deleteFixtureRequests(rows.map((row) => row.id));
+}
 
 describe("public support", () => {
   const signedInUser = newId("user");
 
   beforeAll(async () => {
+    await purgePersistedFixtureRequests();
     await db().insert(schema.users).values({
       id: signedInUser,
       email: `${signedInUser}@example.test`,
@@ -53,6 +103,10 @@ describe("public support", () => {
     });
   });
   afterAll(async () => {
+    await purgePersistedFixtureRequests();
+    await deleteFixtureRequests([...createdRequestIds]);
+    await db().delete(schema.users).where(eq(schema.users.id, signedInUser));
+    createdRequestIds.clear();
     await closeDb();
   });
 

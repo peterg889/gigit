@@ -37,11 +37,13 @@ import {
   notifyOtp,
   pendingReviewAudience,
   notifyApplicationPerformer,
+  notifyTechApplicationApplicant,
   notifySlotVenue,
   notifySubslotParties,
   notifySupportOperator,
   notifyThreadCounterparties,
   notifyUser,
+  notifySuspendedAccount,
 } from "./notify.js";
 import { recheckEmbeds, screenMedia } from "./media.js";
 import {
@@ -375,7 +377,10 @@ async function dispatchEvent(
     kind: string;
     subject_type: string;
     subject_id: string;
-    payload: { effects?: Effect[] };
+    payload: {
+      effects?: Effect[];
+      commitmentsWoundDown?: boolean;
+    };
   },
 ) {
   const effects = row.payload?.effects ?? [];
@@ -398,10 +403,46 @@ async function dispatchEvent(
         // Timers are idempotent no-ops when stale; explicit cancellation unnecessary.
         break;
       case "request_payment": {
+        // The acceptance event may sit in the outbox until after downbeat. Do
+        // not create a charge for a booking whose payment window has already
+        // closed (or whose state moved while this event waited).
+        const { rows: paymentRows } = await getPool().query(
+          `select state, terms->>'startsAt' as starts_at
+             from bookings where id = $1`,
+          [row.subject_id],
+        );
+        const paymentBooking = paymentRows[0];
+        const startsAt = paymentBooking
+          ? new Date(paymentBooking.starts_at).getTime()
+          : Number.NaN;
+        if (
+          !paymentBooking ||
+          paymentBooking.state !== "confirming" ||
+          !Number.isFinite(startsAt) ||
+          startsAt <= Date.now()
+        ) {
+          log("payment.charge_skipped", {
+            booking: row.subject_id,
+            reason: !paymentBooking
+              ? "booking_missing"
+              : paymentBooking.state !== "confirming"
+                ? "state_moved"
+                : "gig_started",
+          });
+          if (paymentBooking?.state === "confirming")
+            await fireBookingEvent(row.subject_id, {
+              kind: "PAYMENT_FAILED",
+              reason: "payment_window_closed",
+            });
+          break;
+        }
         const result = await paymentGateway().charge(row.subject_id);
         log("payment.charge", { booking: row.subject_id, ...result });
         if (result.status === "succeeded")
-          await fireBookingEvent(row.subject_id, { kind: "PAYMENT_SUCCEEDED" });
+          await fireBookingEvent(row.subject_id, {
+            kind: "PAYMENT_SUCCEEDED",
+            paymentRef: result.paymentRef,
+          });
         else if (result.status === "failed")
           await fireBookingEvent(row.subject_id, {
             kind: "PAYMENT_FAILED",
@@ -411,14 +452,24 @@ async function dispatchEvent(
         break;
       }
       case "notify":
+        // Outbox producers include addressed applicant notifications beyond
+        // booking Effect's narrower historical target union.
+        const notifyTo = fx.to as string;
         if (row.subject_type === "booking")
           await notifyBookingParties(row.subject_id, fx.template, fx.to);
-        else if (row.subject_type === "tech_subslot")
-          await notifySubslotParties(
-            row.subject_id,
-            fx.template,
-            fx.to as "payer" | "tech" | "both",
-          );
+        else if (row.subject_type === "tech_subslot") {
+          if (notifyTo === "applicant")
+            await notifyTechApplicationApplicant(
+              (row.payload as { applicationId?: string }).applicationId ?? "",
+              fx.template,
+            );
+          else
+            await notifySubslotParties(
+              row.subject_id,
+              fx.template,
+              fx.to as "payer" | "tech" | "both",
+            );
+        }
         else if (row.subject_type === "auth")
           // login code: subjectId is the destination, code lives on the otp row
           await notifyOtp((row.payload as { otpId?: string }).otpId ?? "");
@@ -438,12 +489,32 @@ async function dispatchEvent(
         else log("notify.unrouted", { to: fx.to, template: fx.template, subject: row.subject_id });
         break;
       case "release_funds":
-        await paymentGateway().transfer(row.subject_id, fx.amountCents);
-        log("payment.release", { booking: row.subject_id, amount: fx.amountCents });
+        if (fx.operationKey !== undefined)
+          await paymentGateway().transfer(
+            row.subject_id,
+            fx.amountCents,
+            fx.operationKey,
+          );
+        else await paymentGateway().transfer(row.subject_id, fx.amountCents);
+        log("payment.release", {
+          booking: row.subject_id,
+          amount: fx.amountCents,
+          ...(fx.operationKey ? { operationKey: fx.operationKey } : {}),
+        });
         break;
       case "refund_funds":
-        await paymentGateway().refund(row.subject_id, fx.amountCents);
-        log("payment.refund", { booking: row.subject_id, amount: fx.amountCents });
+        if (fx.operationKey !== undefined)
+          await paymentGateway().refund(
+            row.subject_id,
+            fx.amountCents,
+            fx.operationKey,
+          );
+        else await paymentGateway().refund(row.subject_id, fx.amountCents);
+        log("payment.refund", {
+          booking: row.subject_id,
+          amount: fx.amountCents,
+          ...(fx.operationKey ? { operationKey: fx.operationKey } : {}),
+        });
         break;
       case "cancellation_fee":
         if (fx.feeCents > 0) await paymentGateway().transfer(row.subject_id, fx.feeCents);
@@ -456,6 +527,16 @@ async function dispatchEvent(
         break; // already applied in-transaction by the transition runner
     }
   }
+
+  // Suspension is the single customer notice allowed through the inactive
+  // account boundary. Require the exact lifecycle event and its atomic
+  // wind-down marker so ordinary alerts—and legacy partial status events—stay
+  // suppressed.
+  if (
+    row.kind === "user.suspended" &&
+    row.subject_type === "user" &&
+    row.payload?.commitmentsWoundDown === true
+  ) await notifySuspendedAccount(row.subject_id);
 
   // Media trust pipeline (PRD F7.5): the screen is the only path to `ready`.
   if (row.kind === "media.screen_requested") {
@@ -540,12 +621,14 @@ async function dispatchEvent(
       );
   }
 
-  // Entering `confirmed` opens the booking conversation. Both parties can post
-  // to it (the messages route is participant-scoped), which is the only way an
-  // act can reach a venue at all — cold DMs the other direction are barred.
+  // New offers create their conversation in the same database transaction.
+  // Re-run idempotently from the offered event to backfill legacy rows and to
+  // heal any data imported outside the normal write path. Keep the confirmed
+  // transition fallback for old outbox histories that predate booking.offered.
   if (
-    row.kind === "booking.transition" &&
-    (row.payload as { to?: string }).to === "confirmed"
+    row.kind === "booking.offered" ||
+    (row.kind === "booking.transition" &&
+      (row.payload as { to?: string }).to === "confirmed")
   ) {
     const threadId = await ensureBookingThread(row.subject_id, "worker");
     if (threadId) log("thread.booking_opened", { booking: row.subject_id, threadId });
@@ -606,6 +689,7 @@ export async function reconcileOnce(): Promise<{ payments: number; timers: numbe
   );
   const now = Date.now();
   for (const b of rows) {
+    const startsAt = new Date(b.terms.startsAt).getTime();
     const endsAt = new Date(b.terms.endsAt).getTime();
     // `confirming` waits on PAYMENT_SUCCEEDED/PAYMENT_FAILED fed back by the
     // outbox, and nothing else leaves it — no timer, no cancel, no admin
@@ -615,6 +699,18 @@ export async function reconcileOnce(): Promise<{ payments: number; timers: numbe
     // engineering spec always specified, derived from state so it survives a
     // lost dispatch.
     if (b.state === "confirming") {
+      // Downbeat is also the hard payment deadline. A pending gateway response
+      // with no webhook must not leave the booking "confirming" through (or
+      // after) the gig merely because its generic 24-hour timeout is later.
+      if (!Number.isFinite(startsAt) || startsAt <= now) {
+        log("reconcile.payment_window_closed", { bookingId: b.id });
+        await fireBookingEvent(b.id, {
+          kind: "PAYMENT_FAILED",
+          reason: "payment_window_closed",
+        });
+        stats.payments++;
+        continue;
+      }
       // Fall back to created_at when the acceptance timestamp is missing. The
       // first cut required performer_accepted_at, which stranded precisely the
       // rows most likely to be broken — a `confirming` booking with no recorded

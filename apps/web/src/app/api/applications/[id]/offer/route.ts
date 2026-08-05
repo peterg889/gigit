@@ -2,9 +2,9 @@ import { offerCreateSchema } from "@gigit/domain";
 import {
   InvalidOfferTermsError,
   SlotUnavailableError,
+  assertVenueOfferPaymentReady,
   createOffer,
   db,
-  paymentGateway,
   schema,
 } from "@gigit/db";
 import { eq } from "drizzle-orm";
@@ -33,15 +33,11 @@ export async function POST(req: Request, { params }: Params) {
     if (row.application.status !== "submitted")
       return fail("conflict", "This application is no longer open, so it can't be offered the night.", 409);
     if (row.slot.status !== "open") return fail("conflict", "This date is no longer open.", 409);
+    if (row.slot.startsAt.getTime() <= Date.now())
+      return fail("conflict", "This date has already passed.", 409);
 
-    // Charge gate (F4.1): the card that gets charged at confirmation must
-    // exist before the offer goes out. Null gateway (dev) always passes.
-    if (!(await paymentGateway().venuePaymentReady(venue.id)))
-      return fail(
-        "payment_method_required",
-        "Add a payment method first — the booking is charged when the act accepts. Go to Profile → Add a payment method.",
-        409,
-      );
+    // All firm-offer creators share this gate. Null payments still pass.
+    await assertVenueOfferPaymentReady(venue.id);
 
     const parsed = await parseBody(req, offerCreateSchema);
     if ("response" in parsed) return parsed.response;

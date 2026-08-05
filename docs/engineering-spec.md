@@ -79,7 +79,7 @@ Deploy: all infrastructure is AWS-native and defined in **CDK (TypeScript)**. CI
 users            (id, phone, email, created_at, status)                  -- a human
 actor_roles      (id, user_id, kind: performer|venue_member|tech|admin)  -- one human, many roles (PRD F1.1)
 performers       (id, kind: band|solo|comedian|other, name, bio, genre_tags[],
-                  home_metro_id, travel_radius_km, rate_min, rate_max,
+                  home_metro_id, travel_radius_miles, rate_min, rate_max,
                   set_lengths[], tech_needs jsonb, media_links jsonb,
                   profile_source: manual|ai_ingested, status: draft|pending_review|live)
 band_members     (performer_id, user_id, role, payout_split_bps)         -- splits are P1; column ships day one (K3)
@@ -87,7 +87,7 @@ venues           (id, metro_id, kind, name, bio, geo point, capacity, room jsonb
                   pa_inventory jsonb,                                     -- structured per F1.3/F6.6
                   hospitality jsonb, noise_curfew, booking_user_ids[])
 techs            (id, user_id, bio, gear: none|partial|full_rig, rig_specs jsonb,
-                  rate_labor, rate_with_rig, travel_radius_km)
+                  rate_labor, rate_with_rig, travel_radius_miles)
 coi_documents    (id, owner_role_id, file, insurer, expires_on, verified_by)
 media_assets     (id, owner_role_id, kind: image|audio|video_embed,
                   s3_key?, bytes?, duration_s?,                           -- uploads (image/audio)

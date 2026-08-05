@@ -7,6 +7,12 @@
 type PatternBase = {
   dayOfWeek: number; // 0=Sun … 6=Sat
   durationMinutes: number;
+  /**
+   * Exact first occurrence selected when the series was created. New patterns
+   * carry this ISO instant as an inclusive lower bound; its absence preserves
+   * the behavior of series stored before recurrence anchoring was introduced.
+   */
+  firstStartsAt?: string;
   /** Venue wall-clock time ("HH:MM") for all newly-created series. */
   startTimeLocal?: string;
   /** IANA timezone paired with startTimeLocal. */
@@ -113,7 +119,7 @@ export function zonedDateTimeToDate(
     candidate += delta;
   }
   if (opts.resolveGapForward && afterGap !== undefined) return new Date(afterGap);
-  throw new RangeError("that local time does not exist in the selected timezone");
+  throw new RangeError("That local time does not exist in the selected time zone.");
 }
 
 /** Derive a venue-local pattern from a concrete first occurrence. */
@@ -129,7 +135,13 @@ export function patternFromFirst(
   const startTimeLocal = `${String(local.hour).padStart(2, "0")}:${String(
     local.minute,
   ).padStart(2, "0")}`;
-  const base = { dayOfWeek, startTimeLocal, timeZone, durationMinutes };
+  const base = {
+    dayOfWeek,
+    firstStartsAt: firstStartsAt.toISOString(),
+    startTimeLocal,
+    timeZone,
+    durationMinutes,
+  };
   if (freq === "weekly") return { freq, ...base };
   const week = (Math.floor((local.day - 1) / 7) + 1) as 1 | 2 | 3 | 4 | 5;
   return { freq, week, ...base };
@@ -147,7 +159,8 @@ export function nextOccurrences(
 
   const out: Date[] = [];
   const [hour = 0, minute = 0] = pattern.startTimeLocal.split(":").map(Number);
-  const afterLocal = localDateTimeParts(after, pattern.timeZone);
+  const window = occurrenceWindow(pattern, after);
+  const afterLocal = localDateTimeParts(window.searchAfter, pattern.timeZone);
 
   if (pattern.freq === "weekly") {
     const cursor = new Date(Date.UTC(afterLocal.year, afterLocal.month - 1, afterLocal.day));
@@ -164,7 +177,7 @@ export function nextOccurrences(
           pattern.timeZone,
           { resolveGapForward: true },
         );
-        if (candidate > after) out.push(candidate);
+        if (window.includes(candidate)) out.push(candidate);
       }
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     }
@@ -187,7 +200,7 @@ export function nextOccurrences(
         pattern.timeZone,
         { resolveGapForward: true },
       );
-      if (candidate > after) out.push(candidate);
+      if (window.includes(candidate)) out.push(candidate);
     }
     month += 1;
     if (month === 12) {
@@ -204,11 +217,15 @@ function nextLegacyUtcOccurrences(
   count: number,
 ): Date[] {
   const out: Date[] = [];
+  const window = occurrenceWindow(pattern, after);
   const [h = 0, m = 0] = (pattern.startTimeUtc ?? "00:00").split(":").map(Number);
   if (pattern.freq === "weekly") {
-    const cursor = new Date(after);
+    const cursor = new Date(window.searchAfter);
     cursor.setUTCHours(h, m, 0, 0);
-    while (cursor.getUTCDay() !== pattern.dayOfWeek || cursor <= after)
+    while (
+      cursor.getUTCDay() !== pattern.dayOfWeek ||
+      !window.includes(cursor)
+    )
       cursor.setUTCDate(cursor.getUTCDate() + 1);
     while (out.length < count) {
       out.push(new Date(cursor));
@@ -217,13 +234,13 @@ function nextLegacyUtcOccurrences(
     return out;
   }
 
-  let year = after.getUTCFullYear();
-  let month = after.getUTCMonth();
+  let year = window.searchAfter.getUTCFullYear();
+  let month = window.searchAfter.getUTCMonth();
   while (out.length < count) {
     const d = nthWeekdayOfMonth(year, month, pattern.dayOfWeek, pattern.week);
     if (d) {
       d.setUTCHours(h, m, 0, 0);
-      if (d > after) out.push(d);
+      if (window.includes(d)) out.push(d);
     }
     month += 1;
     if (month === 12) {
@@ -232,6 +249,34 @@ function nextLegacyUtcOccurrences(
     }
   }
   return out;
+}
+
+/**
+ * Start calendar scanning at the later of `after` and just before the optional
+ * first occurrence. The original `after` remains a strict boundary, while the
+ * persisted first occurrence is inclusive so it materializes exactly once.
+ */
+function occurrenceWindow(pattern: SeriesPattern, after: Date) {
+  const afterMs = after.getTime();
+  const firstStartsAtMs = pattern.firstStartsAt
+    ? new Date(pattern.firstStartsAt).getTime()
+    : undefined;
+  if (firstStartsAtMs !== undefined && !Number.isFinite(firstStartsAtMs))
+    throw new RangeError("Series first occurrence is not a valid date.");
+  const searchAfter =
+    firstStartsAtMs !== undefined && firstStartsAtMs > afterMs
+      ? new Date(firstStartsAtMs - 1)
+      : after;
+  return {
+    searchAfter,
+    includes(candidate: Date): boolean {
+      const candidateMs = candidate.getTime();
+      return (
+        candidateMs > afterMs &&
+        (firstStartsAtMs === undefined || candidateMs >= firstStartsAtMs)
+      );
+    },
+  };
 }
 
 function nthWeekdayOfMonth(

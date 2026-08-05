@@ -1,4 +1,9 @@
-import { cancelSeries, db, schema } from "@gigit/db";
+import {
+  cancelSeries,
+  db,
+  schema,
+  SlotCancellationBlockedError,
+} from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
@@ -23,6 +28,12 @@ export async function POST(_req: Request, { params }: Params) {
     const slotsCancelled = await cancelSeries(id, userId);
     return ok({ slotsCancelled });
   } catch (e) {
+    if (e instanceof SlotCancellationBlockedError)
+      return fail(
+        "offer_outstanding",
+        "One of these dates has an outstanding offer. Withdraw it before cancelling the recurring night.",
+        409,
+      );
     return respondError(e);
   }
 }

@@ -134,6 +134,27 @@ describe("happy path effects", () => {
     });
   });
 
+  it.each(["account_deactivated", "account_suspended"] as const)(
+    "describes %s as a cancellation, not a failed charge",
+    (reason) => {
+      const d = decide(
+        booking("confirming"),
+        { kind: "PAYMENT_FAILED", reason },
+        now,
+      );
+      expect(d.effects).toContainEqual({
+        kind: "notify",
+        template: "booking_account_deactivated",
+        to: "both",
+      });
+      expect(d.effects).not.toContainEqual({
+        kind: "notify",
+        template: "payment_failed",
+        to: "both",
+      });
+    },
+  );
+
   it("gig end schedules auto-confirm 24h after gig end", () => {
     const d = decide(booking("confirmed"), { kind: "GIG_ENDED" }, now);
     const sched = d.effects.find((e) => e.kind === "schedule");

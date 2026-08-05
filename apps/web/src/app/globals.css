@@ -431,7 +431,6 @@ pre {
    destinations — same action, two treatments, and the weaker one was here. */
 .role-card p { flex: 1; }
 .role-card .btn { margin-top: 4px; }
-.role-card p { flex: 1; }
 
 .how-it-works { margin: 48px 0; }
 .steps {
@@ -459,11 +458,13 @@ pre {
 }
 
 .notice {
+  display: block;
   margin: 16px 0;
   padding: 12px 14px;
   border-left: 3px solid var(--amber);
   background: rgba(255, 181, 63, 0.07);
   color: var(--muted);
+  overflow-wrap: anywhere;
 }
 .notice.success { color: var(--ink); }
 /* brand.md §5.5: cancellations and disputes get the calmest, clearest copy in
@@ -569,6 +570,10 @@ button.danger[disabled]:hover { background: #8f2f24; }
   color: var(--ink);
   font-size: var(--step-body);
   letter-spacing: 0.01em;
+}
+
+.booking-actions {
+  margin: 0.5em 0;
 }
 
 /* Six pages set style={{ cursor: "pointer" }} on a <summary> because nothing

@@ -1,5 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { CARD, acceptOffer, applyToSlot, assertPrimitives, expectBookingBadge, postSlot, sendOffer, signIn } from "./helpers";
+import {
+  acceptOffer,
+  assertPrimitives,
+  expectBookingBadge,
+  invitePerformer,
+  postSlot,
+  sendOffer,
+  signIn,
+} from "./helpers";
 
 /**
  * The recovery loop (audit: PERFORMER_DECLINED dead-end): a declined offer
@@ -9,7 +17,7 @@ import { CARD, acceptOffer, applyToSlot, assertPrimitives, expectBookingBadge, p
  */
 test("declined offer: slot reopens, same act re-applies, second offer confirms", async ({
   browser,
-}) => {
+}, testInfo) => {
   const marker = `e2e decline ${Date.now()}`;
   const budget = "275";
   const venue = await browser.newContext();
@@ -17,24 +25,24 @@ test("declined offer: slot reopens, same act re-applies, second offer confirms",
   const vp = await venue.newPage();
   const pp = await performer.newPage();
 
-  await signIn(vp, "venue@example.com");
-  // Specs run in parallel against the same seeded band: each journey books a
-  // DIFFERENT night or the calendar double-book guard correctly 409s the next.
-  await postSlot(vp, marker, budget, 21);
+  await signIn(vp, "venue-decline@example.com");
+  // Retry attempts use a different night so a committed first attempt cannot
+  // trip the calendar double-book guard on its retry.
+  const slotUrl = await postSlot(vp, marker, budget, 21 + testInfo.retry * 2);
   // Fail loudly if the CSS primitives were renamed out from under the suite.
   await assertPrimitives(vp);
 
-  await signIn(pp, "band@example.com");
-  await applyToSlot(pp, marker);
-  await sendOffer(vp, marker);
+  // Venue-initiated outreach uses a real date and creates the firm offer
+  // directly; the act does not have to reverse-engineer terms from a cold DM.
+  const firstBookingUrl = await invitePerformer(
+    vp,
+    "Copper Lines",
+    slotUrl,
+  );
+  await signIn(pp, "band-decline@example.com");
 
   // ── the act declines the firm offer ──
-  await pp.goto("/bookings");
-  await pp
-    .locator(CARD, { hasText: `$${budget}` })
-    .first()
-    .getByRole("link", { name: "Review the deal and respond" })
-    .click();
+  await pp.goto(firstBookingUrl);
   const declined = pp.waitForResponse(
     (r) => r.request().method() === "POST" && r.url().endsWith("/cancel"),
   );
@@ -43,19 +51,16 @@ test("declined offer: slot reopens, same act re-applies, second offer confirms",
   expect((await declined).status()).toBe(200);
 
   // ── the night is open again and the SAME act can re-apply ──
-  await pp.goto("/slots");
-  const card = pp.locator(CARD, { hasText: marker });
-  await expect(card).toBeVisible();
-  await card.getByRole("link").first().click();
+  await pp.goto(slotUrl);
   // The withdrawn application must not dead-end the pairing: the apply form
   // is offered again and re-applying revives it.
   await pp.getByRole("button", { name: /Apply/ }).click();
   await expect(pp.getByText("Application sent")).toBeVisible();
 
   // ── second offer sticks ──
-  await sendOffer(vp, marker);
-  await acceptOffer(pp, `$${budget}`);
-  await expectBookingBadge(pp, `$${budget}`, "Confirmed");
+  const secondBookingUrl = await sendOffer(vp, slotUrl);
+  await acceptOffer(pp, secondBookingUrl);
+  await expectBookingBadge(pp, secondBookingUrl, "Confirmed");
 
   await venue.close();
   await performer.close();

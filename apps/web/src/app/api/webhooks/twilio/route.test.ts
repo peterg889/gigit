@@ -1,6 +1,6 @@
 import { newId } from "@gigit/domain";
 import { db, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { POST } from "./route";
 
@@ -93,6 +93,73 @@ describe("inbound SMS router", () => {
     // without GEMINI_API_KEY slot_parse throws → the router coaches the format
     const xml = await reply(PHONE, "acoustic friday night two hours $300");
     expect(xml).toMatch(/Couldn't read that one|Reply YES/);
+  });
+
+  it("rejects a draft confirmed after its date passes without writing a slot or event", async () => {
+    const staleStart = new Date(Date.now() - 60_000).toISOString();
+    await db()
+      .insert(schema.smsSessions)
+      .values({
+        phone: PHONE,
+        activeContext: {
+          kind: "slot_draft",
+          venueId,
+          draft: {
+            startsAt: staleStart,
+            durationMinutes: 120,
+            format: "music",
+            budgetCents: 30_000,
+            notes: "Late confirmation regression",
+          },
+        },
+      })
+      .onConflictDoUpdate({
+        target: schema.smsSessions.phone,
+        set: {
+          activeContext: {
+            kind: "slot_draft",
+            venueId,
+            draft: {
+              startsAt: staleStart,
+              durationMinutes: 120,
+              format: "music",
+              budgetCents: 30_000,
+              notes: "Late confirmation regression",
+            },
+          },
+          updatedAt: new Date(),
+        },
+      });
+
+    const xml = await reply(PHONE, "YES");
+    expect(xml).toMatch(/already passed/i);
+
+    const staleSlots = await db()
+      .select({ id: schema.slots.id })
+      .from(schema.slots)
+      .where(
+        and(
+          eq(schema.slots.venueId, venueId),
+          eq(schema.slots.startsAt, new Date(staleStart)),
+        ),
+      );
+    expect(staleSlots).toHaveLength(0);
+    const outbox = await db()
+      .select({ id: schema.events.id })
+      .from(schema.events)
+      .where(
+        and(
+          eq(schema.events.actor, userId),
+          eq(schema.events.kind, "slot.created"),
+          eq(schema.events.subjectType, "slot"),
+        ),
+      );
+    expect(outbox).toHaveLength(0);
+    const [session] = await db()
+      .select({ activeContext: schema.smsSessions.activeContext })
+      .from(schema.smsSessions)
+      .where(eq(schema.smsSessions.phone, PHONE));
+    expect(session?.activeContext).toBeNull();
   });
 
   it("lets a venue owner explicitly bypass slot parsing for human support", async () => {

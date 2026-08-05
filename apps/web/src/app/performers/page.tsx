@@ -1,12 +1,16 @@
-import { ACT_KIND_LABEL } from "@/lib/labels";
-import { performerReliability } from "@gigit/domain";
+import {
+  ACT_KIND_LABEL,
+  ACT_KIND_OPTIONS,
+  GIG_FORMAT_LABEL,
+} from "@/lib/labels";
+import { performerReliability, SLOT_HOLDING_BOOKING_STATES } from "@gigit/domain";
 import { db, performerReliabilityStats, schema } from "@gigit/db";
-import { and, asc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, notExists, sql } from "drizzle-orm";
 import Link from "next/link";
-import { venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
 import { ApiForm } from "@/components/ApiForm";
-import { formatVenueDate } from "@/lib/date-time";
+import { inviteSlotLabel } from "@/lib/invite-display";
 
 export const dynamic = "force-dynamic";
 
@@ -17,24 +21,43 @@ export default async function PerformerSearchPage({
   searchParams: Promise<{ kind?: string; genre?: string; metro?: string }>;
 }) {
   const userId = await sessionUserId();
-  const venue = userId ? await venueOwnedBy(userId) : null;
+  const profiles = userId ? await profileCapabilitiesOwnedBy(userId) : null;
+  const venue = profiles?.live.venue ?? null;
+  const ownedVenue = profiles?.owned.venue ?? null;
   if (!venue)
     return (
       <div className="card">
         <h1>Find local acts</h1>
-        <p>
-          Create a venue profile to browse and contact local bands, solo acts,
-          and comedians near you.
-        </p>
-        <Link className="btn" href="/onboarding?role=venue">
-          Set up your venue
-        </Link>{" "}
-        <Link href="/login">Sign in</Link>
+        {ownedVenue ? (
+          <>
+            <p>Your venue profile must be active to invite or message acts.</p>
+            <Link href="/account">Review your account</Link>{" "}
+            <Link href="/help">Contact support</Link>
+          </>
+        ) : (
+          <>
+            <p>
+              Create a venue profile to browse and contact local bands, solo acts,
+              and comedians near you.
+            </p>
+            <Link className="btn" href="/onboarding?role=venue">
+              Set up your venue
+            </Link>{" "}
+            {!userId && <Link href="/login">Sign in</Link>}
+          </>
+        )}
       </div>
     );
 
   const { kind, genre, metro } = await searchParams;
-  const conditions = [eq(schema.performers.status, "live")];
+  const conditions = [
+    eq(schema.performers.status, "live"),
+    sql`exists (
+      select 1 from ${schema.users}
+      where ${schema.users.id} = ${schema.performers.ownerUserId}
+        and ${schema.users.status} = 'active'
+    )`,
+  ];
   if (kind) conditions.push(eq(schema.performers.kind, kind));
   if (metro)
     conditions.push(eq(schema.performers.homeMetro, metro.trim().toLocaleLowerCase("en-US")));
@@ -42,7 +65,8 @@ export default async function PerformerSearchPage({
     conditions.push(
       sql`${schema.performers.genreTags} @> ${JSON.stringify([genre])}::jsonb`,
     );
-  const acts = await db()
+  const d = db();
+  const acts = await d
     .select()
     .from(schema.performers)
     .where(and(...conditions))
@@ -53,10 +77,11 @@ export default async function PerformerSearchPage({
   // The venue's own open nights, so an invite can name a real date instead of
   // pushing terms into a chat message.
   const myOpenSlots = venue
-    ? await db()
+    ? await d
         .select({
           id: schema.slots.id,
           startsAt: schema.slots.startsAt,
+          format: schema.slots.format,
           budgetCents: schema.slots.budgetCents,
         })
         .from(schema.slots)
@@ -65,6 +90,17 @@ export default async function PerformerSearchPage({
             eq(schema.slots.venueId, venue.id),
             eq(schema.slots.status, "open"),
             gte(schema.slots.startsAt, new Date()),
+            notExists(
+              d
+                .select({ id: schema.bookings.id })
+                .from(schema.bookings)
+                .where(
+                  and(
+                    eq(schema.bookings.slotId, schema.slots.id),
+                    inArray(schema.bookings.state, SLOT_HOLDING_BOOKING_STATES),
+                  ),
+                ),
+            ),
           ),
         )
         .orderBy(asc(schema.slots.startsAt))
@@ -83,9 +119,9 @@ export default async function PerformerSearchPage({
           <label htmlFor="kind">Type</label>
           <select id="kind" name="kind" defaultValue={kind ?? ""}>
             <option value="">Any</option>
-            {["band", "solo", "comedian", "other"].map((k) => (
-              <option key={k} value={k}>
-                {ACT_KIND_LABEL[k]}
+            {ACT_KIND_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
               </option>
             ))}
           </select>
@@ -119,7 +155,7 @@ export default async function PerformerSearchPage({
               <p>No acts have joined yet.</p>
               <p className="muted">
                 EightGig is new in this scene. Your open dates stay live and we
-                will email you the moment an act who fits posts a profile — you
+                will notify you the moment an act who fits posts a profile — you
                 do not need to keep checking.
               </p>
               <p className="muted">
@@ -168,12 +204,19 @@ export default async function PerformerSearchPage({
                   label: "Which night?",
                   type: "select",
                   required: true,
-                  options: myOpenSlots.map((s) => ({
-                    value: s.id,
-                    label: `${formatVenueDate(s.startsAt, venue!.timeZone)} — $${(
-                      s.budgetCents / 100
-                    ).toFixed(0)}`,
-                  })),
+                  defaultValue: "",
+                  options: [
+                    { value: "", label: "Choose an open date…" },
+                    ...myOpenSlots.map((s) => ({
+                      value: s.id,
+                      label: inviteSlotLabel({
+                        startsAt: s.startsAt,
+                        timeZone: venue!.timeZone,
+                        formatLabel: GIG_FORMAT_LABEL[s.format] ?? s.format,
+                        budgetCents: s.budgetCents,
+                      }),
+                    })),
+                  ],
                 },
               ]}
               extra={{ performerId: p.id }}

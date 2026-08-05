@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { ApiForm } from "@/components/ApiForm";
-import { performerOwnedBy, techOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
+import { accountCanAct } from "@/lib/profile-capabilities";
 import { sessionUserId } from "@/lib/session";
+import { ACT_KIND_OPTIONS, VENUE_KIND_OPTIONS } from "@/lib/labels";
 
 export const dynamic = "force-dynamic";
 
@@ -82,11 +84,27 @@ export default async function OnboardingPage({
     );
   }
 
-  const [performer, venue, tech] = await Promise.all([
-    performerOwnedBy(userId),
-    venueOwnedBy(userId),
-    techOwnedBy(userId),
-  ]);
+  const profiles = await profileCapabilitiesOwnedBy(userId);
+  const { performer, venue, tech } = profiles.owned;
+  const accountActive = accountCanAct(profiles.accountStatus);
+
+  if (!accountActive)
+    return (
+      <div>
+        <span className="eyebrow">Account access</span>
+        <h1>Your account is not active</h1>
+        <div className="notice">
+          Profile creation and marketplace actions are unavailable.{" "}
+          <Link href="/account">Review your account</Link> or contact support.
+        </div>
+        <p>
+          <Link href="/me">View your profiles</Link>
+          {" · "}
+          <Link href="/bookings">View your booking history</Link>
+        </p>
+      </div>
+    );
+
 
   if (!role) {
     return (
@@ -120,6 +138,12 @@ export default async function OnboardingPage({
   }
 
   const existing = role === "venue" ? venue : role === "performer" ? performer : tech;
+  const liveExisting =
+    role === "venue"
+      ? profiles.live.venue
+      : role === "performer"
+        ? profiles.live.performer
+        : profiles.live.tech;
   if (existing) {
     const nextHref = role === "venue" ? "/slots/new" : role === "performer" ? "/slots" : "/bookings";
     const justJoined = query.welcome === "1";
@@ -143,13 +167,19 @@ export default async function OnboardingPage({
         <div className="card">
           <h2>{existing.name}</h2>
           <p>
-            {justJoined
+            {justJoined && liveExisting
               ? `Your ${roleName[role].toLowerCase()} profile is live.`
-              : `Your ${roleName[role].toLowerCase()} profile is ready.`}
+              : liveExisting
+                ? `Your ${roleName[role].toLowerCase()} profile is ready.`
+                : `Your ${roleName[role].toLowerCase()} profile is saved but not active.`}
           </p>
-          <Link className="btn" href={nextHref}>
-            {role === "venue" ? "Post an open date" : role === "performer" ? "Find a gig" : "View sound work"}
-          </Link>{" "}
+          {liveExisting && (
+            <>
+              <Link className="btn" href={nextHref}>
+                {role === "venue" ? "Post an open date" : role === "performer" ? "Find a gig" : "View sound work"}
+              </Link>{" "}
+            </>
+          )}
           <Link href="/me">Edit profile</Link>
         </div>
       </div>
@@ -183,7 +213,7 @@ export default async function OnboardingPage({
               transform="performerProfile"
               fields={[
                 { name: "name", label: "Act name", required: true },
-                { name: "kind", label: "Type", type: "select", options: ["band", "solo", "comedian", "other"], required: true },
+                { name: "kind", label: "Type", type: "select", options: ACT_KIND_OPTIONS, required: true },
                 { name: "homeMetro", label: "Home city or metro area", required: true, placeholder: "e.g. Milwaukee" },
                 { name: "bio", label: "What should a booker know?", type: "textarea" },
                 { name: "genreTags", label: "Genres (comma-separated)" },
@@ -215,7 +245,7 @@ export default async function OnboardingPage({
             <h2>Your venue</h2>
             <p className="muted">
               Your full venue address appears on your public venue profile and
-              open gigs. Choose the correct timezone so offers and calendar
+              open gigs. Choose the correct time zone so offers and calendar
               entries show the right local time.
             </p>
             <ApiForm
@@ -225,7 +255,7 @@ export default async function OnboardingPage({
               redirectTo="/onboarding?role=venue&welcome=1"
               fields={[
                 { name: "name", label: "Venue name", required: true },
-                { name: "kind", label: "Type", type: "select", options: ["bar", "restaurant", "coffee_shop", "brewery", "other"], required: true },
+                { name: "kind", label: "Type", type: "select", options: VENUE_KIND_OPTIONS, required: true },
                 { name: "addressLine1", label: "Street address", required: true, placeholder: "1872 N Commerce St" },
                 { name: "addressLine2", label: "Suite / unit (optional)" },
                 { name: "city", label: "City", required: true, placeholder: "Milwaukee" },
@@ -242,7 +272,7 @@ export default async function OnboardingPage({
                 { name: "postalCode", label: "ZIP code", required: true, placeholder: "53212" },
                 {
                   name: "timeZone",
-                  label: "Timezone",
+                  label: "Time zone",
                   type: "select",
                   options: [
                     "America/New_York",

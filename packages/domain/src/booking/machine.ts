@@ -104,7 +104,15 @@ export function decide(
           next: "collapsed",
           effects: [
             { kind: "reopen_slot" },
-            { kind: "notify", template: "payment_failed", to: "both" },
+            {
+              kind: "notify",
+              template:
+                event.reason === "account_deactivated" ||
+                event.reason === "account_suspended"
+                  ? "booking_account_deactivated"
+                  : "payment_failed",
+              to: "both",
+            },
           ],
         };
       break;

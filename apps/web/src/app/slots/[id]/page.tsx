@@ -1,16 +1,25 @@
-import { performerReliability, soundPlan } from "@gigit/domain";
+import {
+  performerReliability,
+  SLOT_HOLDING_BOOKING_STATES,
+  soundPlan,
+} from "@gigit/domain";
 import { db, paymentsEnabled, performerReliabilityStats, schema } from "@gigit/db";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { performerOwnedBy, venueOwnedBy } from "@/lib/auth";
+import { profileCapabilitiesOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";
+import { accountCanAct } from "@/lib/profile-capabilities";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
 import {
   formatAddress,
   formatVenueDateTime,
   shortTimeZoneName,
 } from "@/lib/date-time";
+import {
+  declinedApplicationMessage,
+  effectiveSlotStatus,
+} from "@/lib/slot-display";
 
 export const dynamic = "force-dynamic";
 
@@ -28,42 +37,64 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const d = db();
   const [row] = await d
-    .select({ slot: schema.slots, venue: schema.venues })
+    .select({
+      slot: schema.slots,
+      venue: schema.venues,
+      venueOwnerStatus: schema.users.status,
+    })
     .from(schema.slots)
     .innerJoin(schema.venues, eq(schema.slots.venueId, schema.venues.id))
+    .innerJoin(schema.users, eq(schema.venues.ownerUserId, schema.users.id))
     .where(eq(schema.slots.id, id));
   if (!row) notFound();
-  const { slot, venue } = row;
+  const { slot, venue, venueOwnerStatus } = row;
+  const displayStatus = effectiveSlotStatus(slot.status, slot.startsAt);
+  const marketplaceOpen =
+    displayStatus === "open" && venue.status === "live" && venueOwnerStatus === "active";
 
   const userId = await sessionUserId();
-  const performer = userId ? await performerOwnedBy(userId) : null;
-  const myVenue = userId ? await venueOwnedBy(userId) : null;
-  const isOwner = myVenue?.id === venue.id;
+  const profiles = userId ? await profileCapabilitiesOwnedBy(userId) : null;
+  const accountActive = accountCanAct(profiles?.accountStatus);
+  const ownedPerformer = profiles?.owned.performer ?? null;
+  const performer = profiles?.live.performer ?? null;
+  const ownedVenue = profiles?.owned.venue ?? null;
+  const liveVenue = profiles?.live.venue ?? null;
+  const isOwner = ownedVenue?.id === venue.id;
+  const canManage = liveVenue?.id === venue.id;
 
   const applicants = isOwner
     ? await d
-        .select({ application: schema.applications, performer: schema.performers })
+        .select({
+          application: schema.applications,
+          performer: schema.performers,
+          performerOwnerStatus: schema.users.status,
+        })
         .from(schema.applications)
         .innerJoin(
           schema.performers,
           eq(schema.applications.performerId, schema.performers.id),
         )
+        .innerJoin(
+          schema.users,
+          eq(schema.performers.ownerUserId, schema.users.id),
+        )
         .where(eq(schema.applications.slotId, slot.id))
     : [];
 
-  const activeOffer = isOwner
+  const holdingBooking = isOwner
     ? (
         await d
           .select({
             id: schema.bookings.id,
             performerId: schema.bookings.performerId,
             offerExpiresAt: schema.bookings.offerExpiresAt,
+            state: schema.bookings.state,
           })
           .from(schema.bookings)
           .where(
             and(
               eq(schema.bookings.slotId, slot.id),
-              eq(schema.bookings.state, "offered"),
+              inArray(schema.bookings.state, SLOT_HOLDING_BOOKING_STATES),
             ),
           )
           .limit(1)
@@ -78,7 +109,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
 
   // A visiting performer's own application on this slot (for apply/withdraw).
   const myApplication =
-    performer && !isOwner
+    ownedPerformer && !isOwner
       ? (
           await d
             .select()
@@ -86,7 +117,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
             .where(
               and(
                 eq(schema.applications.slotId, slot.id),
-                eq(schema.applications.performerId, performer.id),
+                eq(schema.applications.performerId, ownedPerformer.id),
               ),
             )
         )[0] ?? null
@@ -98,7 +129,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
         <h1>
           {venue.name}{" "}
           <span className="badge">{GIG_FORMAT_LABEL[slot.format] ?? slot.format}</span>{" "}
-          <span className="badge">{friendlyLabel(SLOT_STATUS_LABELS, slot.status)}</span>
+          <span className="badge">{friendlyLabel(SLOT_STATUS_LABELS, displayStatus)}</span>
         </h1>
         <p className="deal-terms">
           <span className="money money--lead">
@@ -116,28 +147,33 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
           Sound: {venue.paInventory.hasPA ? "house PA" : "no house PA"} · Capacity:{" "}
           {venue.capacity ?? "not listed"}
         </p>
-        {performer && !isOwner && slot.status === "open" && (
+        {ownedPerformer &&
+          !isOwner &&
+          (marketplaceOpen ||
+            Boolean(
+              myApplication && myApplication.status !== "withdrawn",
+            )) && (
           myApplication?.status === "submitted" ? (
             <p>
               <span className="badge">Application sent</span>{" "}
-              <ActionButton
-                endpoint={`/api/applications/${myApplication.id}/status`}
-                label="Withdraw application" variant="quiet"
-                body={{ action: "withdraw" }}
-                confirm="Withdraw your application from this gig?"
-              />
+              {accountActive ? (
+                <ActionButton
+                  endpoint={`/api/applications/${myApplication.id}/status`}
+                  label="Withdraw application" variant="quiet"
+                  body={{ action: "withdraw" }}
+                  confirm="Withdraw your application from this gig?"
+                />
+              ) : (
+                <span className="muted">Your account must be active to withdraw.</span>
+              )}
             </p>
           ) : myApplication && myApplication.status !== "withdrawn" ? (
             <p className="muted">
-              {/* An open slot with a declined application means it filled and
-                  was then cancelled. Those applications are revived on reopen,
-                  so reaching here at all is a leftover — say something useful
-                  rather than restating a status. */}
               {myApplication.status === "declined"
-                ? "This one went to another act. It is open again — check back or find another gig."
+                ? declinedApplicationMessage(myApplication.declineReason)
                 : `Your application is ${friendlyLabel(APPLICATION_STATUS_LABELS, myApplication.status).toLowerCase()}.`}
             </p>
-          ) : (
+          ) : performer ? (
             // No application yet — or a withdrawn one, which re-applying
             // revives (declining an offer must never dead-end the pairing).
             <div>
@@ -158,9 +194,11 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
                 ]}
               />
             </div>
+          ) : (
+            <p className="muted">Your act profile must be active to apply.</p>
           )
         )}
-        {!isOwner && slot.status === "open" && !performer && (
+        {!isOwner && marketplaceOpen && !ownedPerformer && (
           <p className="muted">
             Want this gig?{" "}
             {userId ? (
@@ -175,20 +213,20 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
             to apply.
           </p>
         )}
-        {!isOwner && slot.status !== "open" && (
+        {!isOwner && !marketplaceOpen && (
           <p className="muted">
-            {slot.status === "filled"
+            {displayStatus === "filled"
               ? "This gig has been booked."
-              : slot.status === "expired"
+              : displayStatus === "expired"
                 ? "This date has passed."
-                : slot.status === "cancelled"
+                : displayStatus === "cancelled"
                   ? "This gig was cancelled."
                   : "This gig is not accepting applications yet."}
           </p>
         )}
       </div>
 
-      {isOwner && slot.status === "open" && (
+      {canManage && marketplaceOpen && !holdingBooking && (
         <div className="card">
           <h2>Manage this open date</h2>
           <details>
@@ -200,7 +238,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               fields={[
                 { name: "budgetCents", label: "Pay for the night, in dollars", type: "number", defaultValue: slot.budgetCents / 100 },
                 { name: "durationMinutes", label: "Duration (min)", type: "number", defaultValue: slot.durationMinutes },
-                { name: "notes", label: "About the night", type: "textarea", defaultValue: slot.notes ?? "" },
+                { name: "notes", label: "About the night", type: "textarea", defaultValue: slot.notes ?? "", emptyValue: "empty-string" },
               ]}
             />
           </details>
@@ -216,17 +254,38 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
         </div>
       )}
 
+      {canManage && marketplaceOpen && holdingBooking && (
+        <div className="card">
+          <h2>Date on hold</h2>
+          <p>
+            {holdingBooking.state === "offered"
+              ? "A firm offer is out, so listing terms stay fixed until it is withdrawn or expires."
+              : holdingBooking.state === "confirming"
+                ? "The act accepted the offer and booking confirmation is processing. Listing terms stay fixed while this finishes."
+                : "This date is tied to a booking, so its listing terms cannot be changed."}{" "}
+            <Link href={`/bookings/${holdingBooking.id}`}>
+              {holdingBooking.state === "offered"
+                ? "Review or withdraw the offer"
+                : "Review the pending booking"}
+            </Link>
+            .
+          </p>
+        </div>
+      )}
+
       {isOwner && (
         <div className="card">
           <h2>Applicants ({applicants.length})</h2>
           {applicants.length === 0 && (
             <p className="muted">No applications yet. Share this listing or check back soon.</p>
           )}
-          {applicants.map(({ application, performer: p }) => {
+          {applicants.map(({ application, performer: p, performerOwnerStatus }) => {
             const plan = soundPlan(venue.paInventory, p.techNeeds);
             const rel = performerReliability(
               relStats.get(p.id) ?? { gigsCompleted: 0, cancellations: 0 },
             );
+            const applicantCanReceiveOffer =
+              p.status === "live" && performerOwnerStatus === "active";
             return (
             <div className="card" key={application.id}>
               <strong>
@@ -254,27 +313,44 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               <p className="muted">{p.bio}</p>
               {application.note && <p>“{application.note}”</p>}
               {application.status === "offered" &&
-                activeOffer?.performerId === p.id && (
-                  <p>
-                    <strong>Firm offer sent.</strong>{" "}
-                    <span className="muted">
-                      Expires{" "}
-                      {formatVenueDateTime(
-                        activeOffer.offerExpiresAt,
-                        venue.timeZone,
-                      )}{" "}
-                      {shortTimeZoneName(
-                        activeOffer.offerExpiresAt,
-                        venue.timeZone,
-                      )}.{" "}
-                      <Link href={`/bookings/${activeOffer.id}`}>
-                        Review or withdraw the offer
-                      </Link>
-                      .
-                    </span>
-                  </p>
+                holdingBooking?.performerId === p.id && (
+                  holdingBooking.state === "offered" ? (
+                    <p>
+                      <strong>Firm offer sent.</strong>{" "}
+                      <span className="muted">
+                        Expires{" "}
+                        {formatVenueDateTime(
+                          holdingBooking.offerExpiresAt,
+                          venue.timeZone,
+                        )}{" "}
+                        {shortTimeZoneName(
+                          holdingBooking.offerExpiresAt,
+                          venue.timeZone,
+                        )}.{" "}
+                        <Link href={`/bookings/${holdingBooking.id}`}>
+                          {canManage ? "Review or withdraw the offer" : "Review the offer"}
+                        </Link>
+                        .
+                      </span>
+                    </p>
+                  ) : (
+                    <p>
+                      <strong>
+                        {holdingBooking.state === "confirming"
+                          ? "Booking confirmation is processing."
+                          : "This date is booked."}
+                      </strong>{" "}
+                      <span className="muted">
+                        <Link href={`/bookings/${holdingBooking.id}`}>Review the booking</Link>.
+                      </span>
+                    </p>
+                  )
                 )}
-              {application.status === "submitted" && !activeOffer && (
+              {canManage &&
+                applicantCanReceiveOffer &&
+                marketplaceOpen &&
+                application.status === "submitted" &&
+                !holdingBooking && (
                 <>
                   <p>
                     <strong>
@@ -309,13 +385,30 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
                   </p>
                 </>
               )}
-              {application.status === "submitted" && activeOffer && (
+              {canManage &&
+                !applicantCanReceiveOffer &&
+                marketplaceOpen &&
+                application.status === "submitted" &&
+                !holdingBooking && (
                 <p className="muted">
-                  A firm offer is already out. Withdraw it or wait for it to
-                  expire before offering another act.
+                  This act profile is no longer available for a new offer.
                 </p>
               )}
-              {application.status === "submitted" && (
+
+              {displayStatus === "open" &&
+                application.status === "submitted" &&
+                holdingBooking && (
+                <p className="muted">
+                  {holdingBooking.state === "offered"
+                    ? "A firm offer is already out. Withdraw it or wait for it to expire before offering another act."
+                    : holdingBooking.state === "confirming"
+                      ? "This date is on hold while booking confirmation finishes."
+                      : "This date is already tied to a booking."}
+                </p>
+              )}
+              {canManage &&
+                marketplaceOpen &&
+                application.status === "submitted" && (
                 <ActionButton
                   endpoint={`/api/applications/${application.id}/status`}
                   label="Decline" variant="quiet"
@@ -323,7 +416,8 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
                   confirm={`Decline ${p.name}'s application? This cannot be undone.`}
                 />
               )}
-              {plan.verdict !== "covered" && (
+              {canManage && marketplaceOpen &&
+                plan.verdict !== "covered" && (
                 <p className="muted">
                   <Link href="/techs">Find a tech for the night →</Link>
                 </p>

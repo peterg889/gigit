@@ -19,6 +19,12 @@ export const SUBSLOT_STATES = [
 ] as const;
 export type SubslotState = (typeof SUBSLOT_STATES)[number];
 
+/** States that represent the one live sound-selection round on a booking. */
+export const ACTIVE_SUBSLOT_STATES: readonly SubslotState[] = [
+  "open",
+  "booked",
+];
+
 export const SUBSLOT_EVENTS = [
   "TECH_BOOKED",
   "PARENT_RELEASED",

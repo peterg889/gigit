@@ -106,6 +106,26 @@ describe("booking conversation", () => {
     expect(all).toHaveLength(1);
   });
 
+  it("creates exactly one thread when multiple processes race", async () => {
+    const bookingId = await confirmedBooking();
+    const ids = await Promise.all(
+      Array.from({ length: 8 }, () => ensureBookingThread(bookingId, "worker")),
+    );
+    expect(new Set(ids)).toEqual(new Set([ids[0]]));
+
+    const all = await db()
+      .select({ id: threads.id })
+      .from(threads)
+      .where(and(eq(threads.scope, "booking"), eq(threads.subjectId, bookingId)));
+    expect(all).toHaveLength(1);
+
+    const parts = await db()
+      .select({ userId: threadParticipants.userId })
+      .from(threadParticipants)
+      .where(eq(threadParticipants.threadId, all[0]!.id));
+    expect(parts.map((p) => p.userId).sort()).toEqual([uVenue, uAct].sort());
+  });
+
   it("bookingThreadId finds it, and returns null before one exists", async () => {
     const bookingId = await confirmedBooking();
     expect(await bookingThreadId(bookingId)).toBeNull();

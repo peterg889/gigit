@@ -47,6 +47,25 @@ export const ACTIVE_BOOKING_STATES: readonly BookingState[] = [
 ];
 
 /**
+ * A booking that owns its advertised date under `bookings_active_slot_uq`.
+ *
+ * This is deliberately broader than ACTIVE_BOOKING_STATES: a firm `offered`
+ * hold excludes another offer, and a released/partially-released gig has spent
+ * its historical date even though it no longer occupies the performer's future
+ * calendar. Keep the DB partial-index predicate aligned with this exact set;
+ * packages/db/src/migrations.test.ts pins that cross-layer invariant.
+ */
+export const SLOT_HOLDING_BOOKING_STATES: readonly BookingState[] = [
+  "offered",
+  "confirming",
+  "confirmed",
+  "awaiting_confirmation",
+  "disputed",
+  "released",
+  "partially_released",
+];
+
+/**
  * The booking died, so the slot is genuinely free again. Note `released` and
  * `partially_released` are NOT here: the night happened, so the slot is spent
  * even though the booking is terminal. This is what series re-book asks.
@@ -124,7 +143,7 @@ export type DisputeResolution =
 export type BookingEvent =
   | { kind: "PERFORMER_ACCEPTED" }
   | { kind: "PERFORMER_DECLINED" }
-  | { kind: "PAYMENT_SUCCEEDED" }
+  | { kind: "PAYMENT_SUCCEEDED"; paymentRef?: string }
   | { kind: "PAYMENT_FAILED"; reason?: string }
   | { kind: "OFFER_EXPIRED" }
   | { kind: "GIG_ENDED" }
@@ -141,8 +160,22 @@ export type Effect =
   | { kind: "request_payment" } // M0: NullPaymentGateway feeds back PAYMENT_SUCCEEDED
   | { kind: "schedule"; job: "offer_expiry" | "gig_ended" | "auto_confirm"; runAt: string }
   | { kind: "cancel_schedule"; job: "offer_expiry" | "gig_ended" | "auto_confirm" }
-  | { kind: "release_funds"; amountCents: number }
-  | { kind: "refund_funds"; amountCents: number }
+  | {
+      kind: "release_funds";
+      amountCents: number;
+      /**
+       * Distinguishes an intentional, replay-safe money operation from every
+       * other transfer of the same amount on this booking. Lifecycle effects
+       * omit it and retain their established booking + amount gateway key.
+       */
+      operationKey?: string;
+    }
+  | {
+      kind: "refund_funds";
+      amountCents: number;
+      /** See release_funds.operationKey. */
+      operationKey?: string;
+    }
   | { kind: "cancellation_fee"; feeCents: number; refundCents: number }
   | { kind: "reopen_slot" }
   | { kind: "notify"; template: string; to: "venue" | "performer" | "both" }

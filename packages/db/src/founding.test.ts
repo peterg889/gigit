@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 import { newId } from "@gigit/domain";
-import { and, gte, lte } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { closeDb, db } from "./client.js";
 import * as schema from "./schema.js";
 import { FOUNDING_LIMIT, assignFounding, isFoundingMember } from "./founding.js";
@@ -49,7 +49,9 @@ describe("founding-member assignment", () => {
     const c = await makePerformer();
     expect(b.number).toBe(a.number + 1);
     expect(c.number).toBe(b.number + 1);
-    expect(a.member).toBe(true);
+    expect(a.member).toBe(isFoundingMember(a.number));
+    expect(b.member).toBe(isFoundingMember(b.number));
+    expect(c.member).toBe(isFoundingMember(c.number));
   });
 
   it("stays gap-free when a creation rolls back", async () => {
@@ -75,8 +77,15 @@ describe("founding-member assignment", () => {
   });
 
   it("flips foundingMember off past the limit", async () => {
-    // Push the performer sequence past the cutoff cheaply: seed a high number,
-    // then the next real assignment lands at limit+something.
+    // Push the performer sequence past both the cutoff and whatever a reused
+    // integration database already contains. A fixed rank makes this test fail
+    // on its second run because founding numbers are intentionally unique.
+    const [current] = await db()
+      .select({
+        max: sql<number>`coalesce(max(${schema.performers.foundingNumber}), 0)`,
+      })
+      .from(schema.performers);
+    const highNumber = Math.max(FOUNDING_LIMIT + 5, Number(current?.max ?? 0) + 5);
     const ownerId = newId("user");
     await db().insert(schema.users).values({ id: ownerId, email: `${ownerId}@t.test` });
     await db().insert(schema.performers).values({
@@ -85,22 +94,17 @@ describe("founding-member assignment", () => {
       kind: "solo",
       name: "High Rank",
       homeMetro: "f-tv",
-      foundingNumber: FOUNDING_LIMIT + 5,
+      foundingNumber: highNumber,
       foundingMember: false,
     });
     const next = await makePerformer();
-    expect(next.number).toBe(FOUNDING_LIMIT + 6);
+    expect(next.number).toBe(highNumber + 1);
     expect(next.member).toBe(false);
     // and it's stored as a non-member
     const [row] = await db()
       .select({ m: schema.performers.foundingMember })
       .from(schema.performers)
-      .where(
-        and(
-          gte(schema.performers.foundingNumber, FOUNDING_LIMIT + 6),
-          lte(schema.performers.foundingNumber, FOUNDING_LIMIT + 6),
-        ),
-      );
+      .where(eq(schema.performers.foundingNumber, highNumber + 1));
     expect(row?.m).toBe(false);
   });
 });

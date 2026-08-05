@@ -16,54 +16,75 @@ export async function POST(req: Request, { params }: Params) {
     const parsed = await parseBody(req, bodySchema);
     if ("response" in parsed) return parsed.response;
 
-    const d = db();
-    const [row] = await d
-      .select({ application: schema.applications, slot: schema.slots })
-      .from(schema.applications)
-      .innerJoin(schema.slots, eq(schema.applications.slotId, schema.slots.id))
-      .where(eq(schema.applications.id, id));
-    if (!row) return fail("not_found", "We couldn't find that application.", 404);
-    if (row.application.status !== "submitted")
-      return fail("conflict", "This application already has an answer.", 409);
+    const action = parsed.data.action;
+    const [venue, performer] = await Promise.all([
+      action === "decline" ? venueOwnedBy(userId) : Promise.resolve(null),
+      action === "withdraw" ? performerOwnedBy(userId) : Promise.resolve(null),
+    ]);
 
-    if (parsed.data.action === "decline") {
-      const venue = await venueOwnedBy(userId);
-      if (!venue || venue.id !== row.slot.venueId)
-        return fail("forbidden", "That date isn't yours.", 403);
-    } else {
-      const performer = await performerOwnedBy(userId);
-      if (!performer || performer.id !== row.application.performerId)
+    return await db().transaction(async (tx) => {
+      // Decline, withdraw, offer, and date cancellation all move this row. Lock
+      // and re-check so two stale buttons cannot both succeed with contradictory
+      // events, or leave an event committed without its matching status.
+      const [application] = await tx
+        .select()
+        .from(schema.applications)
+        .where(eq(schema.applications.id, id))
+        .for("update");
+      if (!application)
+        return fail("not_found", "We couldn't find that application.", 404);
+      if (application.status !== "submitted")
+        return fail("conflict", "This application already has an answer.", 409);
+
+      const [slot] = await tx
+        .select({ id: schema.slots.id, venueId: schema.slots.venueId })
+        .from(schema.slots)
+        .where(eq(schema.slots.id, application.slotId));
+      if (!slot) return fail("not_found", "We couldn't find that date.", 404);
+
+      if (action === "decline") {
+        if (!venue || venue.id !== slot.venueId)
+          return fail("forbidden", "That date isn't yours.", 403);
+      } else if (!performer || performer.id !== application.performerId) {
         return fail("forbidden", "That application isn't yours.", 403);
-    }
+      }
 
-    const status = parsed.data.action === "decline" ? "declined" : "withdrawn";
-    await d
-      .update(schema.applications)
-      .set({
-        status,
-        // A venue's deliberate decline is sticky — reopening a cancelled slot
-        // revives only the acts that were auto-declined when it filled.
-        ...(status === "declined" ? { declineReason: "venue_declined" as const } : {}),
-      })
-      .where(eq(schema.applications.id, id));
-    await appendEvent(d, {
-      actor: userId,
-      kind: `application.${status}`,
-      subjectType: "slot",
-      subjectId: row.slot.id,
-      payload: {
-        applicationId: id,
-        // a decline is news for the ACT; a withdrawal is the act's own doing
-        ...(status === "declined"
-          ? {
-              effects: [
-                { kind: "notify", template: "application_declined", to: "performer" },
-              ],
-            }
-          : {}),
-      },
+      const status = action === "decline" ? "declined" : "withdrawn";
+      await tx
+        .update(schema.applications)
+        .set({
+          status,
+          // A venue's deliberate decline is sticky — reopening a cancelled slot
+          // revives only the acts that were auto-declined when it filled.
+          ...(status === "declined"
+            ? { declineReason: "venue_declined" as const }
+            : {}),
+        })
+        .where(eq(schema.applications.id, id));
+      await appendEvent(tx, {
+        actor: userId,
+        kind: `application.${status}`,
+        subjectType: "slot",
+        subjectId: slot.id,
+        payload: {
+          applicationId: id,
+          // A deliberate decline is news for the act; a withdrawal is the
+          // act's own action and does not need a notification.
+          ...(status === "declined"
+            ? {
+                effects: [
+                  {
+                    kind: "notify",
+                    template: "application_not_selected",
+                    to: "performer",
+                  },
+                ],
+              }
+            : {}),
+        },
+      });
+      return ok({ status });
     });
-    return ok({ status });
   } catch (e) {
     return respondError(e);
   }

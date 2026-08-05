@@ -12,10 +12,13 @@ alter table techs      rename column travel_radius_km to travel_radius_miles;
 -- can't round down to "travels nowhere"; 0 stays 0 (it means "local only").
 update performers set travel_radius_miles =
   case when travel_radius_miles = 0 then 0
-       else greatest(1, round(travel_radius_miles * 0.621371)) end;
+       -- The old form allowed 500 km, which rounds to 311 miles, while the new
+       -- miles form intentionally caps entries at 300. Clamp converted legacy
+       -- values so every migrated profile remains valid on its next edit.
+       else least(300, greatest(1, round(travel_radius_miles * 0.621371))) end;
 update techs set travel_radius_miles =
   case when travel_radius_miles = 0 then 0
-       else greatest(1, round(travel_radius_miles * 0.621371)) end;
+       else least(300, greatest(1, round(travel_radius_miles * 0.621371))) end;
 
 -- 30 miles ≈ the old 50 km default, kept close so behavior doesn't jump.
 alter table performers alter column travel_radius_miles set default 30;

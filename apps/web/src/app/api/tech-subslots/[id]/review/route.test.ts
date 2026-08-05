@@ -1,6 +1,20 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@gigit/domain";
 import { closeDb, db, schema } from "@gigit/db";
+import { and, eq } from "drizzle-orm";
+
+const eventFailure = vi.hoisted(() => ({ subjectId: null as string | null }));
+vi.mock("@gigit/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@gigit/db")>();
+  return {
+    ...actual,
+    appendEvent: async (...args: Parameters<typeof actual.appendEvent>) => {
+      if (args[1].subjectId === eventFailure.subjectId)
+        throw new Error("injected sound review event failure");
+      return actual.appendEvent(...args);
+    },
+  };
+});
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
@@ -28,6 +42,7 @@ describe("sound booking reviews", () => {
   const techId = newId("tech");
   let releasedId: string;
   let bookedId: string;
+  let rollbackId: string;
 
   async function subslot(state: "released" | "booked") {
     const slotId = newId("slot");
@@ -102,6 +117,7 @@ describe("sound booking reviews", () => {
     });
     releasedId = await subslot("released");
     bookedId = await subslot("booked");
+    rollbackId = await subslot("released");
   });
 
   afterAll(async () => closeDb());
@@ -112,6 +128,35 @@ describe("sound booking reviews", () => {
     expect((await review(releasedId)).status).toBe(409);
     as(uTech);
     expect((await review(releasedId)).status).toBe(201);
+  });
+
+  it("rolls the sound review back when its outbox event cannot be appended", async () => {
+    as(uVenue);
+    eventFailure.subjectId = rollbackId;
+    try {
+      await expect(review(rollbackId)).rejects.toThrow(
+        "injected sound review event failure",
+      );
+    } finally {
+      eventFailure.subjectId = null;
+    }
+    expect(
+      await db()
+        .select()
+        .from(schema.techSubslotReviews)
+        .where(eq(schema.techSubslotReviews.subslotId, rollbackId)),
+    ).toHaveLength(0);
+    expect(
+      await db()
+        .select()
+        .from(schema.events)
+        .where(
+          and(
+            eq(schema.events.subjectId, rollbackId),
+            eq(schema.events.kind, "subslot.review_submitted"),
+          ),
+        ),
+    ).toHaveLength(0);
   });
 
   it("rejects outsiders and reviews before completion", async () => {

@@ -1,7 +1,7 @@
 import { deactivateAccount } from "@gigit/db";
-import { requireUser, respondError } from "@/lib/auth";
-import { ok } from "@/lib/respond";
-import { destroySession } from "@/lib/session";
+import { respondError } from "@/lib/auth";
+import { fail, ok } from "@/lib/respond";
+import { destroySession, sessionUserId } from "@/lib/session";
 
 /**
  * Deactivate access and remove login identifiers immediately. Marketplace
@@ -13,7 +13,9 @@ import { destroySession } from "@/lib/session";
  */
 export async function DELETE() {
   try {
-    const userId = await requireUser();
+    const userId = await sessionUserId();
+    if (!userId)
+      return fail("auth", "Sign in to deactivate your account.", 401);
     await deactivateAccount(userId);
     await destroySession();
     return ok({ deactivated: true });

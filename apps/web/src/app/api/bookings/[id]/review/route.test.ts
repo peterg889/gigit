@@ -4,6 +4,19 @@ import type { BookingState } from "@gigit/domain";
 import { closeDb, db, schema } from "@gigit/db";
 import { and, eq } from "drizzle-orm";
 
+const eventFailure = vi.hoisted(() => ({ subjectId: null as string | null }));
+vi.mock("@gigit/db", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@gigit/db")>();
+  return {
+    ...actual,
+    appendEvent: async (...args: Parameters<typeof actual.appendEvent>) => {
+      if (args[1].subjectId === eventFailure.subjectId)
+        throw new Error("injected review event failure");
+      return actual.appendEvent(...args);
+    },
+  };
+});
+
 const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
 
@@ -98,6 +111,36 @@ describe("review route guards (audit #22)", () => {
     const releasedId = bookingIds.get("released")!;
     expect((await review(releasedId, { ratings: { overall: 5 }, body: "great room" })).status).toBe(201);
     expect((await review(releasedId, { ratings: { overall: 4 } })).status).toBe(409); // dup author
+  });
+
+  it("rolls the review back when its outbox event cannot be appended", async () => {
+    const bookingId = await seedBooking("released");
+    as(uVenue);
+    eventFailure.subjectId = bookingId;
+    try {
+      await expect(
+        review(bookingId, { ratings: { overall: 5 }, body: "will roll back" }),
+      ).rejects.toThrow("injected review event failure");
+    } finally {
+      eventFailure.subjectId = null;
+    }
+    expect(
+      await db()
+        .select()
+        .from(schema.reviews)
+        .where(eq(schema.reviews.bookingId, bookingId)),
+    ).toHaveLength(0);
+    expect(
+      await db()
+        .select()
+        .from(schema.events)
+        .where(
+          and(
+            eq(schema.events.subjectId, bookingId),
+            eq(schema.events.kind, "review.submitted"),
+          ),
+        ),
+    ).toHaveLength(0);
   });
 
   it("accepts every completed-gig outcome", async () => {

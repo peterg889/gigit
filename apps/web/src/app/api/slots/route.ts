@@ -1,6 +1,5 @@
-import { newId, slotCreateSchema } from "@gigit/domain";
-import { appendEvent, db, openSlotFeed, schema } from "@gigit/db";
-import { and, asc, eq, gte, sql } from "drizzle-orm";
+import { slotCreateSchema } from "@gigit/domain";
+import { createOpenSlot, openSlotFeed } from "@gigit/db";
 import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 import { venueLocationIsComplete } from "@/lib/date-time";
@@ -13,17 +12,14 @@ export async function POST(req: Request) {
     if (!venueLocationIsComplete(venue))
       return fail(
         "venue_location_required",
-        "add your venue address and timezone before posting a slot",
+        "Add your venue address and time zone before posting an open date.",
         409,
       );
     const parsed = await parseBody(req, slotCreateSchema);
     if ("response" in parsed) return parsed.response;
-    const id = newId("slot");
-    const d = db();
-    await d.insert(schema.slots).values({
-      id,
+    const id = await createOpenSlot({
       venueId: venue.id,
-      metro: venue.metro,
+      actor: userId,
       startsAt: new Date(parsed.data.startsAt),
       durationMinutes: parsed.data.durationMinutes,
       format: parsed.data.format,
@@ -31,15 +27,7 @@ export async function POST(req: Request) {
       budgetCents: parsed.data.budgetCents,
       provides: parsed.data.provides,
       notes: parsed.data.notes ?? null,
-      status: "open",
       source: "web",
-    });
-    await appendEvent(d, {
-      actor: userId,
-      kind: "slot.created",
-      subjectType: "slot",
-      subjectId: id,
-      payload: { venueId: venue.id, budgetCents: parsed.data.budgetCents },
     });
     return ok({ id }, 201);
   } catch (e) {

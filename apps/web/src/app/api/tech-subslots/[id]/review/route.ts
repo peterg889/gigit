@@ -27,25 +27,27 @@ export async function POST(req: Request, { params }: Params) {
     if ("response" in parsed) return parsed.response;
     const id = newId("message");
     try {
-      await d.insert(schema.techSubslotReviews).values({
-        id,
-        subslotId,
-        authorRole,
-        ratings: parsed.data.ratings,
-        body: parsed.data.body,
+      await d.transaction(async (tx) => {
+        await tx.insert(schema.techSubslotReviews).values({
+          id,
+          subslotId,
+          authorRole,
+          ratings: parsed.data.ratings,
+          body: parsed.data.body,
+        });
+        await appendEvent(tx, {
+          actor: userId,
+          kind: "subslot.review_submitted",
+          subjectType: "tech_subslot",
+          subjectId: subslotId,
+          payload: { authorRole, overall: parsed.data.ratings.overall },
+        });
       });
     } catch (error) {
       if (pgErrorCode(error) === "23505")
         return fail("conflict", "You've already reviewed this sound gig.", 409);
       throw error;
     }
-    await appendEvent(d, {
-      actor: userId,
-      kind: "subslot.review_submitted",
-      subjectType: "tech_subslot",
-      subjectId: subslotId,
-      payload: { authorRole, overall: parsed.data.ratings.overall },
-    });
     return ok({ id }, 201);
   } catch (error) {
     return respondError(error);

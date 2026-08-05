@@ -1,20 +1,27 @@
 /**
- * Account deactivation (PRD F9.x). Marketplace records remain — completed
+ * Account exit lifecycle (PRD F9.x). Marketplace records remain — completed
  * bookings, reviews, disputes, and audit history must not become misleading —
- * but a departing party's LIVE commitments cannot be left dangling: the
- * counterparty would show up to a venue that left the platform, or wait on an
- * offer no one will ever answer. So deactivation first winds down everything
- * still in motion through the normal transition machinery (counterparties get
- * the same notifications as a manual cancellation), then removes the login
- * identifiers.
+ * but an inactive party's actionable commitments cannot be left dangling.
+ * Deactivation and suspension therefore share one transition-driven wind-down,
+ * including normal counterparty cancellation notices. Deactivation then removes
+ * login identifiers; suspension retains a read-only, reinstatable identity.
  */
-import { and, eq, inArray } from "drizzle-orm";
-import type { BookingEvent } from "@gigit/domain";
-import type { Db } from "./client.js";
+import { createHash } from "node:crypto";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { IllegalSubslotTransitionError, type BookingEvent } from "@gigit/domain";
+import type { Db, Tx } from "./client.js";
 import { db } from "./client.js";
 import { appendEvent } from "./events.js";
 import { cancelSeries } from "./series.js";
-import { runSubslotTransition } from "./subslots.js";
+import { cancelOpenSlots } from "./slot-cancellation.js";
+import {
+  runSubslotTransition,
+  SubslotAssigneeChangedError,
+  SubslotNotFoundError,
+  TechSubslotParentUnavailableError,
+  TechSubslotApplicationError,
+  withdrawTechSubslotApplication,
+} from "./subslots.js";
 import {
   BookingNotFoundError,
   ConcurrentUpdateError,
@@ -22,12 +29,14 @@ import {
   runBookingTransition,
 } from "./transition.js";
 import {
+  blockedIdentifiers,
   applications,
   bookings,
   performers,
   slots,
   slotSeries,
   techs,
+  techSubslotApplications,
   users,
   techSubslots,
   venues,
@@ -43,143 +52,597 @@ import {
  */
 export async function setProfileVisibility(
   userId: string,
-  status: "live" | "hidden",
-  tx?: { update: Db["update"] },
+  status: "live" | "hidden" | "suspended",
+  existingTx?: Tx,
 ): Promise<void> {
-  const d = (tx ?? db()) as Db;
-  await d.update(performers).set({ status }).where(eq(performers.ownerUserId, userId));
-  await d.update(venues).set({ status }).where(eq(venues.ownerUserId, userId));
-  await d.update(techs).set({ status }).where(eq(techs.ownerUserId, userId));
-}
-
-/** Cancel one booking, tolerating races: a state that moved on is fine. */
-async function tryTransition(
-  bookingId: string,
-  event: BookingEvent,
-  actor: string,
-): Promise<void> {
-  try {
-    await runBookingTransition(bookingId, event, actor);
-  } catch (e) {
-    if (
-      e instanceof IllegalTransitionError ||
-      e instanceof ConcurrentUpdateError ||
-      e instanceof BookingNotFoundError
-    )
+  const apply = async (tx: Tx) => {
+    if (status === "hidden") {
+      await tx
+        .update(performers)
+        .set({ status })
+        .where(
+          and(
+            eq(performers.ownerUserId, userId),
+            inArray(performers.status, ["live", "suspended"]),
+          ),
+        );
+      await tx
+        .update(venues)
+        .set({ status })
+        .where(
+          and(
+            eq(venues.ownerUserId, userId),
+            inArray(venues.status, ["live", "suspended"]),
+          ),
+        );
+      await tx
+        .update(techs)
+        .set({ status })
+        .where(
+          and(
+            eq(techs.ownerUserId, userId),
+            inArray(techs.status, ["live", "suspended"]),
+          ),
+        );
       return;
-    throw e;
-  }
+    }
+
+    if (status === "suspended") {
+      await tx
+        .update(performers)
+        .set({ status })
+        .where(
+          and(
+            eq(performers.ownerUserId, userId),
+            eq(performers.status, "live"),
+          ),
+        );
+      await tx
+        .update(venues)
+        .set({ status })
+        .where(
+          and(eq(venues.ownerUserId, userId), eq(venues.status, "live")),
+        );
+      await tx
+        .update(techs)
+        .set({ status })
+        .where(and(eq(techs.ownerUserId, userId), eq(techs.status, "live")));
+      return;
+    }
+
+    // Restore the precise profile an admin suspended, never an older archived
+    // profile. Existing-live is next (idempotency), and hidden is a final,
+    // deterministic fallback for accounts suspended before the dedicated
+    // `suspended` profile status existed.
+    const [performer] = await tx
+      .select({ id: performers.id })
+      .from(performers)
+      .where(
+        and(
+          eq(performers.ownerUserId, userId),
+          inArray(performers.status, ["suspended", "live", "hidden"]),
+        ),
+      )
+      .orderBy(
+        desc(eq(performers.status, "suspended")),
+        desc(eq(performers.status, "live")),
+        asc(performers.createdAt),
+        asc(performers.id),
+      )
+      .limit(1)
+      .for("update");
+    const [venue] = await tx
+      .select({ id: venues.id })
+      .from(venues)
+      .where(
+        and(
+          eq(venues.ownerUserId, userId),
+          inArray(venues.status, ["suspended", "live", "hidden"]),
+        ),
+      )
+      .orderBy(
+        desc(eq(venues.status, "suspended")),
+        desc(eq(venues.status, "live")),
+        asc(venues.createdAt),
+        asc(venues.id),
+      )
+      .limit(1)
+      .for("update");
+    const [tech] = await tx
+      .select({ id: techs.id })
+      .from(techs)
+      .where(
+        and(
+          eq(techs.ownerUserId, userId),
+          inArray(techs.status, ["suspended", "live", "hidden"]),
+        ),
+      )
+      .orderBy(
+        desc(eq(techs.status, "suspended")),
+        desc(eq(techs.status, "live")),
+        asc(techs.createdAt),
+        asc(techs.id),
+      )
+      .limit(1)
+      .for("update");
+
+    await tx
+      .update(performers)
+      .set({ status: "hidden" })
+      .where(
+        and(
+          eq(performers.ownerUserId, userId),
+          inArray(performers.status, ["live", "suspended"]),
+        ),
+      );
+    await tx
+      .update(venues)
+      .set({ status: "hidden" })
+      .where(
+        and(
+          eq(venues.ownerUserId, userId),
+          inArray(venues.status, ["live", "suspended"]),
+        ),
+      );
+    await tx
+      .update(techs)
+      .set({ status: "hidden" })
+      .where(
+        and(
+          eq(techs.ownerUserId, userId),
+          inArray(techs.status, ["live", "suspended"]),
+        ),
+      );
+    if (performer)
+      await tx
+        .update(performers)
+        .set({ status: "live" })
+        .where(eq(performers.id, performer.id));
+    if (venue)
+      await tx
+        .update(venues)
+        .set({ status: "live" })
+        .where(eq(venues.id, venue.id));
+    if (tech)
+      await tx
+        .update(techs)
+        .set({ status: "live" })
+        .where(eq(techs.id, tech.id));
+  };
+
+  if (existingTx) await apply(existingTx);
+  else await db().transaction(apply);
 }
 
-export async function deactivateAccount(userId: string): Promise<void> {
-  const d = db();
-  const [performer] = await d
-    .select({ id: performers.id })
+type BookingParty = "performer" | "venue";
+export type AccountExitReason = "account_deactivated" | "account_suspended";
+
+function accountExitEvent(
+  state: string,
+  party: BookingParty,
+  reason: AccountExitReason,
+): BookingEvent | null {
+  if (state === "confirming")
+    return { kind: "PAYMENT_FAILED", reason };
+  if (state === "offered")
+    return { kind: party === "performer" ? "PERFORMER_DECLINED" : "VENUE_CANCELLED" };
+  if (state === "confirmed")
+    return { kind: party === "performer" ? "PERFORMER_CANCELLED" : "VENUE_CANCELLED" };
+  return null;
+}
+
+/**
+ * Wind down one booking based on its CURRENT state.
+ *
+ * The initial account query is only a work list: an offered booking can move
+ * to confirming/confirmed before its turn. Re-fetch and retry the appropriate
+ * event instead of swallowing IllegalTransitionError and making the account
+ * inactive while a charge-capable booking survives underneath it.
+ */
+type WindDownHooks = {
+  /** @internal Deterministic seam for exercising a state change between read and write. */
+  beforeTransition?: (state: string, attempt: number) => Promise<void>;
+};
+
+async function windDownBookingForAccountExit(
+  bookingId: string,
+  party: BookingParty,
+  actor: string,
+  reason: AccountExitReason,
+  hooks?: WindDownHooks,
+  existingTx?: Tx,
+): Promise<void> {
+  // Booking states only move forward, so this normally needs one attempt and
+  // can cross at most offered → confirming → confirmed under races.
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const d = existingTx ?? db();
+    const [current] = await d
+      .select({ state: bookings.state })
+      .from(bookings)
+      .where(eq(bookings.id, bookingId));
+    if (!current) return;
+    const event = accountExitEvent(current.state, party, reason);
+    if (!event) return;
+    await hooks?.beforeTransition?.(current.state, attempt);
+    try {
+      await runBookingTransition(
+        bookingId,
+        event,
+        actor,
+        new Date(),
+        existingTx,
+      );
+      return;
+    } catch (e) {
+      if (e instanceof BookingNotFoundError) return;
+      if (
+        e instanceof IllegalTransitionError ||
+        e instanceof ConcurrentUpdateError
+      )
+        continue;
+      throw e;
+    }
+  }
+  throw new Error(`booking ${bookingId} kept moving during account exit`);
+}
+
+/** @internal Exported so the integration suite can force a transition race. */
+export async function windDownBookingForDeactivation(
+  bookingId: string,
+  party: BookingParty,
+  actor: string,
+  hooks?: WindDownHooks,
+  existingTx?: Tx,
+): Promise<void> {
+  await windDownBookingForAccountExit(
+    bookingId,
+    party,
+    actor,
+    "account_deactivated",
+    hooks,
+    existingTx,
+  );
+}
+
+export type AccountWindDownHooks = {
+  /** @internal Fires while the active user row is locked, before worklists. */
+  afterAccountLock?: () => Promise<void>;
+  /** @internal Fires after the account's series rows are locked. */
+  afterSeriesLock?: () => Promise<void>;
+  /** @internal Deterministic seam for changing an assignment after the worklist read. */
+  beforeTechTransition?: (
+    subslotId: string,
+    expectedTechId: string,
+  ) => Promise<void>;
+  /** @internal Deterministic seam for stale pending-application worklists. */
+  beforeTechApplicationWithdrawal?: (
+    subslotId: string,
+    techId: string,
+  ) => Promise<void>;
+};
+
+async function windDownAccountCommitments(
+  userId: string,
+  actor: string,
+  reason: AccountExitReason,
+  tx: Tx,
+  hooks?: AccountWindDownHooks,
+): Promise<boolean> {
+  let changed = false;
+
+  const ownedPerformers = await tx
+    .select({ id: performers.id, status: performers.status })
     .from(performers)
     .where(eq(performers.ownerUserId, userId));
-  const [venue] = await d
-    .select({ id: venues.id })
+  const ownedVenues = await tx
+    .select({ id: venues.id, status: venues.status })
     .from(venues)
     .where(eq(venues.ownerUserId, userId));
+  if (ownedPerformers.some((profile) => profile.status === "live"))
+    changed = true;
+  if (ownedVenues.some((profile) => profile.status === "live"))
+    changed = true;
+  const venueIds = ownedVenues.map((profile) => profile.id);
 
-  // Live commitments end through the state machine so slots reopen, timers
-  // cancel, and counterparties are notified. Gigs already played
-  // (awaiting_confirmation) and open disputes keep their existing flows —
-  // deactivation must not decide money questions.
-  if (performer) {
-    const live = await d
-      .select({ id: bookings.id, state: bookings.state })
-      .from(bookings)
-      .where(
-        and(
-          eq(bookings.performerId, performer.id),
-          inArray(bookings.state, ["offered", "confirmed"]),
-        ),
-      );
-    for (const b of live)
-      await tryTransition(
-        b.id,
-        { kind: b.state === "offered" ? "PERFORMER_DECLINED" : "PERFORMER_CANCELLED" },
-        userId,
-      );
-    await d
-      .update(applications)
-      .set({ status: "withdrawn" })
-      .where(
-        and(
-          eq(applications.performerId, performer.id),
-          eq(applications.status, "submitted"),
-        ),
-      );
-  }
+  // Series cancellation uses series → slots. Take every series lock in a
+  // stable order before any booking transition can lock a slot, so a normal
+  // series cancellation can never hold the series while waiting on a slot
+  // that this transaction holds while waiting on that same series.
+  const activeSeries =
+    venueIds.length > 0
+      ? await tx
+          .select({ id: slotSeries.id })
+          .from(slotSeries)
+          .where(
+            and(
+              inArray(slotSeries.venueId, venueIds),
+              eq(slotSeries.status, "active"),
+            ),
+          )
+          .orderBy(asc(slotSeries.id))
+          .for("update")
+      : [];
+  await hooks?.afterSeriesLock?.();
+  if (activeSeries.length > 0) changed = true;
 
-  if (venue) {
-    const live = await d
+  // Actionable commitments end through the state machine so slots reopen,
+  // timers cancel, and counterparties are notified. Gigs already played and
+  // open disputes keep their flows; account status does not decide money.
+  if (ownedPerformers.length > 0) {
+    const performerIds = ownedPerformers.map((profile) => profile.id);
+    const live = await tx
       .select({ id: bookings.id })
       .from(bookings)
       .where(
         and(
-          eq(bookings.venueId, venue.id),
-          inArray(bookings.state, ["offered", "confirmed"]),
+          inArray(bookings.performerId, performerIds),
+          inArray(bookings.state, ["offered", "confirming", "confirmed"]),
         ),
       );
-    for (const b of live) await tryTransition(b.id, { kind: "VENUE_CANCELLED" }, userId);
+    if (live.length > 0) changed = true;
+    for (const booking of live)
+      await windDownBookingForAccountExit(
+        booking.id,
+        "performer",
+        actor,
+        reason,
+        undefined,
+        tx,
+      );
+    const withdrawn = await tx
+      .update(applications)
+      .set({ status: "withdrawn" })
+      .where(
+        and(
+          inArray(applications.performerId, performerIds),
+          eq(applications.status, "submitted"),
+        ),
+      )
+      .returning({ id: applications.id });
+    if (withdrawn.length > 0) changed = true;
+  }
 
-    const activeSeries = await d
-      .select({ id: slotSeries.id })
-      .from(slotSeries)
-      .where(and(eq(slotSeries.venueId, venue.id), eq(slotSeries.status, "active")));
-    for (const s of activeSeries) await cancelSeries(s.id, userId);
+  if (venueIds.length > 0) {
+    const live = await tx
+      .select({ id: bookings.id })
+      .from(bookings)
+      .where(
+        and(
+          inArray(bookings.venueId, venueIds),
+          inArray(bookings.state, ["offered", "confirming", "confirmed"]),
+        ),
+      );
+    if (live.length > 0) changed = true;
+    for (const booking of live)
+      await windDownBookingForAccountExit(
+        booking.id,
+        "venue",
+        actor,
+        reason,
+        undefined,
+        tx,
+      );
+
+    for (const series of activeSeries)
+      await cancelSeries(series.id, actor, tx);
 
     // Remaining open slots (including ones the cancellations above reopened)
     // stop collecting applications nobody will ever read.
-    await d.transaction(async (tx) => {
-      const open = await tx
-        .select({ id: slots.id })
-        .from(slots)
-        .where(and(eq(slots.venueId, venue.id), eq(slots.status, "open")));
-      if (open.length === 0) return;
-      await tx
-        .update(slots)
-        .set({ status: "cancelled" })
-        .where(
-          inArray(
-            slots.id,
-            open.map((s) => s.id),
-          ),
-        );
-      for (const s of open)
-        await appendEvent(tx, {
-          actor: userId,
-          kind: "slot.cancelled",
-          subjectType: "slot",
-          subjectId: s.id,
-          payload: { reason: "account_deactivated" },
-        });
-    });
+    const open = await tx
+      .select({ id: slots.id })
+      .from(slots)
+      .where(
+        and(inArray(slots.venueId, venueIds), eq(slots.status, "open")),
+      );
+    if (open.length > 0) {
+      changed = true;
+      await cancelOpenSlots(
+        {
+          slotIds: open.map((slot) => slot.id),
+          actor,
+          reason,
+        },
+        tx,
+      );
+    }
   }
 
-  // A tech who leaves used to have their profile hidden and nothing else: booked
-  // sound jobs stayed `booked`, with money charged and nobody told. The performer
-  // and venue paths both wind down their commitments; this one didn't, and the
-  // incompleteness of the three-way parallelism WAS the bug.
-  const [tech] = await d.select().from(techs).where(eq(techs.ownerUserId, userId));
-  if (tech) {
-    const booked = await d
-      .select({ id: techSubslots.id })
+  // A departing tech's booked work reopens through the state machine, and
+  // their still-pending applications disappear in this same transaction.
+  const ownedTechs = await tx
+    .select({ id: techs.id, status: techs.status })
+    .from(techs)
+    .where(eq(techs.ownerUserId, userId));
+  if (ownedTechs.some((profile) => profile.status === "live"))
+    changed = true;
+  if (ownedTechs.length > 0) {
+    const techIds = ownedTechs.map((profile) => profile.id);
+    const booked = await tx
+      .select({ id: techSubslots.id, techId: techSubslots.techId })
       .from(techSubslots)
-      .where(and(eq(techSubslots.techId, tech.id), eq(techSubslots.state, "booked")));
+      .where(
+        and(
+          inArray(techSubslots.techId, techIds),
+          eq(techSubslots.state, "booked"),
+        ),
+      );
+    if (booked.length > 0) changed = true;
     for (const sub of booked) {
+      if (!sub.techId) continue;
+      await hooks?.beforeTechTransition?.(sub.id, sub.techId);
       try {
-        await runSubslotTransition(sub.id, { kind: "TECH_CANCELLED" }, userId);
-      } catch {
-        // Already moved on, or lost a race — the wind-down is best-effort, and
-        // leaving one behind must not block the rest of the deactivation.
+        await runSubslotTransition(
+          sub.id,
+          { kind: "TECH_CANCELLED" },
+          actor,
+          { expectedTechId: sub.techId, tx },
+        );
+      } catch (e) {
+        // A row that moved or disappeared after the worklist read is already
+        // wound down. Database, ledger, and outbox failures still roll back
+        // the entire account exit.
+        if (
+          e instanceof IllegalSubslotTransitionError ||
+          e instanceof ConcurrentUpdateError ||
+          e instanceof SubslotNotFoundError ||
+          e instanceof SubslotAssigneeChangedError ||
+          // The parent has closed or downbeat passed, so reopening this
+          // assignment is no longer a valid account-exit side effect.
+          e instanceof TechSubslotParentUnavailableError
+        )
+          continue;
+        throw e;
+      }
+    }
+
+    const pendingApplications = await tx
+      .select({
+        subslotId: techSubslotApplications.subslotId,
+        techId: techSubslotApplications.techId,
+      })
+      .from(techSubslotApplications)
+      .where(
+        and(
+          inArray(techSubslotApplications.techId, techIds),
+          eq(techSubslotApplications.status, "submitted"),
+        ),
+      );
+    if (pendingApplications.length > 0) changed = true;
+    for (const application of pendingApplications) {
+      await hooks?.beforeTechApplicationWithdrawal?.(
+        application.subslotId,
+        application.techId,
+      );
+      try {
+        await withdrawTechSubslotApplication(
+          {
+            subslotId: application.subslotId,
+            techId: application.techId,
+            actor,
+          },
+          tx,
+        );
+      } catch (e) {
+        // The worklist is intentionally optimistic. A parent cascade may
+        // decline the row, or a simultaneous manual withdrawal may delete it,
+        // before this turn. Those two outcomes are already resolved; event or
+        // database failures must still roll back the whole deactivation.
+        if (
+          e instanceof TechSubslotApplicationError &&
+          (e.reason === "not_found" || e.reason === "not_submitted")
+        )
+          continue;
+        throw e;
       }
     }
   }
 
-  await d.transaction(async (tx) => {
+  return changed;
+}
+
+export type SuspendAccountResult =
+  | "updated"
+  | "unchanged"
+  | "not_found"
+  | "invalid_transition";
+
+/**
+ * Suspend an account and remove every still-actionable marketplace commitment
+ * before its identity/profile gates become read-only. The user row lock is the
+ * shared creator gate: work committed before it is swept; work attempted after
+ * it observes `suspended` and cannot be created.
+ */
+export async function suspendAccount(
+  userId: string,
+  actor: string,
+  hooks?: AccountWindDownHooks,
+): Promise<SuspendAccountResult> {
+  return db().transaction(async (tx) => {
+    const [account] = await tx
+      .select({ status: users.status })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("update");
+    if (!account) return "not_found";
+    if (account.status !== "active" && account.status !== "suspended")
+      return "invalid_transition";
+    const repairingLegacySuspension = account.status === "suspended";
+    await hooks?.afterAccountLock?.();
+
+    const lifecycleChanged = await windDownAccountCommitments(
+      userId,
+      actor,
+      "account_suspended",
+      tx,
+      hooks,
+    );
+    if (!repairingLegacySuspension)
+      await tx
+        .update(users)
+        .set({ status: "suspended" })
+        .where(eq(users.id, userId));
+    await setProfileVisibility(userId, "suspended", tx);
+
+    // Reissuing suspension is normally idempotent, but it also provides a safe
+    // repair path for rows suspended before commitment wind-down existed.
+    if (repairingLegacySuspension && !lifecycleChanged) return "unchanged";
+    await appendEvent(tx, {
+      actor,
+      kind: "user.suspended",
+      subjectType: "user",
+      subjectId: userId,
+      payload: {
+        commitmentsWoundDown: true,
+        ...(repairingLegacySuspension ? { repaired: true } : {}),
+      },
+    });
+    return "updated";
+  });
+}
+
+export async function deactivateAccount(
+  userId: string,
+  hooks?: AccountWindDownHooks,
+): Promise<void> {
+  await db().transaction(async (tx) => {
+    const [account] = await tx
+      // email/phone come along because they are about to be nulled and the
+      // suspension blocklist needs them first.
+      .select({ status: users.status, email: users.email, phone: users.phone })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for("update");
+    if (!account || account.status === "deleted") return;
+    await hooks?.afterAccountLock?.();
+
+    await windDownAccountCommitments(
+      userId,
+      userId,
+      "account_deactivated",
+      tx,
+      hooks,
+    );
+    // A suspension has to outlive the account. Self-deactivation is allowed
+    // even while suspended — people get to leave — but the identifiers are
+    // about to be nulled, and auth/verify recognizes a returning user BY those
+    // identifiers. Without this, a suspended user holding a valid session could
+    // delete and immediately re-register on the same address as a clean
+    // account, erasing the only moderation lever the product has.
+    if (account.status === "suspended") {
+      const blocked = [account.email, account.phone]
+        .filter((v): v is string => !!v)
+        .map((identifier) => ({
+          identifierHash: hashIdentifier(identifier),
+          reason: "suspended",
+          sourceUserId: userId,
+        }));
+      if (blocked.length > 0)
+        await tx
+          .insert(blockedIdentifiers)
+          .values(blocked)
+          .onConflictDoNothing();
+    }
+
     await tx
       .update(users)
       .set({
@@ -199,4 +662,31 @@ export async function deactivateAccount(userId: string): Promise<void> {
       subjectId: userId,
     });
   });
+}
+
+/**
+ * Normalize then hash a sign-in identifier.
+ *
+ * Deactivation exists to stop us holding the address, so the blocklist stores a
+ * digest rather than the value — enough to answer "was this suspended before?"
+ * and nothing more. Normalization matches auth/verify's lookup (addresses are
+ * compared case-sensitively there today, so lowercase both sides here rather
+ * than letting Foo@x.com walk past a block on foo@x.com).
+ */
+export function hashIdentifier(identifier: string): string {
+  return createHash("sha256")
+    .update(identifier.trim().toLocaleLowerCase("en-US"))
+    .digest("hex");
+}
+
+/** True when this identifier belongs to an account that was suspended. */
+export async function identifierIsBlocked(
+  identifier: string,
+  d: Db | Tx = db(),
+): Promise<boolean> {
+  const [row] = await d
+    .select({ hash: blockedIdentifiers.identifierHash })
+    .from(blockedIdentifiers)
+    .where(eq(blockedIdentifiers.identifierHash, hashIdentifier(identifier)));
+  return !!row;
 }

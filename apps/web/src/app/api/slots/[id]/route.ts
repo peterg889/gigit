@@ -1,6 +1,12 @@
-import { TERMINAL_STATES } from "@gigit/domain";
-import { appendEvent, db, schema } from "@gigit/db";
-import { and, eq, notInArray } from "drizzle-orm";
+import { SLOT_HOLDING_BOOKING_STATES } from "@gigit/domain";
+import {
+  appendEvent,
+  cancelOpenSlots,
+  db,
+  schema,
+  SlotCancellationBlockedError,
+} from "@gigit/db";
+import { and, eq, inArray } from "drizzle-orm";
 import type { NextResponse } from "next/server";
 import { z } from "zod";
 import { requireUser, respondError, venueOwnedBy } from "@/lib/auth";
@@ -53,16 +59,16 @@ export async function PATCH(req: Request, { params }: Params): Promise<NextRespo
         .where(eq(schema.slots.id, id))
         .for("update");
       if (!current || current.status !== "open") return "unavailable" as const;
-      const [offer] = await tx
+      const [holdingBooking] = await tx
         .select({ id: schema.bookings.id })
         .from(schema.bookings)
         .where(
           and(
             eq(schema.bookings.slotId, id),
-            eq(schema.bookings.state, "offered"),
+            inArray(schema.bookings.state, SLOT_HOLDING_BOOKING_STATES),
           ),
         );
-      if (offer) return "offer_outstanding" as const;
+      if (holdingBooking) return "offer_outstanding" as const;
       await tx.update(schema.slots).set(parsed.data).where(eq(schema.slots.id, id));
       await appendEvent(tx, {
         actor: userId,
@@ -76,7 +82,7 @@ export async function PATCH(req: Request, { params }: Params): Promise<NextRespo
     if (updateResult === "offer_outstanding")
       return fail(
         "offer_outstanding",
-        "Withdraw the firm offer before editing this slot.",
+        "This date is on hold. Wait for the pending booking to finish, or withdraw its offer before editing.",
         409,
       );
     if (updateResult === "unavailable")
@@ -94,35 +100,25 @@ export async function DELETE(_req: Request, { params }: Params): Promise<NextRes
     const userId = await requireUser();
     const r = await ownedOpenSlot(id, userId);
     if (!r.ok) return r.response;
-    // An 'open' slot can still hold an outstanding offer — a booking in 'offered'/
-    // 'confirming' doesn't fill the slot. Closing it would orphan that booking and
-    // let a later accept resurrect the slot to 'filled'. Make the venue handle it first.
-    const [active] = await db()
-      .select({ id: schema.bookings.id })
-      .from(schema.bookings)
-      .where(
-        and(
-          eq(schema.bookings.slotId, id),
-          // the genuine terminal set: anything else still blocks the edit
-          notInArray(schema.bookings.state, [...TERMINAL_STATES]),
-        ),
-      );
-    if (active)
+    const cancelled = await cancelOpenSlots({
+      slotIds: [id],
+      actor: userId,
+      reason: "venue_closed_date",
+    });
+    if (cancelled === 0)
       return fail(
         "conflict",
-        "This slot has an outstanding offer — cancel that first, then close the slot.",
+        "This date has already been filled or taken down.",
         409,
       );
-    const d = db();
-    await d.update(schema.slots).set({ status: "cancelled" }).where(eq(schema.slots.id, id));
-    await appendEvent(d, {
-      actor: userId,
-      kind: "slot.cancelled",
-      subjectType: "slot",
-      subjectId: id,
-    });
     return ok({ id, status: "cancelled" });
   } catch (e) {
+    if (e instanceof SlotCancellationBlockedError)
+      return fail(
+        "offer_outstanding",
+        "This date has an outstanding offer — cancel that first, then close the date.",
+        409,
+      );
     return respondError(e);
   }
 }
