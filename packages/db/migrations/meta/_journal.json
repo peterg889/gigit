@@ -225,6 +225,13 @@
       "when": 1786000000000,
       "tag": "0031_suspension_blocklist",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1786100000000,
+      "tag": "0032_fold_signin_email_case",
+      "breakpoints": true
     }
   ]
 }

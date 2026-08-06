@@ -240,13 +240,33 @@ export const embedCreateSchema = z.object({
     ),
 });
 
+/**
+ * A sign-in email, folded to lowercase.
+ *
+ * Every major provider treats the local part case-insensitively, but this code
+ * did not: `auth/request` stored the OTP under the address as typed and
+ * `auth/verify` looked up the user with `eq(users.email, destination)`, so
+ * Foo@x.com and foo@x.com were two different accounts. Signing in with the
+ * "wrong" capitalisation silently minted a second account — which, for an admin,
+ * means a 403 on /admin with nothing to explain it.
+ *
+ * Folding here fixes all four consumers at once: the OTP row, the OTP lookup,
+ * the user lookup, and the suspension blocklist check.
+ */
+const signInEmailSchema = z
+  .string()
+  .trim()
+  .email()
+  .max(320)
+  .transform((value) => value.toLocaleLowerCase("en-US"));
+
 export const authRequestSchema = z
   .object({
     phone: z
       .string()
       .regex(/^\+?[0-9]{10,15}$/)
       .optional(),
-    email: z.string().email().optional(),
+    email: signInEmailSchema.optional(),
   })
   .refine((v) => !!v.phone !== !!v.email, {
     message: "provide exactly one of phone or email",
@@ -263,7 +283,7 @@ export const authVerifySchema = z
       .string()
       .regex(/^\+?[0-9]{10,15}$/)
       .optional(),
-    email: z.string().email().optional(),
+    email: signInEmailSchema.optional(),
     code: z.string().regex(/^[0-9]{6}$/),
     termsAccepted: z.literal(true),
     source: z.string().trim().min(1).max(80).optional(),

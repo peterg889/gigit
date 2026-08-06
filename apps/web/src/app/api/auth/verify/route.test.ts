@@ -18,10 +18,16 @@ const verify = (body: Record<string, unknown>) =>
     }),
   );
 
+// Stands in for auth/request, which stores the destination folded — so this
+// must fold too, or every test would be asserting against a row the route can
+// never find. (newId() returns an uppercase ULID, so the fixture emails
+// genuinely exercise this.)
 async function seedOtp(destination: string, code = "123456", opts: Partial<{ attempts: number; expired: boolean }> = {}) {
   await db().insert(schema.authOtps).values({
     id: `otp_${newId("user")}`,
-    destination,
+    destination: destination.includes("@")
+      ? destination.trim().toLocaleLowerCase("en-US")
+      : destination,
     code,
     attempts: opts.attempts ?? 0,
     expiresAt: new Date(Date.now() + (opts.expired ? -1 : 1) * 600_000),
@@ -39,7 +45,7 @@ describe("auth verify route", () => {
   });
 
   it("signs up a brand-new email on first verify and creates a session", async () => {
-    const email = `${newId("user")}@verify.test`;
+    const email = `${newId("user").toLowerCase()}@verify.test`;
     await seedOtp(email);
     const res = await verify({ email, code: "123456", termsAccepted: true });
     expect(res.status).toBe(200);
@@ -53,7 +59,7 @@ describe("auth verify route", () => {
   });
 
   it("records consent against the versions the pages actually publish", async () => {
-    const email = `${newId("user")}@verify.test`;
+    const email = `${newId("user").toLowerCase()}@verify.test`;
     await seedOtp(email);
     const res = await verify({ email, code: "123456", termsAccepted: true });
     const { userId } = await res.json();
@@ -80,7 +86,7 @@ describe("auth verify route", () => {
     // `attempts: otp.attempts + 1` in JS off an unlocked SELECT meant twenty
     // parallel guesses all read 0 and all wrote 1 — so firing them at once cost
     // a single attempt and walked around the cap entirely.
-    const email = `${newId("user")}@verify.test`;
+    const email = `${newId("user").toLowerCase()}@verify.test`;
     await seedOtp(email);
     await Promise.all(
       Array.from({ length: 20 }, () =>
@@ -102,7 +108,7 @@ describe("auth verify route", () => {
   it("only one of two concurrent correct submissions can claim the code", async () => {
     // Consuming was a blind UPDATE, so both requests saw an unconsumed row and
     // both minted a session off one code.
-    const email = `${newId("user")}@verify.test`;
+    const email = `${newId("user").toLowerCase()}@verify.test`;
     await seedOtp(email);
     const results = await Promise.all([
       verify({ email, code: "123456", termsAccepted: true }),
@@ -116,7 +122,7 @@ describe("auth verify route", () => {
     // The code was checked against the phone and the user row was then created
     // carrying the email — an account minted around someone else's address.
     const mine = "+15555550123";
-    const theirs = `${newId("user")}@verify.test`;
+    const theirs = `${newId("user").toLowerCase()}@verify.test`;
     await seedOtp(mine);
     const res = await verify({
       phone: mine,
@@ -132,8 +138,50 @@ describe("auth verify route", () => {
     expect(rows).toHaveLength(0);
   });
 
+  it("treats an address as the same account whatever the capitalisation", async () => {
+    // auth/request stored the OTP under the address AS TYPED and auth/verify
+    // looked the user up with an exact match, so Foo@x.com and foo@x.com were
+    // two accounts. Signing in with the "wrong" capitalisation silently minted a
+    // second one — and for the admin account that is a 403 on /admin with
+    // nothing to explain it.
+    const lower = `case-${newId("user").toLowerCase()}@verify.test`;
+    const upper = lower.toUpperCase();
+
+    await seedOtp(lower);
+    const first = await verify({ email: lower, code: "123456", termsAccepted: true });
+    expect(first.status).toBe(200);
+    const { userId } = await first.json();
+
+    // Same human, shouting. Must land on the SAME account, not a new one.
+    await seedOtp(lower);
+    const second = await verify({ email: upper, code: "123456", termsAccepted: true });
+    expect(second.status).toBe(200);
+    expect((await second.json()).userId).toBe(userId);
+
+    const rows = await db()
+      .select({ id: schema.users.id, email: schema.users.email })
+      .from(schema.users)
+      .where(eq(schema.users.email, lower));
+    expect(rows).toHaveLength(1);
+    // stored folded, so a direct lookup by the typed form still finds it
+    expect(rows[0]!.email).toBe(lower);
+  });
+
+  it("finds the OTP even when the code was requested in another case", async () => {
+    // request and verify have to agree on the destination or the code appears
+    // to have expired the moment it is typed with different capitalisation.
+    const lower = `otpcase-${newId("user").toLowerCase()}@verify.test`;
+    await seedOtp(lower);
+    const res = await verify({
+      email: lower.replace("otpcase", "OtpCase"),
+      code: "123456",
+      termsAccepted: true,
+    });
+    expect(res.status).toBe(200);
+  });
+
   it("rejects a wrong code and counts the attempt", async () => {
-    const email = `${newId("user")}@verify.test`;
+    const email = `${newId("user").toLowerCase()}@verify.test`;
     await seedOtp(email);
     const res = await verify({ email, code: "654321", termsAccepted: true });
     expect(res.status).toBe(401);
@@ -146,28 +194,28 @@ describe("auth verify route", () => {
   });
 
   it("locks out after 5 failed attempts even with the right code", async () => {
-    const email = `${newId("user")}@verify.test`;
+    const email = `${newId("user").toLowerCase()}@verify.test`;
     await seedOtp(email, "123456", { attempts: 5 });
     const res = await verify({ email, code: "123456", termsAccepted: true });
     expect(res.status).toBe(401);
   });
 
   it("rejects an expired code", async () => {
-    const email = `${newId("user")}@verify.test`;
+    const email = `${newId("user").toLowerCase()}@verify.test`;
     await seedOtp(email, "123456", { expired: true });
     const res = await verify({ email, code: "123456", termsAccepted: true });
     expect(res.status).toBe(401);
   });
 
   it("requires terms acceptance", async () => {
-    const email = `${newId("user")}@verify.test`;
+    const email = `${newId("user").toLowerCase()}@verify.test`;
     await seedOtp(email);
     const res = await verify({ email, code: "123456" });
     expect(res.status).toBe(422);
   });
 
   it("refuses a suspended account at the door", async () => {
-    const email = `${newId("user")}@verify.test`;
+    const email = `${newId("user").toLowerCase()}@verify.test`;
     await db()
       .insert(schema.users)
       .values({ id: newId("user"), email, status: "suspended" });
