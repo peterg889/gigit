@@ -145,7 +145,7 @@ export default async function OnboardingPage({
         ? profiles.live.performer
         : profiles.live.tech;
   if (existing) {
-    const nextHref = role === "venue" ? "/slots/new" : role === "performer" ? "/slots" : "/bookings";
+    const nextHref = role === "venue" ? "/slots/new" : role === "performer" ? "/slots" : "/techs";
     const justJoined = query.welcome === "1";
     // Read the STORED boolean — never recompute from the number, so a future
     // change to the founding limit never revokes an existing member. Only acts
@@ -217,8 +217,8 @@ export default async function OnboardingPage({
                 { name: "homeMetro", label: "Home city or metro area", required: true, placeholder: "e.g. Milwaukee" },
                 { name: "bio", label: "What should a booker know?", type: "textarea" },
                 { name: "genreTags", label: "Genres (comma-separated)" },
-                { name: "rateMinCents", label: "Typical rate from ($)", type: "number" },
-                { name: "rateMaxCents", label: "Typical rate to ($)", type: "number" },
+                { name: "rateMinCents", label: "Typical rate from, in dollars", type: "number" },
+                { name: "rateMaxCents", label: "Typical rate to, in dollars", type: "number" },
                 { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: 30 },
                 { name: "setLengthsMinutes", label: "Set lengths in minutes", placeholder: "45, 60, 120" },
                 {
@@ -320,13 +320,17 @@ export default async function OnboardingPage({
             <ApiForm
               endpoint="/api/techs"
               submitLabel="Create sound tech profile"
-              redirectTo="/bookings"
+              // Not /bookings: a tech who just signed up has none, and can't
+              // have any — sound jobs only exist once a booking is confirmed and
+              // someone posts one. /techs is the board they'd actually apply
+              // from, and it's where the profile they just made now appears.
+              redirectTo="/techs"
               fields={[
                 { name: "name", label: "Name or business name", required: true },
                 { name: "gear", label: "Gear", type: "select", options: ["none", "partial", "full_rig"], required: true },
                 { name: "bio", label: "Experience and typical rooms", type: "textarea" },
-                { name: "rateLaborCents", label: "Labor rate ($)", type: "number" },
-                { name: "rateWithRigCents", label: "Rate with rig ($)", type: "number" },
+                { name: "rateLaborCents", label: "Labor rate, in dollars", type: "number" },
+                { name: "rateWithRigCents", label: "Rate with rig, in dollars", type: "number" },
                 { name: "travelRadiusMiles", label: "Travel radius (miles)", type: "number", defaultValue: 30 },
               ]}
             />

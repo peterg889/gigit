@@ -154,7 +154,9 @@ export const slotCreateSchema = z
     notes: z.string().max(2000).optional(),
   })
   .refine((s) => new Date(s.startsAt).getTime() > Date.now(), {
-    message: "slot must be in the future",
+    // These refines carry no `path`, so `describeIssues` renders the message
+    // alone with no field label in front of it — write them as whole sentences.
+    message: "That date has already passed. Pick a date in the future.",
   });
 
 // Recurring series (PRD F2.2): the first occurrence anchors the pattern.
@@ -176,7 +178,7 @@ export const seriesCreateSchema = z
     notes: z.string().max(2000).optional(),
   })
   .refine((s) => new Date(s.startsAt).getTime() > Date.now(), {
-    message: "first occurrence must be in the future",
+    message: "The first date has already passed. Pick a date in the future.",
   });
 
 export const applicationCreateSchema = z.object({
@@ -225,7 +227,7 @@ export const reviewCreateSchema = z.object({
   ratings: z
     .record(z.string(), z.number().int().min(1).max(5))
     .refine((r) => typeof r.overall === "number", {
-      message: "ratings.overall is required",
+      message: "pick an overall rating.",
     }),
   body: z.string().max(2000).default(""),
 });

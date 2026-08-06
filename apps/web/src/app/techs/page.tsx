@@ -92,13 +92,18 @@ export default async function TechsPage() {
     .orderBy(asc(schema.slots.startsAt), asc(schema.techSubslots.createdAt))
     .limit(50);
 
+  // This is the only tech-labelled destination in the nav, and onboarding now
+  // lands a new tech here — so for someone who runs sound it has to read as
+  // their board, not as a page about hiring somebody else.
+  const viewerRunsSound = Boolean(myTech ?? ownedTech);
+
   return (
     <div>
       <h1>Sound techs</h1>
       <p className="muted">
-        Find local live engineers by their experience, rates, equipment, and
-        travel range. Venues and acts can contact them directly when a night
-        needs sound.
+        {viewerRunsSound
+          ? "Open sound work in the scene, and the roster you're on. Venues and acts browse this directory when a night needs an engineer."
+          : "Find local live engineers by their experience, rates, equipment, and travel range. Venues and acts can contact them directly when a night needs sound."}
       </p>
       <div className="card">
         <h2>Gigs that need sound</h2>

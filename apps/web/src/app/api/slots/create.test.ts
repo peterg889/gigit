@@ -102,7 +102,7 @@ describe("posting an open date", () => {
     expect(error.message).toMatch(/address/i);
   });
 
-  it("refuses a date in the past", async () => {
+  it("refuses a date in the past, in words a venue owner would use", async () => {
     const venue = await makeVenue({ name: "Past Room" });
     as(venue.ownerUserId);
     const res = await post({
@@ -112,6 +112,13 @@ describe("posting an open date", () => {
       budgetCents: 30_000,
     });
     expect(res.status).toBe(422);
+    // Picking last Tuesday by mistake is the single most likely way to fail this
+    // form, and the refine carries no `path`, so whatever it says is shown to the
+    // venue verbatim. It used to say "slot must be in the future" — schema prose,
+    // naming a field the form never shows.
+    const { error } = await res.json();
+    expect(error.message).toMatch(/already passed/i);
+    expect(error.message).not.toMatch(/\bslot\b|startsAt/i);
   });
 
   it("returns a clean conflict when the date passes at the persistence boundary", async () => {
