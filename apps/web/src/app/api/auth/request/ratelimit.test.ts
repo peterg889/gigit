@@ -1,5 +1,6 @@
-import { afterAll, describe, expect, it } from "vitest";
-import { closeDb } from "@gigit/db";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { closeDb, db, schema } from "@gigit/db";
+import { notLike } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { POST } from "./route";
 
@@ -24,6 +25,23 @@ const post = (body: unknown, ip?: string) =>
  * production channel gate is inactive and codes insert normally.
  */
 describe("auth/request rate limits", () => {
+  /**
+   * The per-destination and per-IP keys are already unique per run, but the
+   * third cap is a PLATFORM-wide hourly ceiling — so every OTP any other test
+   * minted counts against it, and on a long-lived dev database the rows pile up
+   * across runs until the first `expect(200)` here gets a 429 and the failure
+   * points at rate limiting rather than at the real cause.
+   *
+   * Test files run sequentially and none needs another's codes, so clearing
+   * everything that isn't ours makes the global counter mean what this file
+   * assumes it means.
+   */
+  beforeAll(async () => {
+    await db()
+      .delete(schema.authOtps)
+      .where(notLike(schema.authOtps.destination, `%${runId}%`));
+  });
+
   afterAll(async () => {
     await closeDb();
   });

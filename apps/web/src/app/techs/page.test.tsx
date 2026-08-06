@@ -5,6 +5,7 @@ import {
   closeDb,
   db,
   makePerformer,
+  makeTech,
   makeVenue,
   schema,
 } from "@gigit/db";
@@ -27,6 +28,7 @@ describe("sound job marketplace eligibility", () => {
   const slotIds: string[] = [];
   const venueIds: string[] = [];
   const performerIds: string[] = [];
+  const techIds: string[] = [];
   const userIds: string[] = [];
 
   async function seedJob(
@@ -129,6 +131,7 @@ describe("sound job marketplace eligibility", () => {
     await d
       .delete(schema.performers)
       .where(inArray(schema.performers.id, performerIds));
+    await d.delete(schema.techs).where(inArray(schema.techs.id, techIds));
     await d.delete(schema.venues).where(inArray(schema.venues.id, venueIds));
     await d.delete(schema.users).where(inArray(schema.users.id, userIds));
     vi.unstubAllGlobals();
@@ -147,5 +150,31 @@ describe("sound job marketplace eligibility", () => {
     expect(html).not.toContain("PAST SOUND JOB");
     expect(html).not.toContain("HIDDEN VENUE SOUND JOB");
     expect(html).not.toContain("SUSPENDED OWNER SOUND JOB");
+  });
+
+  /**
+   * /techs is the only tech-labelled destination in the global nav, and
+   * onboarding now lands a newly-created tech here rather than on /bookings,
+   * which they cannot have anything on. So it can't open by explaining how to
+   * hire an engineer — to a tech, that's a page about somebody else.
+   */
+  describe("who the page is addressed to", () => {
+    it("reads as a directory to a venue or act shopping for sound", async () => {
+      sessionUserId.mockResolvedValue(null);
+      const html = renderToStaticMarkup(await TechsPage());
+      expect(html).toMatch(/Find local live engineers/i);
+      expect(html).not.toMatch(/the roster you&#x27;re on/i);
+    });
+
+    it("reads as their own board to someone who runs sound", async () => {
+      const tech = await makeTech({ name: "ADDRESSED TECH" });
+      userIds.push(tech.ownerUserId);
+      techIds.push(tech.id);
+      sessionUserId.mockResolvedValue(tech.ownerUserId);
+
+      const html = renderToStaticMarkup(await TechsPage());
+      expect(html).toMatch(/the roster you&#x27;re on/i);
+      expect(html).not.toMatch(/Find local live engineers/i);
+    });
   });
 });

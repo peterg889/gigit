@@ -116,3 +116,32 @@ export async function makePerformer(overrides: PerformerOverrides = {}) {
     });
   return { id, ownerUserId };
 }
+
+export interface TechOverrides {
+  id?: string;
+  ownerUserId?: string;
+  name?: string;
+  gear?: string;
+  bio?: string;
+  status?: string;
+}
+
+/**
+ * A sound tech. Like the other two, `techs_owner_uq` allows one live profile
+ * per user, so an owner is created unless you pass one.
+ */
+export async function makeTech(overrides: TechOverrides = {}) {
+  const ownerUserId = overrides.ownerUserId ?? (await makeUser());
+  const id = overrides.id ?? newId("tech");
+  await db()
+    .insert(schema.techs)
+    .values({
+      id,
+      ownerUserId,
+      name: overrides.name ?? "Test Sound Tech",
+      gear: overrides.gear ?? "full_rig",
+      ...(overrides.bio !== undefined ? { bio: overrides.bio } : {}),
+      ...(overrides.status ? { status: overrides.status } : {}),
+    });
+  return { id, ownerUserId };
+}
