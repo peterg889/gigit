@@ -182,6 +182,22 @@ export default async function OnboardingPage({
           )}
           <Link href="/me">Edit profile</Link>
         </div>
+        {/*
+          The only moment we have an act's full attention, and it used to spend
+          it pointing at the gig feed. An act who just filled the form has no
+          media by construction — `welcome=1` is set by the redirect off
+          creation — so this asks once, here, rather than never.
+        */}
+        {justJoined && role === "performer" && (
+          <div className="card">
+            <p>
+              One more thing worth two minutes: a photo and a track. A booker
+              deciding between two acts they haven&rsquo;t seen picks the one
+              they can hear.
+            </p>
+            <Link href="/me">Add photos, audio, or video</Link>
+          </div>
+        )}
       </div>
     );
   }

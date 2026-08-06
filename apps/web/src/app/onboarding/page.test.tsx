@@ -36,9 +36,12 @@ vi.mock("@/lib/auth", () => ({
 
 import OnboardingPage from "./page";
 
-async function renderOnboarding(role?: string) {
+async function renderOnboarding(
+  role?: string,
+  extra: { welcome?: string } = {},
+) {
   return renderToStaticMarkup(
-    await OnboardingPage({ searchParams: Promise.resolve({ role }) }),
+    await OnboardingPage({ searchParams: Promise.resolve({ role, ...extra }) }),
   );
 }
 
@@ -79,5 +82,44 @@ describe("onboarding account capabilities", () => {
     expect(html).toContain("profile is saved but not active");
     expect(html).toContain("Edit profile");
     expect(html).not.toContain("Find a gig");
+  });
+
+  /**
+   * The signup redirect sets `welcome=1`, so this is the one screen an act sees
+   * with nothing else competing for attention — and it used to spend it pointing
+   * at a gig feed that, on a young marketplace, is usually empty. An act who
+   * just submitted the form has no media by construction.
+   */
+  it("asks a brand-new act for a photo and a track", async () => {
+    const act = { name: "Fresh Act", status: "live", foundingMember: false };
+    controls.capabilities.owned.performer = act;
+    controls.capabilities.live.performer = act;
+
+    const html = await renderOnboarding("performer", { welcome: "1" });
+    expect(html).toMatch(/Add photos, audio, or video/i);
+  });
+
+  it("does not nag an act who came back to the page later", async () => {
+    const act = { name: "Returning Act", status: "live", foundingMember: false };
+    controls.capabilities.owned.performer = act;
+    controls.capabilities.live.performer = act;
+
+    const html = await renderOnboarding("performer");
+    expect(html).not.toMatch(/Add photos, audio, or video/i);
+  });
+
+  /**
+   * A sound tech has no bookings the moment they sign up and cannot have any —
+   * a sound job only exists once a booking is confirmed and a party posts one.
+   * Sending them to /bookings guaranteed an empty page.
+   */
+  it("sends a sound tech to the board they can actually act on", async () => {
+    const tech = { name: "Fresh Tech", status: "live" };
+    controls.capabilities.owned.tech = tech;
+    controls.capabilities.live.tech = tech;
+
+    const html = await renderOnboarding("tech", { welcome: "1" });
+    expect(html).toContain('href="/techs"');
+    expect(html).not.toContain('href="/bookings"');
   });
 });
