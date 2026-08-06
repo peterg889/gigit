@@ -125,6 +125,30 @@ describe("tech cancellation route parent availability", () => {
       params: Promise.resolve({ id: subslotId }),
     });
 
+  /**
+   * Cancelling is allowed for exactly two people — the side paying and the tech
+   * who was booked — and neither half of that predicate had a test. These jobs
+   * are `payer: "venue"`, so the act on the same booking is a party to the gig
+   * and still has no business cancelling the sound the venue is paying for.
+   */
+  it("refuses the non-paying side of the same booking, and leaves the job booked", async () => {
+    const state = async () =>
+      (
+        await db()
+          .select({ state: schema.techSubslots.state, techId: schema.techSubslots.techId })
+          .from(schema.techSubslots)
+          .where(eq(schema.techSubslots.id, closedSubslotId))
+      )[0];
+
+    const before = await state();
+    sessionUserId.mockResolvedValue(performerOwnerId);
+    const response = await cancel(closedSubslotId);
+    sessionUserId.mockResolvedValue(techOwnerId);
+
+    expect(response.status).toBe(403);
+    expect(await state()).toEqual(before);
+  });
+
   it("still lets an assigned tech reopen a future confirmed job", async () => {
     const response = await cancel(futureSubslotId);
     expect(response.status).toBe(200);

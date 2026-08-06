@@ -123,6 +123,43 @@ describe("sound-job applicant booking route", () => {
     await closeDb();
   });
 
+  /**
+   * `isPayer` is the whole authorization story for this route, and nothing
+   * tested it. This job is `payer: "venue"`, so the act on the very same booking
+   * is the most plausible wrong party there is — they can see the applicants and
+   * have every reason to want one hired, but the venue is the side who pays.
+   *
+   * Asserted as "nothing moved" rather than "state is open" so the test does not
+   * quietly depend on running before the one that books.
+   */
+  it("refuses the non-paying side of the same booking, and changes nothing", async () => {
+    const snapshot = async () => ({
+      subslot: (
+        await db()
+          .select({ state: schema.techSubslots.state, techId: schema.techSubslots.techId })
+          .from(schema.techSubslots)
+          .where(eq(schema.techSubslots.id, subslotId))
+      )[0],
+      applications: await db()
+        .select({ techId: schema.techSubslotApplications.techId, status: schema.techSubslotApplications.status })
+        .from(schema.techSubslotApplications)
+        .where(eq(schema.techSubslotApplications.subslotId, subslotId))
+        .orderBy(schema.techSubslotApplications.techId),
+    });
+
+    const before = await snapshot();
+    as(performerOwner);
+    const response = await book(subslotId, firstTechId);
+
+    expect(response.status).toBe(403);
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it("refuses a stranger with no stake in the booking at all", async () => {
+    as(secondTechOwner); // an applicant — interested, but not the payer
+    expect((await book(subslotId, secondTechId)).status).toBe(403);
+  });
+
   it("books the selected pending applicant and truthfully closes the loser", async () => {
     as(venueOwner);
     const response = await book(subslotId, secondTechId);

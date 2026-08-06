@@ -78,7 +78,10 @@ export default async function HomePage() {
             <div className="button-row">
               {venue && <Link className="btn" href="/slots/new">Post an open date</Link>}
               {performer && <Link className="btn" href="/slots">Find a gig</Link>}
-              {tech && <Link className="btn" href="/bookings">View sound work</Link>}
+              {/* /techs, not /bookings: sound work only exists once a booking is
+                  confirmed and a party posts a job, so a tech's bookings page is
+                  empty until someone else acts. /techs is where the jobs are. */}
+              {tech && <Link className="btn" href="/techs">View sound work</Link>}
               {!venue && !performer && !tech && (
                 <Link className="btn" href="/me">Review profiles</Link>
               )}
