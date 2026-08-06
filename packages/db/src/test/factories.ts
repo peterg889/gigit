@@ -91,6 +91,7 @@ export interface PerformerOverrides {
   kind?: string;
   name?: string;
   homeMetro?: string;
+  bio?: string;
   techNeeds?: typeof schema.performers.$inferInsert.techNeeds;
   status?: string;
 }
@@ -107,6 +108,9 @@ export async function makePerformer(overrides: PerformerOverrides = {}) {
       kind: overrides.kind ?? "band",
       name: overrides.name ?? "Test Band",
       homeMetro: overrides.homeMetro ?? TEST_METRO,
+      // Whether an act has written a bio is behaviour now, not decoration: the
+      // public profile prompts the owner for one and stays silent to a visitor.
+      ...(overrides.bio !== undefined ? { bio: overrides.bio } : {}),
       techNeeds: overrides.techNeeds ?? { inputs: 4, micsNeeded: 2 },
       ...(overrides.status ? { status: overrides.status } : {}),
     });

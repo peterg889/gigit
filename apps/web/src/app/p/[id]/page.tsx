@@ -8,6 +8,7 @@ import {
 import { and, asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { sessionUserId } from "@/lib/session";
 import { publicMediaUrl } from "@/lib/storage";
 import { ACT_KIND_LABEL } from "@/lib/labels";
 import { formatAreaName } from "@/lib/date-time";
@@ -98,6 +99,19 @@ export default async function PerformerPage({
   const audio = mediaWithUrls.filter((m) => m.kind === "audio");
   const embeds = mediaWithUrls.filter((m) => m.kind === "video_embed");
 
+  // This is the page an act SENDS to a venue. A new one used to open with two
+  // apologies — "has not added a bio yet", "has not added photos, audio, video,
+  // or reviews yet" — which is the worst possible thing to say to the person
+  // deciding whether to book them. Nobody but the owner can act on either, so
+  // only the owner is told; a visitor sees what's there and nothing about what
+  // isn't.
+  const isOwner = (await sessionUserId()) === p.ownerUserId;
+  const nothingToShow =
+    images.length === 0 &&
+    audio.length === 0 &&
+    embeds.length === 0 &&
+    visible.length === 0;
+
   return (
     <div>
       <div className="card">
@@ -120,7 +134,16 @@ export default async function PerformerPage({
           {formatAreaName(p.homeMetro)} · travels {p.travelRadiusMiles} miles
           {p.genreTags.length > 0 && <> · {p.genreTags.join(", ")}</>}
         </p>
-        <p>{p.bio || <span className="muted">This act has not added a bio yet.</span>}</p>
+        {p.bio ? (
+          <p>{p.bio}</p>
+        ) : (
+          isOwner && (
+            <p className="muted">
+              No bio yet — <Link href="/me">add a few lines</Link> so a booker
+              knows who they&rsquo;re looking at.
+            </p>
+          )
+        )}
         {p.rateMinCents != null && p.rateMaxCents != null && (
           <p className="muted">
             Typical rate:{" "}
@@ -132,9 +155,15 @@ export default async function PerformerPage({
         )}
       </div>
 
-      {images.length === 0 && audio.length === 0 && embeds.length === 0 && visible.length === 0 && (
-        <div className="card muted">
-          This act has not added photos, audio, video, or reviews yet.
+      {nothingToShow && isOwner && (
+        <div className="card">
+          <p>
+            This is the page you send to a venue, and right now it&rsquo;s just
+            words. A photo and one track do more than any bio.
+          </p>
+          <Link className="btn" href="/me">
+            Add photos, audio, or video
+          </Link>
         </div>
       )}
 
