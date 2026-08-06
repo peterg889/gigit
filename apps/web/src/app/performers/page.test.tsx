@@ -101,4 +101,24 @@ describe("performer invite dates", () => {
     expect(html).not.toContain(`value="${offeredSlotId}"`);
     expect(html).not.toContain(`value="${confirmingSlotId}"`);
   });
+
+  /**
+   * "Find an act" is one of four discovery links in the global nav, so every act
+   * clicks it eventually. The gate is correct — only a venue may invite or
+   * message, which is what stops cold DMs — but it used to answer a band with a
+   * "Set up your venue" button, which is not a thing a band wants to do.
+   */
+  it("does not tell an act to go set up a venue", async () => {
+    sessionUserId.mockResolvedValue(performer.ownerUserId);
+    const html = renderToStaticMarkup(
+      await PerformerSearchPage({ searchParams: Promise.resolve({}) }),
+    );
+
+    expect(html).not.toContain("/onboarding?role=venue");
+    expect(html).not.toMatch(/Set up your venue/i);
+    // Sent somewhere that is actually theirs instead.
+    expect(html).toContain('href="/slots"');
+    // And still gated: no roster, no invite form.
+    expect(html).not.toContain(`value="${freeSlotId}"`);
+  });
 });

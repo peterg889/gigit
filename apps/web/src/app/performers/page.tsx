@@ -24,6 +24,12 @@ export default async function PerformerSearchPage({
   const profiles = userId ? await profileCapabilitiesOwnedBy(userId) : null;
   const venue = profiles?.live.venue ?? null;
   const ownedVenue = profiles?.owned.venue ?? null;
+  // An act reaching this page came through "Find an act" in the nav, which is
+  // one of four discovery links and the only one that isn't theirs. Telling a
+  // band to go set up a venue is a dead end; point them at the two pages that
+  // are. (The gate itself stays: this page invites and messages acts, and only
+  // a venue may open a conversation — F5.1, no cold DMs.)
+  const act = profiles?.live.performer ?? profiles?.owned.performer ?? null;
   if (!venue)
     return (
       <div className="card">
@@ -33,6 +39,18 @@ export default async function PerformerSearchPage({
             <p>Your venue profile must be active to invite or message acts.</p>
             <Link href="/account">Review your account</Link>{" "}
             <Link href="/help">Contact support</Link>
+          </>
+        ) : act ? (
+          <>
+            <p>
+              This page is how venues search for acts to book — so it's the one
+              part of EightGig that isn't for you. Venues find you here when your
+              act profile is live.
+            </p>
+            <Link className="btn" href="/slots">
+              See open gigs
+            </Link>{" "}
+            <Link href="/venues">Browse the rooms</Link>
           </>
         ) : (
           <>
