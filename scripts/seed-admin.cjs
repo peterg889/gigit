@@ -18,10 +18,12 @@
  *     <account>.dkr.ecr.<region>.amazonaws.com/gigit-worker-prod:<sha> \
  *     node seed-admin.cjs admin@example.com
  *
- * The email is stored LOWERCASE on purpose. `authRequestSchema` is a bare
- * `z.string().email()` with no case folding and `auth/verify` matches the
- * address exactly as typed, so a mixed-case sign-in would miss this row and mint
- * a second, non-admin account. Sign in with the lowercase form.
+ * The email is stored LOWERCASE, which is now what sign-in itself does:
+ * `signInEmailSchema` folds case on both the request and verify sides, and
+ * migration 0032 backfilled existing rows behind a unique index on
+ * `lower(email)`. Folding here keeps this script agreeing with that index —
+ * before 0032 it also stopped a mixed-case sign-in from missing this row and
+ * minting a second, non-admin account.
  */
 const { Pool } = require("pg");
 const { newId } = require("@gigit/domain");
