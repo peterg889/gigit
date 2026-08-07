@@ -20,6 +20,32 @@ describe("notification copy", () => {
     },
   );
 
+  it("welcomes a new act identically whether or not the payment rail is on", () => {
+    // The welcome makes no claim about money, so it deliberately has no
+    // DISCOVERY_OVERRIDES twin. Assert the two modes are byte-identical rather
+    // than trusting that nobody later adds an escrow/payout clause to the base
+    // copy, which would then ship as-is with PAYMENTS_ENABLED false in prod.
+    const vars = { url: "https://x.test" };
+    const on = renderTemplate("act_welcome", vars, true);
+    const off = renderTemplate("act_welcome", vars, false);
+    expect(off).toEqual(on);
+    expect(on.subject).toBe("Your act page is live");
+    expect(on.body).toContain("https://x.test/me");
+    // Cross-mode identity alone cannot catch the failure described above: a
+    // money clause added to the BASE copy is identical in both modes by
+    // construction, so `off === on` stays green while the claim ships. With
+    // PAYMENTS_ENABLED false in production this is the copy that actually goes
+    // out, so the body itself has to be checked for money vocabulary.
+    for (const rendered of [on, off])
+      expect(rendered.body.toLowerCase()).not.toMatch(
+        /escrow|payout|paid out|we hold|deposit|refund|charge/,
+      );
+    for (const rendered of [on, off]) {
+      expect(rendered.subject).not.toMatch(/\{\w+\}/);
+      expect(rendered.body).not.toMatch(/\{\w+\}/);
+    }
+  });
+
   it("uses role-neutral conversation copy with a direct inbox link", () => {
     const vars = { threadId: "thr_copy_test" };
     const inquiry = renderTemplate("new_inquiry", vars);
@@ -80,6 +106,9 @@ describe("every template resolves", () => {
       new_inquiry: "/inbox/thr_1",
       slot_match: "/slots/slt_1",
       new_act: "/p/prf_1",
+      // The welcome's whole job is the upload; /me is the only act-facing
+      // upload surface, and /p/{id} (the public page) has no editor on it.
+      act_welcome: "/me",
     };
     for (const [name, path] of Object.entries(deepLinked))
       expect(renderTemplate(name, SUPPLIED).body).toContain(

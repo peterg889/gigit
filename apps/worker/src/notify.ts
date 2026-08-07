@@ -154,6 +154,17 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "That sound job closed",
     body: "The gig changed or closed before a tech was booked, so your application is closed. See other open sound jobs: {url}/techs",
   },
+  act_welcome: {
+    // The only message an act gets about itself on day one. Until this existed
+    // a new act's email address was used for exactly one thing ever — the
+    // sign-in code — and the gig feed it lands on is usually empty, so this is
+    // the one channel that can carry it to a bookable profile. Copy is lifted
+    // from what the product already says about a media-less page
+    // (apps/web/src/app/p/[id]/page.tsx): claiming the page is "ready" would
+    // contradict that and defuse its own ask.
+    subject: "Your act page is live",
+    body: "It's the page you send to a venue, and right now it's just words. A photo and one track do more than any bio — add photos, audio, or video: {url}/me",
+  },
   media_rejected: {
     subject: "An upload didn't pass",
     body: "A file you uploaded didn't pass our checks (its contents don't match its type). Try re-exporting and uploading again: {url}/me",
@@ -490,6 +501,23 @@ export async function notifySlotVenue(slotId: string, template: string): Promise
     .innerJoin(schema.venues, eq(schema.slots.venueId, schema.venues.id))
     .where(eq(schema.slots.id, slotId));
   if (row) await notifyUser(row.owner, template, { slotId });
+}
+
+/**
+ * A performer-subject event → the act's OWN owner. `performer.created` only
+ * ever fanned outward to venues (new_act), so the subject id was never resolved
+ * back to `performers.ownerUserId` and the act itself heard nothing.
+ */
+export async function notifyPerformerOwner(
+  performerId: string,
+  template: string,
+): Promise<void> {
+  if (!performerId) return;
+  const [row] = await db()
+    .select({ owner: schema.performers.ownerUserId })
+    .from(schema.performers)
+    .where(eq(schema.performers.id, performerId));
+  if (row) await notifyUser(row.owner, template);
 }
 
 /** An application outcome → the ACT that applied (not the venue). */

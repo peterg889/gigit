@@ -447,4 +447,56 @@ describe("worker notification routing", () => {
       }),
     );
   });
+
+  it("welcomes the act's own owner when a performer profile is created", async () => {
+    const sinks = await drainAndCaptureSinks([
+      {
+        kind: "performer.created",
+        subjectType: "performer",
+        subjectId: performerId,
+        actor: bandOwner,
+        payload: { foundingNumber: 1, foundingMember: true },
+      },
+    ]);
+    // performer.created only ever fanned OUT to venues, so the person who just
+    // built the profile was the one party the event never reached.
+    expect(sinks).toContainEqual(
+      expect.objectContaining({
+        userId: bandOwner,
+        template: "act_welcome",
+        subject: "Your act page is live",
+      }),
+    );
+  });
+
+  it("does not welcome an act whose owner is no longer active", async () => {
+    const suspendedOwner = newId("user");
+    const suspendedPerformer = newId("performer");
+    await db().insert(schema.users).values({
+      id: suspendedOwner,
+      email: `${suspendedOwner}@t.test`,
+      status: "suspended",
+    });
+    await db().insert(schema.performers).values({
+      id: suspendedPerformer,
+      ownerUserId: suspendedOwner,
+      kind: "band",
+      name: "Suspended Band",
+      homeMetro: "route-tv",
+    });
+
+    const sinks = await drainAndCaptureSinks([
+      {
+        kind: "performer.created",
+        subjectType: "performer",
+        subjectId: suspendedPerformer,
+        actor: suspendedOwner,
+        payload: { foundingNumber: 2, foundingMember: true },
+      },
+    ]);
+    // The outbox row can outlive the account: a profile created and then
+    // suspended must not get an onboarding nudge to a page it can no longer use.
+    expect(sinks.some((s) => s.userId === suspendedOwner)).toBe(false);
+    expect(sinks.some((s) => s.template === "act_welcome")).toBe(false);
+  });
 });

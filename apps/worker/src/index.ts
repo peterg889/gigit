@@ -38,6 +38,7 @@ import {
   pendingReviewAudience,
   notifyApplicationPerformer,
   notifyTechApplicationApplicant,
+  notifyPerformerOwner,
   notifySlotVenue,
   notifySubslotParties,
   notifySupportOperator,
@@ -577,6 +578,16 @@ async function dispatchEvent(
       await notifyUser(userId, "new_act", { performerId: row.subject_id });
     if (userIds.length > 0)
       log("alerts.new_act", { performer: row.subject_id, notified: userIds.length });
+    // ...and then the act itself. LAST, deliberately: this handler has no
+    // per-effect checkpoint, so one venue send throwing (an SES throttle
+    // mid-fan-out is the ordinary case) re-dispatches the whole row — sending
+    // the welcome after the fan-out is what stops that retry from delivering a
+    // second copy. No dedup marker, same as new_act above: there is one
+    // performer.created row per act (POST /api/performers 409s on a second
+    // profile), and unlike the nightly slot_quiet nudge the duplicate is
+    // bounded. A missed welcome is the worse failure here — it carries the only
+    // profile-completion ask an act gets on an empty feed.
+    await notifyPerformerOwner(row.subject_id, "act_welcome");
   }
 
   // A support escalation is not complete until a person knows about it.
