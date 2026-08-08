@@ -1,20 +1,13 @@
 import { ulid } from "ulid";
 
+/**
+ * The brand on `newId`'s return type. Thirteen per-entity aliases (`UserId`,
+ * `VenueId`, …) used to sit here; none was ever imported anywhere, because ids
+ * cross the Drizzle boundary as plain `text` columns and come back as `string`.
+ * The brand that survives is the one doing work — it keeps `newId("venue")`
+ * from being silently accepted where a slot id belongs.
+ */
 export type Id<T extends string> = string & { readonly __brand: T };
-
-export type UserId = Id<"user">;
-export type RoleId = Id<"role">;
-export type PerformerId = Id<"performer">;
-export type VenueId = Id<"venue">;
-export type TechId = Id<"tech">;
-export type SlotId = Id<"slot">;
-export type ApplicationId = Id<"application">;
-export type BookingId = Id<"booking">;
-export type ThreadId = Id<"thread">;
-export type MessageId = Id<"message">;
-export type MediaId = Id<"media">;
-export type SeriesId = Id<"series">;
-export type SupportRequestId = Id<"supportRequest">;
 
 const prefixes = {
   user: "usr",

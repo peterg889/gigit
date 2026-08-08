@@ -1,7 +1,7 @@
 import { db, schema } from "@gigit/db";
 import { desc, eq, or } from "drizzle-orm";
 import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
-import { fail, ok } from "@/lib/respond";
+import { ok } from "@/lib/respond";
 
 export async function GET() {
   try {

@@ -186,7 +186,9 @@ async function main() {
   await boss.work(RECONCILE_QUEUE, async () => {
     const mismatches = await reconcileMoney();
     // Emit on BOTH paths: a zero clears the alarm once the books balance again.
-    await emitCountMetric("MoneyMismatches", mismatches.length).catch((err) =>
+    await putMetrics([
+      { name: "MoneyMismatches", value: mismatches.length, unit: "Count" },
+    ]).catch((err) =>
       log("reconcile.metric_error", { err: String(err) }),
     );
     if (mismatches.length > 0) {
@@ -781,7 +783,10 @@ async function reconcileLoop(boss: PgBoss) {
         log("outbox.DEAD_LETTERS", { count: dead });
         Sentry.captureMessage(`outbox has ${dead} dead-lettered event(s)`, "error");
       }
-      await emitOutboxMetrics(lag, dead);
+      await putMetrics([
+        { name: "OutboxLagMs", value: lag, unit: "Milliseconds" },
+        { name: "DeadLetteredEvents", value: dead, unit: "Count" },
+      ]);
     } catch {
       /* health check must never kill the loop */
     }
@@ -803,47 +808,30 @@ let cloudwatch: CloudWatchClient | undefined;
  * does not add up" paged nobody. Dead letters and lag were already safe because
  * they go through CloudWatch.
  */
-async function emitCountMetric(metricName: string, value: number): Promise<void> {
+/**
+ * CloudWatch custom metrics. Both callers shared the stage guard, the lazy
+ * client, the namespace and the Stage dimension, and differed only in which
+ * datapoints they sent — so the two emitters were the same function with the
+ * MetricData array hardcoded. One PutMetricData call per invocation either way:
+ * batching is the point of the array, not a detail to preserve.
+ *
+ * The stage guard is what keeps local and test runs from talking to CloudWatch.
+ */
+async function putMetrics(
+  metrics: { name: string; value: number; unit: "Count" | "Milliseconds" }[],
+): Promise<void> {
   const stage = process.env.GIGIT_STAGE;
   if (!stage) return;
   cloudwatch ??= new CloudWatchClient({});
   await cloudwatch.send(
     new PutMetricDataCommand({
       Namespace: "Gigit",
-      MetricData: [
-        {
-          MetricName: metricName,
-          Value: value,
-          Unit: "Count",
-          Dimensions: [{ Name: "Stage", Value: stage }],
-        },
-      ],
-    }),
-  );
-}
-
-async function emitOutboxMetrics(lagMs: number, deadLettered: number): Promise<void> {
-  const stage = process.env.GIGIT_STAGE;
-  if (!stage) return;
-  cloudwatch ??= new CloudWatchClient({});
-  const dimensions = [{ Name: "Stage", Value: stage }];
-  await cloudwatch.send(
-    new PutMetricDataCommand({
-      Namespace: "Gigit",
-      MetricData: [
-        {
-          MetricName: "OutboxLagMs",
-          Value: lagMs,
-          Unit: "Milliseconds",
-          Dimensions: dimensions,
-        },
-        {
-          MetricName: "DeadLetteredEvents",
-          Value: deadLettered,
-          Unit: "Count",
-          Dimensions: dimensions,
-        },
-      ],
+      MetricData: metrics.map((m) => ({
+        MetricName: m.name,
+        Value: m.value,
+        Unit: m.unit,
+        Dimensions: [{ Name: "Stage", Value: stage }],
+      })),
     }),
   );
 }

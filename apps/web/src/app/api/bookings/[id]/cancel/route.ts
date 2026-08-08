@@ -1,11 +1,8 @@
 import {
   ConcurrentUpdateError,
   IllegalTransitionError,
-  db,
   runBookingTransition,
-  schema,
 } from "@gigit/db";
-import { eq } from "drizzle-orm";
 import { loadBookingForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 

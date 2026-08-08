@@ -1,6 +1,5 @@
 import { newId, reviewCreateSchema } from "@gigit/domain";
 import { appendEvent, db, pgErrorCode, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
 import { loadSubslotForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 

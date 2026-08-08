@@ -1,5 +1,5 @@
 import { performerOwnedBy, requireUser, respondError, techOwnedBy, venueOwnedBy } from "@/lib/auth";
-import { fail, ok } from "@/lib/respond";
+import { ok } from "@/lib/respond";
 
 export async function GET() {
   try {

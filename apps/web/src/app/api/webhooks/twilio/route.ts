@@ -12,6 +12,7 @@ import {
   supportTriage,
 } from "@gigit/db";
 import { eq } from "drizzle-orm";
+import { venueOwnedBy } from "@/lib/auth";
 import { venueLocationIsComplete } from "@/lib/date-time";
 
 /**
@@ -95,10 +96,14 @@ async function route(phone: string, body: string): Promise<string | null> {
     ? body.replace(/^SUPPORT(?:\s+|$)/i, "").trim() || "Requested human support by SMS."
     : body;
 
-  const [venue] = await d
-    .select()
-    .from(schema.venues)
-    .where(eq(schema.venues.ownerUserId, user.id));
+  // `venues_owner_uq` is unique only WHERE status = 'live', so an owner who
+  // deactivated and came back holds a retained hidden row alongside the live
+  // one. An unordered `rows[0]` picked between them arbitrarily — and this
+  // venue supplies both the time zone the text is parsed in and the id the
+  // night is posted against, so losing that coin flip filed a real gig on a
+  // hidden venue at the wrong local time. Every other caller goes through this
+  // helper, which prefers live, then suspended, then oldest.
+  const venue = await venueOwnedBy(user.id);
 
   // 2. Active context: a slot draft awaiting confirmation.
   const [session] = await d

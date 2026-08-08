@@ -95,6 +95,57 @@ describe("inbound SMS router", () => {
     expect(xml).toMatch(/Couldn't read that one|Reply YES/);
   });
 
+  /**
+   * `venues_owner_uq` is unique only WHERE status = 'live', so an owner who
+   * deactivated and came back holds a retained hidden row NEXT TO the live one.
+   * This route used to take an unordered `rows[0]` between them, and the venue
+   * it lands on supplies both the time zone the text is parsed in and the id the
+   * night is filed against — so losing that coin flip posted a real gig to a
+   * hidden venue at the wrong local time.
+   *
+   * The hidden row is seeded FIRST and left location-incomplete: an unordered
+   * scan returns it, which the router answers with the "add your address" line,
+   * making the wrong pick observable without needing slot parsing to be up.
+   */
+  it("posts against the live venue, not a retained hidden one", async () => {
+    const ownerId = newId("user");
+    const phone = `+1222${String(Date.now()).slice(-7)}`;
+    await db().insert(schema.users).values({
+      id: ownerId,
+      phone,
+      email: `${ownerId}@t.test`,
+    });
+    await db().insert(schema.venues).values({
+      id: newId("venue"),
+      ownerUserId: ownerId,
+      kind: "bar",
+      name: "Retired Room",
+      metro: "sms-testville",
+      addressLine1: "",
+      city: "Milwaukee",
+      region: "WI",
+      postalCode: "53202",
+      timeZone: "UTC",
+      status: "hidden",
+    });
+    await db().insert(schema.venues).values({
+      id: newId("venue"),
+      ownerUserId: ownerId,
+      kind: "bar",
+      name: "Current Room",
+      metro: "sms-testville",
+      addressLine1: "500 Live St",
+      city: "Milwaukee",
+      region: "WI",
+      postalCode: "53202",
+      timeZone: "America/Chicago",
+      status: "live",
+    });
+
+    const xml = await reply(phone, "acoustic friday night two hours $300");
+    expect(xml).not.toMatch(/Add your venue address/);
+  });
+
   it("rejects a draft confirmed after its date passes without writing a slot or event", async () => {
     const staleStart = new Date(Date.now() - 60_000).toISOString();
     await db()

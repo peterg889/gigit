@@ -1,5 +1,5 @@
 import { db, openSlotFeed, schema } from "@gigit/db";
-import { and, asc, eq, gte, inArray } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import Link from "next/link";
 import { profileCapabilitiesOwnedBy } from "@/lib/auth";
 import { sessionUserId } from "@/lib/session";

@@ -1,11 +1,8 @@
 import {
   ConcurrentUpdateError,
   IllegalTransitionError,
-  db,
   runBookingTransition,
-  schema,
 } from "@gigit/db";
-import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { loadBookingForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
@@ -24,7 +21,6 @@ export async function POST(req: Request, { params }: Params) {
     const userId = await requireUser();
     const actor = await loadBookingForActor(bookingId, userId);
     if (!actor) return fail("not_found", "We couldn't find that booking.", 404);
-    const { booking } = actor;
     let openedBy: "venue" | "performer";
     if (actor.asVenue) openedBy = "venue";
     else if (actor.asPerformer) openedBy = "performer";
