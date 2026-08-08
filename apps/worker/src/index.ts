@@ -383,6 +383,12 @@ async function dispatchEvent(
     payload: {
       effects?: Effect[];
       commitmentsWoundDown?: boolean;
+      // Not `BookingState`: subslot.transition rows carry subslot states
+      // through this same field.
+      to?: string;
+      applicationId?: string;
+      applicationIds?: string[];
+      otpId?: string;
     };
   },
 ) {
@@ -463,7 +469,7 @@ async function dispatchEvent(
         else if (row.subject_type === "tech_subslot") {
           if (notifyTo === "applicant")
             await notifyTechApplicationApplicant(
-              (row.payload as { applicationId?: string }).applicationId ?? "",
+              row.payload.applicationId ?? "",
               fx.template,
             );
           else
@@ -475,14 +481,14 @@ async function dispatchEvent(
         }
         else if (row.subject_type === "auth")
           // login code: subjectId is the destination, code lives on the otp row
-          await notifyOtp((row.payload as { otpId?: string }).otpId ?? "");
+          await notifyOtp(row.payload.otpId ?? "");
         else if (row.subject_type === "slot")
           // slot-subject events cut both ways: an application arriving is news
           // for the venue, an application outcome is news for the ACT. Routing
           // everything to the venue is why declines were silent.
           fx.to === "performer"
             ? await notifyApplicationPerformer(
-                (row.payload as { applicationId?: string }).applicationId ?? "",
+                row.payload.applicationId ?? "",
                 fx.template,
               )
             : await notifySlotVenue(row.subject_id, fx.template);
@@ -492,6 +498,8 @@ async function dispatchEvent(
         else log("notify.unrouted", { to: fx.to, template: fx.template, subject: row.subject_id });
         break;
       case "release_funds":
+        // Pass operationKey only when present: the gateway seam is asserted on
+        // call arity, and an explicit trailing `undefined` is not the same call.
         if (fx.operationKey !== undefined)
           await paymentGateway().transfer(
             row.subject_id,
@@ -506,6 +514,7 @@ async function dispatchEvent(
         });
         break;
       case "refund_funds":
+        // See release_funds: arity, not just value, is observable at this seam.
         if (fx.operationKey !== undefined)
           await paymentGateway().refund(
             row.subject_id,
@@ -563,7 +572,7 @@ async function dispatchEvent(
   // ...and tell the applicants who were passed over and just got revived: they
   // already said yes to this date once.
   if (row.kind === "slot.applicants_revived") {
-    const ids = (row.payload as { applicationIds?: string[] }).applicationIds ?? [];
+    const ids = row.payload.applicationIds ?? [];
     for (const applicationId of ids)
       await notifyApplicationPerformer(applicationId, "slot_reopened");
     if (ids.length > 0)
@@ -611,7 +620,7 @@ async function dispatchEvent(
   // adjudicated — otherwise a booked sub-slot is stranded in 'booked' forever
   // with its charge neither released nor refunded.
   if (row.kind === "booking.transition") {
-    const to = (row.payload as { to?: string }).to;
+    const to = row.payload.to;
     if (to === "released" || to === "refunded" || to === "partially_released")
       await cascadeParentToSubslots(row.subject_id, "released", "worker");
     else if (to === "cancelled_by_venue" || to === "cancelled_by_performer")
@@ -620,7 +629,7 @@ async function dispatchEvent(
 
   // Entering a reviewable state arms the review prompt a day later.
   if (row.kind === "booking.transition") {
-    const to = (row.payload as { to?: string }).to as BookingState | undefined;
+    const to = row.payload.to as BookingState | undefined;
     if (to && isReviewableBookingState(to))
       await boss.send(
         REVIEW_QUEUE,
@@ -640,8 +649,7 @@ async function dispatchEvent(
   // transition fallback for old outbox histories that predate booking.offered.
   if (
     row.kind === "booking.offered" ||
-    (row.kind === "booking.transition" &&
-      (row.payload as { to?: string }).to === "confirmed")
+    (row.kind === "booking.transition" && row.payload.to === "confirmed")
   ) {
     const threadId = await ensureBookingThread(row.subject_id, "worker");
     if (threadId) log("thread.booking_opened", { booking: row.subject_id, threadId });
@@ -651,7 +659,7 @@ async function dispatchEvent(
   // so it lives here in the fan-out, not in the domain reducer).
   if (
     row.kind === "booking.transition" &&
-    (row.payload as { to?: string }).to === "confirmed"
+    row.payload.to === "confirmed"
   ) {
     const { rows } = await getPool().query(
       `select terms->>'startsAt' as starts_at from bookings where id = $1`,

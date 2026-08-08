@@ -3,8 +3,8 @@ import { db, getPool, paymentsEnabled, schema } from "@gigit/db";
 import { MONEY_SETTLED_STATES } from "@gigit/domain";
 import { and, eq } from "drizzle-orm";
 import Link from "next/link";
-import { isAdmin } from "@/lib/auth";
-import { sessionUserId } from "@/lib/session";
+import { adminUserId } from "@/lib/auth";
+import { AdminOnly } from "../AdminOnly";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
 
 export const dynamic = "force-dynamic";
@@ -15,13 +15,8 @@ export default async function AdminSearchPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
-  const userId = await sessionUserId();
-  if (!userId || !(await isAdmin(userId)))
-    return (
-      <div className="card">
-        Admin only. <Link href="/login">Sign in</Link>
-      </div>
-    );
+  const userId = await adminUserId();
+  if (!userId) return <AdminOnly />;
   const { q } = await searchParams;
   void db(); // primes the pool that getPool() below returns — not dead
   const pool = getPool();

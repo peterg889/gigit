@@ -36,6 +36,47 @@ export function formatVenueDateTime(
   }).format(when);
 }
 
+/**
+ * A gig time the way every surface actually renders it: the venue-local time
+ * followed by its zone label — "Fri Jul 24, 8:00 PM CDT".
+ *
+ * Fourteen call sites paired `formatVenueDateTime` with `shortTimeZoneName` on
+ * the same value and zone by hand. The zone label is not decoration: without it
+ * a Central gig read to a Pacific viewer as a time in their own head, which is
+ * how someone shows up three hours off. Pairing them here means a surface can
+ * no longer render the time and forget the zone.
+ *
+ * Not named for gigs: three of those sites render an offer-expiry DEADLINE, not
+ * a downbeat.
+ */
+export function formatVenueDateTimeWithZone(
+  value: DateValue,
+  timeZone: string,
+  dateStyle?: "full" | "long" | "medium" | "short",
+): string {
+  return `${formatVenueDateTime(value, timeZone, dateStyle)} ${shortTimeZoneName(value, timeZone)}`;
+}
+
+/**
+ * Is this instant still ahead of `now`?
+ *
+ * An unparseable value gives NaN, and every comparison with NaN is false, so a
+ * bad date lands on "not in the future" on its own — no finite check needed to
+ * get there. That is the safe side: work stops being advertised, and
+ * cancellation copy tells the payer to settle up.
+ *
+ * Which is exactly why callers must come through here rather than writing the
+ * comparison inline. The INVERTED form `when <= now` is also false for NaN, so
+ * it answers "not started" for the same bad row — two surfaces reading one
+ * broken date would disagree about whether the gig has happened.
+ */
+export function startsInFuture(
+  value: DateValue,
+  now: Date = new Date(),
+): boolean {
+  return new Date(value).getTime() > now.getTime();
+}
+
 export function formatVenueDate(
   value: DateValue,
   timeZone: string,

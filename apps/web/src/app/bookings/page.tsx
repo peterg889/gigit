@@ -4,7 +4,7 @@ import Link from "next/link";
 import { profileCapabilitiesOwnedBy } from "@/lib/auth";
 import { accountCanAct } from "@/lib/profile-capabilities";
 import { sessionUserId } from "@/lib/session";
-import { formatVenueDateTime, shortTimeZoneName } from "@/lib/date-time";
+import { formatVenueDateTimeWithZone } from "@/lib/date-time";
 import { declinedApplicationMessage } from "@/lib/slot-display";
 import {
   isSoundJobActionable,
@@ -161,8 +161,7 @@ export default async function BookingsPage() {
               </span>
             </div>
             <div className="gig-line">
-              {formatVenueDateTime(booking.terms.startsAt, booking.terms.timeZone ?? venueTimeZone)}{" "}
-              {shortTimeZoneName(booking.terms.startsAt, booking.terms.timeZone ?? venueTimeZone)}{" "}
+              {formatVenueDateTimeWithZone(booking.terms.startsAt, booking.terms.timeZone ?? venueTimeZone)}{" "}
               ·{" "}
               <span className="money">
                 ${(booking.terms.amountCents / 100).toFixed(0)}
@@ -171,8 +170,7 @@ export default async function BookingsPage() {
             {booking.state === "offered" && (
               <p className="muted">
                 Firm offer · respond by{" "}
-                {formatVenueDateTime(booking.offerExpiresAt, booking.terms.timeZone ?? venueTimeZone)}{" "}
-                {shortTimeZoneName(booking.offerExpiresAt, booking.terms.timeZone ?? venueTimeZone)}. {" "}
+                {formatVenueDateTimeWithZone(booking.offerExpiresAt, booking.terms.timeZone ?? venueTimeZone)}. {" "}
                 <Link href={`/bookings/${booking.id}`}>
                   {!accountActive
                     ? "View the firm offer"
@@ -215,8 +213,7 @@ export default async function BookingsPage() {
                 </span>
               </div>
               <div className="gig-line">
-                {formatVenueDateTime(slot.startsAt, venueTimeZone)}{" "}
-                {shortTimeZoneName(slot.startsAt, venueTimeZone)} ·{" "}
+                {formatVenueDateTimeWithZone(slot.startsAt, venueTimeZone)} ·{" "}
                 <span className="money">${(slot.budgetCents / 100).toFixed(0)}</span>
               </div>
               {application.status === "declined" && (
@@ -286,8 +283,7 @@ export default async function BookingsPage() {
                   </span>
                 </div>
                 <div className="gig-line">
-                  {formatVenueDateTime(terms.startsAt, venueTimeZone)}{" "}
-                  {shortTimeZoneName(terms.startsAt, venueTimeZone)}{" "}
+                  {formatVenueDateTimeWithZone(terms.startsAt, venueTimeZone)}{" "}
                   · <span className="money">{"$"}{(subslot.budgetCents / 100).toFixed(0)}</span>
                 </div>
                 <p className="muted">{message}</p>

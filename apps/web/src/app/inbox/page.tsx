@@ -3,8 +3,7 @@ import { desc, eq, inArray, sql } from "drizzle-orm";
 import Link from "next/link";
 import {
   formatRelativeTime,
-  formatVenueDateTime,
-  shortTimeZoneName,
+  formatVenueDateTimeWithZone,
 } from "@/lib/date-time";
 import { sessionUserId } from "@/lib/session";
 import { counterpartyLabel } from "@/lib/thread-display";
@@ -148,11 +147,7 @@ export default async function InboxPage() {
             {booking && (
               <p className="gig-line thread-context">
                 {booking.performerName} at {booking.venueName} ·{" "}
-                {formatVenueDateTime(
-                  booking.terms.startsAt,
-                  booking.terms.timeZone ?? booking.venueTimeZone,
-                )}{" "}
-                {shortTimeZoneName(
+                {formatVenueDateTimeWithZone(
                   booking.terms.startsAt,
                   booking.terms.timeZone ?? booking.venueTimeZone,
                 )}

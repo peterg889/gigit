@@ -96,6 +96,40 @@ describe("sound fact display", () => {
     expect(futureBooked).not.toMatch(/platform|EightGig|owed/i);
   });
 
+  /**
+   * An unparseable `startsAt` gives NaN, and every comparison with NaN is
+   * false — so the plain `>` and the inverted `<=` would BOTH report "not in
+   * the future" and the two surfaces would contradict each other. Both must
+   * land on "already started": stop advertising the work, and tell the payer to
+   * settle directly.
+   */
+  it("treats an unparseable start as already started on both sides", () => {
+    const now = new Date("2030-01-01T00:00:00.000Z");
+    const broken = {
+      subslotState: "open",
+      bookingState: "confirmed",
+      startsAt: "not a date",
+      venueProfileStatus: "live",
+      performerProfileStatus: "live",
+      venueOwnerStatus: "active",
+      performerOwnerStatus: "active",
+    };
+    expect(isSoundParentActionable(broken, now)).toBe(false);
+    expect(isSoundJobActionable(broken, now)).toBe(false);
+    expect(
+      isTechSoundCancellationActionable(
+        { ...broken, subslotState: "booked" },
+        now,
+      ),
+    ).toBe(false);
+    expect(
+      payerSoundCancellationConfirmation(
+        { ...broken, subslotState: "booked" },
+        now,
+      ),
+    ).toContain("agreed sound fee directly");
+  });
+
   it("only offers applicant selection for a submitted, live tech with an active owner", () => {
     const available = {
       applicationStatus: "submitted",

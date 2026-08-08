@@ -9,8 +9,9 @@ import {
   text,
   timestamp,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
-import { sql } from "drizzle-orm";
+import { asc, desc, eq, sql, type SQL } from "drizzle-orm";
 
 const ts = (name: string) => timestamp(name, { withTimezone: true, mode: "date" });
 
@@ -206,6 +207,32 @@ export const techs = pgTable("techs", {
     .on(t.ownerUserId)
     .where(sql`status = 'live'`),
 ]);
+
+/**
+ * The ORDER BY that decides which of an owner's profile rows represents them.
+ *
+ * A retained historical/hidden row may be older than the current profile.
+ * Live wins, followed by the profile temporarily suspended by an admin;
+ * created_at + ID makes the legacy hidden fallback stable.
+ *
+ * The partial unique index above only constrains `live`, so an owner can hold
+ * several suspended/hidden rows at once. Six queries — auth's three ownership
+ * lookups and the three thread-label lookups — each picked the representative
+ * row with their own copy of this clause; one copy drifting would name the same
+ * owner differently in their own session than in a message thread.
+ */
+export function profilePreferenceOrder(t: {
+  status: AnyPgColumn;
+  createdAt: AnyPgColumn;
+  id: AnyPgColumn;
+}): SQL[] {
+  return [
+    desc(eq(t.status, "live")),
+    desc(eq(t.status, "suspended")),
+    asc(t.createdAt),
+    asc(t.id),
+  ];
+}
 
 export const mediaAssets = pgTable(
   "media_assets",

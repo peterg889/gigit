@@ -1,5 +1,5 @@
 import { db, schema } from "@gigit/db";
-import { asc, desc, eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { participantLabels, type ProfileIdentity } from "./thread-display";
 
 /**
@@ -28,10 +28,7 @@ export async function loadParticipantLabels(
       .where(inArray(schema.performers.ownerUserId, userIds))
       .orderBy(
         schema.performers.ownerUserId,
-        desc(eq(schema.performers.status, "live")),
-        desc(eq(schema.performers.status, "suspended")),
-        asc(schema.performers.createdAt),
-        asc(schema.performers.id),
+        ...schema.profilePreferenceOrder(schema.performers),
       ),
     d
       .selectDistinctOn([schema.venues.ownerUserId], {
@@ -42,10 +39,7 @@ export async function loadParticipantLabels(
       .where(inArray(schema.venues.ownerUserId, userIds))
       .orderBy(
         schema.venues.ownerUserId,
-        desc(eq(schema.venues.status, "live")),
-        desc(eq(schema.venues.status, "suspended")),
-        asc(schema.venues.createdAt),
-        asc(schema.venues.id),
+        ...schema.profilePreferenceOrder(schema.venues),
       ),
     d
       .selectDistinctOn([schema.techs.ownerUserId], {
@@ -56,10 +50,7 @@ export async function loadParticipantLabels(
       .where(inArray(schema.techs.ownerUserId, userIds))
       .orderBy(
         schema.techs.ownerUserId,
-        desc(eq(schema.techs.status, "live")),
-        desc(eq(schema.techs.status, "suspended")),
-        asc(schema.techs.createdAt),
-        asc(schema.techs.id),
+        ...schema.profilePreferenceOrder(schema.techs),
       ),
   ]);
 

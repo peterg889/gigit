@@ -3,10 +3,10 @@
  * can exercise them — the worker is a scheduler/interpreter, not a home for
  * business SQL).
  */
-import { and, eq, inArray, lte } from "drizzle-orm";
+import { and, eq, lte } from "drizzle-orm";
 import { db, getPool } from "./client.js";
-import { appendEvent } from "./events.js";
-import { applications, slots } from "./schema.js";
+import { declinePendingApplications } from "./application-decline.js";
+import { slots } from "./schema.js";
 
 /**
  * ROI-loop baseline (PRD F8.5-P0): one row per venue per night, gig or not.
@@ -107,33 +107,11 @@ export async function expirePastSlots(now: Date = new Date()): Promise<number> {
     // shape so each act gets a definitive answer instead of "Pending" forever.
     // The offered application is resolved by its booking's OFFER_EXPIRED
     // transition, avoiding two notifications for the same offer.
-    const resolved = await tx
-      .update(applications)
-      .set({ status: "declined", declineReason: "slot_expired" })
-      .where(
-        and(
-          inArray(
-            applications.slotId,
-            expired.map((slot) => slot.id),
-          ),
-          eq(applications.status, "submitted"),
-        ),
-      )
-      .returning({ id: applications.id, slotId: applications.slotId });
-    for (const application of resolved)
-      await appendEvent(tx, {
-        actor: "system",
-        kind: "application.declined",
-        subjectType: "slot",
-        subjectId: application.slotId,
-        payload: {
-          applicationId: application.id,
-          reason: "slot_expired",
-          effects: [
-            { kind: "notify", template: "application_expired", to: "performer" },
-          ],
-        },
-      });
+    await declinePendingApplications(tx, {
+      slotIds: expired.map((slot) => slot.id),
+      actor: "system",
+      reason: "slot_expired",
+    });
 
     return expired.length;
   });

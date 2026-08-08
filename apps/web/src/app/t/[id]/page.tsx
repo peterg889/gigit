@@ -5,14 +5,11 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
 import { GEAR_LABELS } from "@/lib/labels";
+import { averageOverall } from "@/lib/review-display";
+import { profileMetadata } from "@/lib/profile-metadata";
 
 export const dynamic = "force-dynamic";
 
-/**
- * A profile is the thing people SHARE — the act sends the link to a venue, the
- * venue puts it in a group chat. Without this every share unfurled as the generic
- * site title, which wastes the one moment the product is spreading by itself.
- */
 export async function generateMetadata({
   params,
 }: {
@@ -23,13 +20,7 @@ export async function generateMetadata({
     .select({ name: schema.techs.name, bio: schema.techs.bio, status: schema.techs.status })
     .from(schema.techs)
     .where(eq(schema.techs.id, id));
-  if (!row || row.status !== "live") return { title: "Not found — EightGig" };
-  const description = row.bio?.slice(0, 155) || `${row.name} — live sound engineer on EightGig.`;
-  return {
-    title: `${row.name} — EightGig`,
-    description,
-    openGraph: { title: row.name, description, type: "profile" },
-  };
+  return profileMetadata(row, "live sound engineer on EightGig.");
 }
 
 /** Public sound-tech page (PRD F1.4): gear, rates, travel. */
@@ -85,10 +76,7 @@ export default async function TechPage({
     })),
     "payer",
   );
-  const average = visible.length > 0
-    ? visible.reduce((sum, review) => sum + (review.ratings.overall ?? 0), 0) /
-      visible.length
-    : null;
+  const average = averageOverall(visible);
 
   return (
     <div>

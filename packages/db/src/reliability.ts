@@ -5,17 +5,13 @@
  * query. The pure badge derived from these lives in @gigit/domain
  * (performerReliability) — this module only fetches the two facts.
  */
+import type { ReliabilityStats } from "@gigit/domain";
 import { getPool } from "./client.js";
-
-export interface PerformerReliabilityStats {
-  gigsCompleted: number;
-  cancellations: number;
-}
 
 export async function performerReliabilityStats(
   performerIds: string[],
-): Promise<Map<string, PerformerReliabilityStats>> {
-  const out = new Map<string, PerformerReliabilityStats>();
+): Promise<Map<string, ReliabilityStats>> {
+  const out = new Map<string, ReliabilityStats>();
   if (performerIds.length === 0) return out;
   const { rows } = await getPool().query(
     `select p.id,

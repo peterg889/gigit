@@ -524,7 +524,6 @@ export async function notifyPerformerOwner(
 export async function notifyApplicationPerformer(
   applicationId: string,
   template: string,
-  vars: Record<string, string> = {},
 ): Promise<void> {
   if (!applicationId) return;
   const [row] = await db()
@@ -532,7 +531,7 @@ export async function notifyApplicationPerformer(
     .from(schema.applications)
     .innerJoin(schema.performers, eq(schema.applications.performerId, schema.performers.id))
     .where(eq(schema.applications.id, applicationId));
-  if (row) await notifyUser(row.owner, template, { slotId: row.slotId, ...vars });
+  if (row) await notifyUser(row.owner, template, { slotId: row.slotId });
 }
 
 /** A sound-job application outcome → the specific tech who applied. */
@@ -602,16 +601,14 @@ async function sendSms(to: string, body: string): Promise<void> {
  * This used to swallow every SES error and return normally, so the dispatcher
  * marked the event dispatched and the notification was permanently lost — a
  * throttled send meant nobody was ever told their gig was confirmed, with both
- * the lag and dead-letter alarms staying green. The one caller that wanted a
- * throw passed a flag; now that's the default, and the exceptions are the
- * genuinely best-effort templates. Safe only because the outbox retries with
- * backoff (migration 0024) instead of burning five attempts in milliseconds.
+ * the lag and dead-letter alarms staying green. Every failure now propagates.
+ * Safe only because the outbox retries with backoff (migration 0024) instead of
+ * burning five attempts in milliseconds.
  */
 async function sendEmail(
   to: string,
   subject: string,
   body: string,
-  bestEffort = false,
 ): Promise<void> {
   ses ??= new SESv2Client({ region: env().AWS_REGION });
   try {
@@ -624,7 +621,7 @@ async function sendEmail(
     );
   } catch (err) {
     log("notify.email_failed", { to, err: String(err) });
-    if (!bestEffort) throw err;
+    throw err;
   }
 }
 

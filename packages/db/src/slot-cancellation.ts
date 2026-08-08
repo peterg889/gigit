@@ -1,8 +1,9 @@
 import { TERMINAL_STATES } from "@gigit/domain";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { db, type Tx } from "./client.js";
+import { declinePendingApplications } from "./application-decline.js";
 import { appendEvent } from "./events.js";
-import { applications, bookings, slots } from "./schema.js";
+import { bookings, slots } from "./schema.js";
 
 export type SlotCancellationReason =
   | "venue_closed_date"
@@ -66,40 +67,16 @@ export async function cancelOpenSlots(
     if (activeBooking)
       throw new SlotCancellationBlockedError(activeBooking.slotId);
 
-    const resolved = await tx
-      .update(applications)
-      .set({ status: "declined", declineReason: "slot_cancelled" })
-      .where(
-        and(
-          inArray(applications.slotId, openIds),
-          eq(applications.status, "submitted"),
-        ),
-      )
-      .returning({ id: applications.id, slotId: applications.slotId });
-
     await tx
       .update(slots)
       .set({ status: "cancelled" })
       .where(and(inArray(slots.id, openIds), eq(slots.status, "open")));
 
-    for (const application of resolved)
-      await appendEvent(tx, {
-        actor: input.actor,
-        kind: "application.declined",
-        subjectType: "slot",
-        subjectId: application.slotId,
-        payload: {
-          applicationId: application.id,
-          reason: "slot_cancelled",
-          effects: [
-            {
-              kind: "notify",
-              template: "application_cancelled",
-              to: "performer",
-            },
-          ],
-        },
-      });
+    await declinePendingApplications(tx, {
+      slotIds: openIds,
+      actor: input.actor,
+      reason: "slot_cancelled",
+    });
 
     for (const slotId of openIds)
       await appendEvent(tx, {

@@ -13,7 +13,7 @@ import {
   users,
   venues,
 } from "./schema.js";
-import { E2E_JOURNEYS } from "./seed-fixtures.js";
+import { E2E_JOURNEYS, performerRow, venueRow } from "./seed-fixtures.js";
 
 type SeedDatabase = Db | Tx;
 
@@ -69,22 +69,7 @@ export async function ensurePostGigE2EJourney(
           eq(venues.status, "live"),
         ),
       );
-    const venueValues = {
-      kind: journey.venue.kind,
-      name: journey.venue.name,
-      bio: journey.venue.bio,
-      metro: journey.venue.metro,
-      addressLine1: journey.venue.addressLine1,
-      city: journey.venue.city,
-      region: journey.venue.region,
-      postalCode: journey.venue.postalCode,
-      timeZone: journey.venue.timeZone,
-      lat: journey.venue.lat,
-      lng: journey.venue.lng,
-      capacity: journey.venue.capacity,
-      paInventory: { ...journey.venue.paInventory },
-      noiseCurfew: journey.venue.noiseCurfew,
-    };
+    const venueValues = venueRow(journey.venue);
     const venueId = savedVenue?.id ?? newId("venue");
     if (savedVenue)
       await tx
@@ -111,18 +96,7 @@ export async function ensurePostGigE2EJourney(
           eq(performers.status, "live"),
         ),
       );
-    const performerValues = {
-      kind: journey.performer.kind,
-      name: journey.performer.name,
-      bio: journey.performer.bio,
-      genreTags: [...journey.performer.genreTags],
-      homeMetro: journey.performer.homeMetro,
-      travelRadiusMiles: journey.performer.travelRadiusMiles,
-      rateMinCents: journey.performer.rateMinCents,
-      rateMaxCents: journey.performer.rateMaxCents,
-      setLengthsMinutes: [...journey.performer.setLengthsMinutes],
-      techNeeds: { ...journey.performer.techNeeds },
-    };
+    const performerValues = performerRow(journey.performer);
     const performerId = savedPerformer?.id ?? newId("performer");
     if (savedPerformer)
       await tx

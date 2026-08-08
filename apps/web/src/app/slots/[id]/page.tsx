@@ -13,13 +13,13 @@ import { accountCanAct } from "@/lib/profile-capabilities";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
 import {
   formatAddress,
-  formatVenueDateTime,
-  shortTimeZoneName,
+  formatVenueDateTimeWithZone,
 } from "@/lib/date-time";
 import {
   declinedApplicationMessage,
   effectiveSlotStatus,
 } from "@/lib/slot-display";
+import { soundVerdictClass } from "@/lib/sound-display";
 
 export const dynamic = "force-dynamic";
 
@@ -136,8 +136,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
             ${(slot.budgetCents / 100).toFixed(0)}
           </span>
           <span className="gig-line">
-            {formatVenueDateTime(slot.startsAt, venue.timeZone)}{" "}
-            {shortTimeZoneName(slot.startsAt, venue.timeZone)} · {slot.durationMinutes} min
+            {formatVenueDateTimeWithZone(slot.startsAt, venue.timeZone)} · {slot.durationMinutes} min
           </span>
         </p>
         {slot.notes && <p>{slot.notes}</p>}
@@ -296,15 +295,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               <span className="badge">
                 {friendlyLabel(APPLICATION_STATUS_LABELS, application.status)}
               </span>{" "}
-              <span
-                className={
-                  plan.verdict === "covered"
-                    ? "badge good"
-                    : plan.verdict === "unknown"
-                      ? "badge warn"
-                      : "badge"
-                }
-              >
+              <span className={soundVerdictClass(plan.verdict)}>
                 {friendlyLabel(SOUND_VERDICT_LABELS, plan.verdict)}
               </span>
               {plan.gaps.length > 0 && (
@@ -319,11 +310,7 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
                       <strong>Firm offer sent.</strong>{" "}
                       <span className="muted">
                         Expires{" "}
-                        {formatVenueDateTime(
-                          holdingBooking.offerExpiresAt,
-                          venue.timeZone,
-                        )}{" "}
-                        {shortTimeZoneName(
+                        {formatVenueDateTimeWithZone(
                           holdingBooking.offerExpiresAt,
                           venue.timeZone,
                         )}.{" "}

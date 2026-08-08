@@ -8,7 +8,7 @@ import { localDateTimeParts, newId, zonedDateTimeToDate } from "@gigit/domain";
 import { and, eq } from "drizzle-orm";
 import { closeDb, db } from "./client.js";
 import { performers, slots, techs, users, venues } from "./schema.js";
-import { E2E_JOURNEYS } from "./seed-fixtures.js";
+import { E2E_JOURNEYS, performerRow, venueRow } from "./seed-fixtures.js";
 import { ensureAgedSlotE2EJourneys } from "./seed-aged-slot.js";
 import { ensureAccountLifecycleE2EJourneys } from "./seed-account-lifecycle.js";
 import {
@@ -25,22 +25,7 @@ async function ensureAdditionalE2EJourneys(d: Database) {
       .select({ id: venues.id })
       .from(venues)
       .where(and(eq(venues.ownerUserId, venueOwner), eq(venues.status, "live")));
-    const venueValues = {
-      kind: journey.venue.kind,
-      name: journey.venue.name,
-      bio: journey.venue.bio,
-      metro: journey.venue.metro,
-      addressLine1: journey.venue.addressLine1,
-      city: journey.venue.city,
-      region: journey.venue.region,
-      postalCode: journey.venue.postalCode,
-      timeZone: journey.venue.timeZone,
-      lat: journey.venue.lat,
-      lng: journey.venue.lng,
-      capacity: journey.venue.capacity,
-      paInventory: { ...journey.venue.paInventory },
-      noiseCurfew: journey.venue.noiseCurfew,
-    };
+    const venueValues = venueRow(journey.venue);
     if (existingVenue)
       await d
         .update(venues)
@@ -68,18 +53,7 @@ async function ensureAdditionalE2EJourneys(d: Database) {
             eq(performers.status, "live"),
           ),
         );
-      const performerValues = {
-        kind: performer.kind,
-        name: performer.name,
-        bio: performer.bio,
-        genreTags: [...performer.genreTags],
-        homeMetro: performer.homeMetro,
-        travelRadiusMiles: performer.travelRadiusMiles,
-        rateMinCents: performer.rateMinCents,
-        rateMaxCents: performer.rateMaxCents,
-        setLengthsMinutes: [...performer.setLengthsMinutes],
-        techNeeds: { ...performer.techNeeds },
-      };
+      const performerValues = performerRow(performer);
       if (existingPerformer)
         await d
           .update(performers)
@@ -141,39 +115,14 @@ async function main() {
   await d.insert(venues).values({
     id: venueId,
     ownerUserId: venueOwner,
-    kind: core.venue.kind,
-    name: core.venue.name,
-    bio: core.venue.bio,
-    metro: core.venue.metro,
-    addressLine1: core.venue.addressLine1,
-    city: core.venue.city,
-    region: core.venue.region,
-    postalCode: core.venue.postalCode,
-    timeZone: core.venue.timeZone,
-    lat: core.venue.lat,
-    lng: core.venue.lng,
-    capacity: core.venue.capacity,
-    // hasOperator stated explicitly: omitting it now means "nobody has said",
-    // which is a different verdict. A room with a PA and no house tech is the
-    // scenario the sound-tech feature exists for, so say it.
-    paInventory: { ...core.venue.paInventory },
-    noiseCurfew: core.venue.noiseCurfew,
+    ...venueRow(core.venue),
   });
 
   await d.insert(performers).values([
     {
       id: newId("performer"),
       ownerUserId: bandOwner,
-      kind: core.performer.kind,
-      name: core.performer.name,
-      bio: core.performer.bio,
-      genreTags: [...core.performer.genreTags],
-      homeMetro: core.performer.homeMetro,
-      travelRadiusMiles: core.performer.travelRadiusMiles,
-      rateMinCents: core.performer.rateMinCents,
-      rateMaxCents: core.performer.rateMaxCents,
-      setLengthsMinutes: [...core.performer.setLengthsMinutes],
-      techNeeds: { ...core.performer.techNeeds },
+      ...performerRow(core.performer),
     },
     {
       id: newId("performer"),

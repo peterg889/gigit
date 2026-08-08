@@ -16,7 +16,7 @@ import {
 import { and, desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { profileCapabilitiesOwnedBy } from "@/lib/auth";
+import { isSubslotPayer, profileCapabilitiesOwnedBy } from "@/lib/auth";
 import { accountCanAct } from "@/lib/profile-capabilities";
 import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
@@ -24,7 +24,7 @@ import {
   formatAddress,
   formatVenueDate,
   formatVenueDateTime,
-  shortTimeZoneName,
+  formatVenueDateTimeWithZone,
 } from "@/lib/date-time";
 import {
   bookingContactsAreVisible,
@@ -37,6 +37,7 @@ import {
   isPayerSoundCancellationActionable,
   isSoundParentActionable,
   payerSoundCancellationConfirmation,
+  soundVerdictClass,
 } from "@/lib/sound-display";
 
 export const dynamic = "force-dynamic";
@@ -140,15 +141,8 @@ export default async function BookingPage({
   );
 
   // These reads are independent of one another — one round-trip of latency,
-  // not five, on the busiest page in the product.
-  const [
-    rebookTarget,
-    subslots,
-    venueOwner,
-    performerOwner,
-    myReview,
-    soundOwnerRows,
-  ] =
+  // not one per read, on the busiest page in the product.
+  const [rebookTarget, subslots, myReview, bookingOwners] =
     await Promise.all([
       // Re-offer this act into the best matching open date. The target listing
       // supplies its own date and budget, including for one-off nights.
@@ -162,22 +156,6 @@ export default async function BookingPage({
           desc(schema.techSubslots.createdAt),
           desc(schema.techSubslots.id),
         ),
-      contactsRevealed
-        ? d
-            .select({ phone: schema.users.phone, email: schema.users.email })
-            .from(schema.venues)
-            .innerJoin(schema.users, eq(schema.venues.ownerUserId, schema.users.id))
-            .where(eq(schema.venues.id, b.venueId))
-            .then((r) => r[0])
-        : Promise.resolve(undefined),
-      contactsRevealed
-        ? d
-            .select({ phone: schema.users.phone, email: schema.users.email })
-            .from(schema.performers)
-            .innerJoin(schema.users, eq(schema.performers.ownerUserId, schema.users.id))
-            .where(eq(schema.performers.id, b.performerId))
-            .then((r) => r[0])
-        : Promise.resolve(undefined),
       reviewable
         ? d
             .select()
@@ -187,8 +165,17 @@ export default async function BookingPage({
             )
             .then((r) => r[0])
         : Promise.resolve(undefined),
+      // Both owner accounts in ONE read: `status` feeds the sound-job
+      // availability facts, `phone`/`email` the day-of contact card. The
+      // booking query above already carries both owner IDs, so the two contact
+      // reads were joining back through venues/performers to re-derive them.
       d
-        .select({ id: schema.users.id, status: schema.users.status })
+        .select({
+          id: schema.users.id,
+          status: schema.users.status,
+          phone: schema.users.phone,
+          email: schema.users.email,
+        })
         .from(schema.users)
         .where(
           inArray(schema.users.id, [
@@ -198,13 +185,20 @@ export default async function BookingPage({
         ),
     ]);
 
+  // Keyed by owner ID, never by position: one person can own both the venue and
+  // the act on the same booking, and then this read returns a single row.
+  const ownerByUserId = new Map(bookingOwners.map((owner) => [owner.id, owner]));
+  const venueOwner = ownerByUserId.get(row.venueOwnerUserId);
+  const performerOwner = ownerByUserId.get(row.performerOwnerUserId);
+
   // Only the paying party reviews applications and applicant notes. The other
   // booking party can still see each sound job's state and history.
-  const applicantVisibleSubslotIds = subslots
-    .filter((subslot) =>
-      subslot.payer === "venue" ? asVenue : asPerformer,
-    )
-    .map((subslot) => subslot.id);
+  const payerSubslotIds = new Set(
+    subslots
+      .filter((subslot) => isSubslotPayer(subslot, b, { performer, venue }))
+      .map((subslot) => subslot.id),
+  );
+  const applicantVisibleSubslotIds = [...payerSubslotIds];
   const subslotApplicants = applicantVisibleSubslotIds.length
     ? await d
         .select({
@@ -233,18 +227,13 @@ export default async function BookingPage({
     (subslot) =>
       (ACTIVE_SUBSLOT_STATES as readonly string[]).includes(subslot.state),
   );
-  const soundOwnerStatus = new Map(
-    soundOwnerRows.map((owner) => [owner.id, owner.status]),
-  );
   const soundParentAvailability = {
     bookingState: b.state,
     startsAt: b.terms.startsAt,
     venueProfileStatus: row.venueProfileStatus,
     performerProfileStatus: row.performerProfileStatus,
-    venueOwnerStatus:
-      soundOwnerStatus.get(row.venueOwnerUserId) ?? "missing",
-    performerOwnerStatus:
-      soundOwnerStatus.get(row.performerOwnerUserId) ?? "missing",
+    venueOwnerStatus: venueOwner?.status ?? "missing",
+    performerOwnerStatus: performerOwner?.status ?? "missing",
   };
   const soundParentIsActionable = isSoundParentActionable(
     soundParentAvailability,
@@ -291,8 +280,7 @@ export default async function BookingPage({
             ${(b.terms.amountCents / 100).toFixed(0)}
           </span>
           <span className="gig-line">
-            {formatVenueDateTime(b.terms.startsAt, dealTimeZone)}{" "}
-            {shortTimeZoneName(b.terms.startsAt, dealTimeZone)}
+            {formatVenueDateTimeWithZone(b.terms.startsAt, dealTimeZone)}
           </span>
         </p>
         <p className="muted">
@@ -303,8 +291,7 @@ export default async function BookingPage({
             <strong>Firm offer.</strong>{" "}
             <span className="muted">
               Respond by{" "}
-              {formatVenueDateTime(b.offerExpiresAt, dealTimeZone)}{" "}
-              {shortTimeZoneName(b.offerExpiresAt, dealTimeZone)}. The
+              {formatVenueDateTimeWithZone(b.offerExpiresAt, dealTimeZone)}. The
               venue cannot offer this night to another act while this offer is
               live.
             </span>
@@ -384,15 +371,7 @@ export default async function BookingPage({
         <div className="card">
           <h2>Sound</h2>
           <p>
-            <span
-              className={
-                plan.verdict === "covered"
-                  ? "badge good"
-                  : plan.verdict === "unknown"
-                    ? "badge warn"
-                    : "badge"
-              }
-            >
+            <span className={soundVerdictClass(plan.verdict)}>
               {friendlyLabel(SOUND_VERDICT_LABELS, plan.verdict)}
             </span>
             {plan.gaps.length > 0 && (
@@ -453,8 +432,7 @@ export default async function BookingPage({
         const jobIsActionable = isSoundJobActionable(soundAvailability);
         const cancellationIsActionable =
           isPayerSoundCancellationActionable(soundAvailability);
-        const amPayer =
-          subslot.payer === "venue" ? asVenue : asPerformer;
+        const amPayer = payerSubslotIds.has(subslot.id);
         return (
           <div className="card" key={subslot.id}>
             <h2>Sound job</h2>

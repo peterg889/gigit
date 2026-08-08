@@ -1,19 +1,14 @@
 import { db, getPool, paymentsEnabled } from "@gigit/db";
 import Link from "next/link";
-import { isAdmin } from "@/lib/auth";
-import { sessionUserId } from "@/lib/session";
+import { adminUserId } from "@/lib/auth";
+import { AdminOnly } from "./AdminOnly";
 
 export const dynamic = "force-dynamic";
 
 /** Liquidity dashboard (F9.2) — the PRD §9 metrics as plain SQL over events/domain tables. */
 export default async function AdminPage() {
-  const userId = await sessionUserId();
-  if (!userId || !(await isAdmin(userId)))
-    return (
-      <div className="card">
-        Admin only. <Link href="/login">Sign in</Link>
-      </div>
-    );
+  const userId = await adminUserId();
+  if (!userId) return <AdminOnly />;
   void db(); // primes the pool that getPool() below returns — not dead
   const pool = getPool();
   const paymentsOn = paymentsEnabled();

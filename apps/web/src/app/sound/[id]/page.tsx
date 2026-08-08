@@ -8,8 +8,7 @@ import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
 import {
   formatAddress,
-  formatVenueDateTime,
-  shortTimeZoneName,
+  formatVenueDateTimeWithZone,
 } from "@/lib/date-time";
 import {
   SOUND_APPLICATION_LABELS_OWN,
@@ -161,8 +160,7 @@ export default async function SoundBookingPage({
           </span>
         </h1>
         <p>
-          {formatVenueDateTime(row.booking.terms.startsAt, row.venue.timeZone, "full")}{" "}
-          {shortTimeZoneName(row.booking.terms.startsAt, row.venue.timeZone)} ·{" "}
+          {formatVenueDateTimeWithZone(row.booking.terms.startsAt, row.venue.timeZone, "full")} ·{" "}
           <span className="money">{"$"}{(row.subslot.budgetCents / 100).toFixed(0)}</span>
         </p>
         {canSeeOperationalDetails && (

@@ -391,3 +391,88 @@ export const E2E_JOURNEYS = {
     ],
   },
 } as const;
+
+type VenueFixture = {
+  kind: string;
+  name: string;
+  bio: string;
+  metro: string;
+  addressLine1: string;
+  city: string;
+  region: string;
+  postalCode: string;
+  timeZone: string;
+  lat: number;
+  lng: number;
+  capacity: number;
+  paInventory: {
+    hasPA: boolean;
+    mixerChannels?: number;
+    micsAvailable?: number;
+    monitors?: number;
+    hasOperator?: boolean;
+  };
+  noiseCurfew: string;
+};
+
+type PerformerFixture = {
+  kind: string;
+  name: string;
+  bio: string;
+  genreTags: readonly string[];
+  homeMetro: string;
+  travelRadiusMiles: number;
+  rateMinCents: number;
+  rateMaxCents: number;
+  setLengthsMinutes: readonly number[];
+  techNeeds: {
+    inputs: number;
+    micsNeeded?: number;
+    monitorsNeeded?: number;
+    canPlayUnamplified?: boolean;
+  };
+};
+
+/**
+ * The column projection every seed site writes for a fixture venue. Only the
+ * projection is shared: which row each seed looks up and which status it
+ * writes are three different reset semantics, enforced by the partial unique
+ * indexes on `status = 'live'`, and stay at their own call sites.
+ */
+export function venueRow(fixture: VenueFixture) {
+  return {
+    kind: fixture.kind,
+    name: fixture.name,
+    bio: fixture.bio,
+    metro: fixture.metro,
+    addressLine1: fixture.addressLine1,
+    city: fixture.city,
+    region: fixture.region,
+    postalCode: fixture.postalCode,
+    timeZone: fixture.timeZone,
+    lat: fixture.lat,
+    lng: fixture.lng,
+    capacity: fixture.capacity,
+    // hasOperator stated explicitly: omitting it now means "nobody has said",
+    // which is a different verdict. A room with a PA and no house tech is the
+    // scenario the sound-tech feature exists for, so say it.
+    paInventory: { ...fixture.paInventory },
+    noiseCurfew: fixture.noiseCurfew,
+  };
+}
+
+/** The column projection every seed site writes for a fixture act. */
+export function performerRow(fixture: PerformerFixture) {
+  return {
+    kind: fixture.kind,
+    name: fixture.name,
+    bio: fixture.bio,
+    genreTags: [...fixture.genreTags],
+    homeMetro: fixture.homeMetro,
+    travelRadiusMiles: fixture.travelRadiusMiles,
+    rateMinCents: fixture.rateMinCents,
+    rateMaxCents: fixture.rateMaxCents,
+    setLengthsMinutes: [...fixture.setLengthsMinutes],
+    techNeeds: { ...fixture.techNeeds },
+  };
+}

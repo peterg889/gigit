@@ -9,14 +9,23 @@ import {
   TechUnavailableError,
   VenuePaymentMethodRequiredError,
 } from "@gigit/db";
-import { asc, desc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { NextResponse } from "next/server";
 import { liveProfileForActiveAccount } from "./profile-capabilities";
 import { sessionUserId } from "./session";
 import { fail } from "./respond";
 
 export class AuthError extends Error {
-  constructor(readonly status: number, message: string) {
+  /**
+   * `code` is part of the wire contract, not decoration: the admin routes have
+   * always answered a non-admin with `forbidden`, so it has to survive the trip
+   * through respondError rather than collapse into the generic `auth`.
+   */
+  constructor(
+    readonly status: number,
+    message: string,
+    readonly code: string = "auth",
+  ) {
     super(message);
   }
 }
@@ -27,7 +36,7 @@ export class AuthError extends Error {
  * their domain errors first, then fall through to this.
  */
 export function respondError(e: unknown): NextResponse {
-  if (e instanceof AuthError) return fail("auth", e.message, e.status);
+  if (e instanceof AuthError) return fail(e.code, e.message, e.status);
   if (e instanceof AccountUnavailableError)
     return fail(
       e.code,
@@ -101,20 +110,44 @@ export async function requireUser(): Promise<string> {
   return assertAccountActive(userId);
 }
 
+/**
+ * The ops gate for /api/admin/* — an active session that also holds the admin
+ * actor role.
+ *
+ * Seven routes opened with the same two lines and the same 403 body. A staff
+ * check written seven times is a staff check that can be forgotten once, and
+ * every one of these routes moves money, suspends accounts, or resolves
+ * disputes. Route-side only: it THROWS, which respondError renders as JSON.
+ * Server components must use adminUserId() instead — see AdminOnly.
+ */
+export async function requireAdmin(): Promise<string> {
+  const userId = await requireUser();
+  if (!(await isAdmin(userId)))
+    throw new AuthError(403, "That page is for EightGig staff.", "forbidden");
+  return userId;
+}
+
+/**
+ * The ops gate for the /admin/* PAGES: the admin's id, or null.
+ *
+ * Deliberately not built on requireUser(). A server component that throws
+ * renders the error boundary, so an anonymous visitor following an ops link
+ * would get a crash page instead of the sign-in card — and, being a null return
+ * rather than a throw, this can never fail open the way a forgotten `await`
+ * on a boolean check would.
+ */
+export async function adminUserId(): Promise<string | null> {
+  const userId = await sessionUserId();
+  if (!userId) return null;
+  return (await isAdmin(userId)) ? userId : null;
+}
+
 export async function performerOwnedBy(userId: string) {
   const rows = await db()
     .select()
     .from(schema.performers)
     .where(eq(schema.performers.ownerUserId, userId))
-    // A retained historical/hidden row may be older than the current profile.
-    // Live wins, followed by the profile temporarily suspended by an admin;
-    // created_at + ID makes the legacy hidden fallback stable.
-    .orderBy(
-      desc(eq(schema.performers.status, "live")),
-      desc(eq(schema.performers.status, "suspended")),
-      asc(schema.performers.createdAt),
-      asc(schema.performers.id),
-    );
+    .orderBy(...schema.profilePreferenceOrder(schema.performers));
   return rows[0] ?? null;
 }
 
@@ -123,12 +156,7 @@ export async function venueOwnedBy(userId: string) {
     .select()
     .from(schema.venues)
     .where(eq(schema.venues.ownerUserId, userId))
-    .orderBy(
-      desc(eq(schema.venues.status, "live")),
-      desc(eq(schema.venues.status, "suspended")),
-      asc(schema.venues.createdAt),
-      asc(schema.venues.id),
-    );
+    .orderBy(...schema.profilePreferenceOrder(schema.venues));
   return rows[0] ?? null;
 }
 
@@ -146,12 +174,7 @@ export async function techOwnedBy(userId: string) {
     .select()
     .from(schema.techs)
     .where(eq(schema.techs.ownerUserId, userId))
-    .orderBy(
-      desc(eq(schema.techs.status, "live")),
-      desc(eq(schema.techs.status, "suspended")),
-      asc(schema.techs.createdAt),
-      asc(schema.techs.id),
-    );
+    .orderBy(...schema.profilePreferenceOrder(schema.techs));
   return rows[0] ?? null;
 }
 
@@ -187,13 +210,35 @@ export async function profileCapabilitiesOwnedBy(userId: string) {
 }
 
 /**
+ * Which side of the booking funds this sound sub-slot.
+ *
+ * It is an AUTHORIZATION predicate, so every copy of it means adding a payer
+ * case or an admin override is another edit, and missing one lets the wrong
+ * party book, cancel, or review someone else's sound job.
+ *
+ * Takes OWNED profiles, never the `live` ones: a suspended venue is still the
+ * payer of a sound job it already funded, and must keep seeing the applicants
+ * on its own booking. Whether it may still ACT is a separate question the
+ * routes answer transactionally.
+ */
+export function isSubslotPayer(
+  subslot: { payer: string },
+  booking: { venueId: string; performerId: string },
+  owned: {
+    performer: { id: string } | null | undefined;
+    venue: { id: string } | null | undefined;
+  },
+): boolean {
+  return subslot.payer === "venue"
+    ? owned.venue?.id === booking.venueId
+    : owned.performer?.id === booking.performerId;
+}
+
+/**
  * Load a sound job with the caller's relationship to it already worked out.
  *
- * The payer predicate — which side of the booking funds this sub-slot — was
- * written out four times, each behind an identical join and a 3× profile lookup.
- * It is an AUTHORIZATION predicate, so four copies means adding a payer case or
- * an admin override is four edits and missing one lets the wrong party book,
- * cancel, or review someone else's sound job.
+ * The load itself — an identical join plus the same 3× profile lookup — was
+ * written out four times, each re-deriving the payer predicate on the spot.
  */
 export async function loadSubslotForActor(subslotId: string, userId: string) {
   const [row] = await db()
@@ -207,10 +252,7 @@ export async function loadSubslotForActor(subslotId: string, userId: string) {
     venueOwnedBy(userId),
     techOwnedBy(userId),
   ]);
-  const isPayer =
-    row.subslot.payer === "venue"
-      ? venue?.id === row.booking.venueId
-      : performer?.id === row.booking.performerId;
+  const isPayer = isSubslotPayer(row.subslot, row.booking, { performer, venue });
   return {
     ...row,
     performer,

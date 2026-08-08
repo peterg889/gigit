@@ -1,6 +1,6 @@
 import { appendEvent, db, schema } from "@gigit/db";
 import { and, eq, isNull } from "drizzle-orm";
-import { isAdmin, requireUser, respondError } from "@/lib/auth";
+import { requireAdmin, respondError } from "@/lib/auth";
 import { fail, ok } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -9,8 +9,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function POST(_req: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const adminId = await requireUser();
-    if (!(await isAdmin(adminId))) return fail("forbidden", "That page is for EightGig staff.", 403);
+    const adminId = await requireAdmin();
 
     const d = db();
     const outcome = await d.transaction(async (tx) => {

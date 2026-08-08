@@ -3,8 +3,7 @@ import { and, desc, eq, inArray } from "drizzle-orm";
 import Link from "next/link";
 import {
   formatRelativeTime,
-  formatVenueDateTime,
-  shortTimeZoneName,
+  formatVenueDateTimeWithZone,
 } from "@/lib/date-time";
 import { notFound } from "next/navigation";
 import { sessionUserId } from "@/lib/session";
@@ -117,11 +116,7 @@ export default async function ThreadPage({
         <div className="card thread-context-card">
           <strong>{booking.performerName} at {booking.venueName}</strong>
           <p className="gig-line">
-            {formatVenueDateTime(
-              booking.terms.startsAt,
-              booking.terms.timeZone ?? booking.venueTimeZone,
-            )}{" "}
-            {shortTimeZoneName(
+            {formatVenueDateTimeWithZone(
               booking.terms.startsAt,
               booking.terms.timeZone ?? booking.venueTimeZone,
             )}

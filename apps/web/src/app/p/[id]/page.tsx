@@ -12,14 +12,11 @@ import { sessionUserId } from "@/lib/session";
 import { publicMediaUrl } from "@/lib/storage";
 import { ACT_KIND_LABEL } from "@/lib/labels";
 import { formatAreaName } from "@/lib/date-time";
+import { averageOverall } from "@/lib/review-display";
+import { profileMetadata } from "@/lib/profile-metadata";
 
 export const dynamic = "force-dynamic";
 
-/**
- * A profile is the thing people SHARE — the act sends the link to a venue, the
- * venue puts it in a group chat. Without this every share unfurled as the generic
- * site title, which wastes the one moment the product is spreading by itself.
- */
 export async function generateMetadata({
   params,
 }: {
@@ -30,13 +27,7 @@ export async function generateMetadata({
     .select({ name: schema.performers.name, bio: schema.performers.bio, status: schema.performers.status })
     .from(schema.performers)
     .where(eq(schema.performers.id, id));
-  if (!row || row.status !== "live") return { title: "Not found — EightGig" };
-  const description = row.bio?.slice(0, 155) || `${row.name} — live act on EightGig.`;
-  return {
-    title: `${row.name} — EightGig`,
-    description,
-    openGraph: { title: row.name, description, type: "profile" },
-  };
+  return profileMetadata(row, "live act on EightGig.");
 }
 
 const MEDIA_PROVIDER_LABEL: Record<string, string> = {
@@ -75,10 +66,7 @@ export default async function PerformerPage({
   // visible once both sides reviewed or 7 days after submission (PRD F7.1).
   const allReviews = await reviewableProfileReviews({ kind: "performer", id });
   const visible = visibleReviews(allReviews, "venue");
-  const avg =
-    visible.length > 0
-      ? visible.reduce((s, r) => s + (r.ratings.overall ?? 0), 0) / visible.length
-      : null;
+  const avg = averageOverall(visible);
 
   // Reliability badge (PRD F7.3): the trust signal that matters most with
   // payments deferred — does this act show up?

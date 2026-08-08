@@ -4,8 +4,8 @@ import Link from "next/link";
 import { formatOpsTimestamp } from "@/lib/date-time";
 import { notFound } from "next/navigation";
 import { SupportCaseActions } from "@/components/SupportCaseActions";
-import { isAdmin } from "@/lib/auth";
-import { sessionUserId } from "@/lib/session";
+import { adminUserId } from "@/lib/auth";
+import { AdminOnly } from "../../AdminOnly";
 
 export const dynamic = "force-dynamic";
 
@@ -18,13 +18,8 @@ export default async function SupportRequestPage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const adminId = await sessionUserId();
-  if (!adminId || !(await isAdmin(adminId)))
-    return (
-      <div className="card">
-        Admin only. <Link href="/login">Sign in</Link>
-      </div>
-    );
+  const adminId = await adminUserId();
+  if (!adminId) return <AdminOnly />;
 
   const { id } = await params;
   const d = db();

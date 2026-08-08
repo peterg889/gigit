@@ -90,6 +90,28 @@ export interface TechSubslotActionOptions {
   clock?: () => Date;
 }
 
+/**
+ * A sound job only exists while the night it hangs off does: the parent
+ * booking must still be confirmed and downbeat must still be ahead. Create,
+ * the TECH_CANCELLED pre-check and the apply/book gate all need exactly this
+ * predicate against a locked parent row — as three hand-written copies they
+ * could drift, and a listing that outlives its own gig is the failure that
+ * matters. Private on purpose: callers must hold the parent lock first.
+ */
+function parentIsAvailable(
+  parent: { state: string; terms: { startsAt: string } } | undefined,
+  now: Date,
+): boolean {
+  const startsAt = parent
+    ? new Date(parent.terms.startsAt).getTime()
+    : Number.NaN;
+  return (
+    parent?.state === "confirmed" &&
+    Number.isFinite(startsAt) &&
+    startsAt > now.getTime()
+  );
+}
+
 /** Create the sub-slot from the parent booking's real context (F6.3). */
 export async function createTechSubslot(input: {
   bookingId: string;
@@ -124,12 +146,7 @@ export async function createTechSubslot(input: {
         .for("update", { of: bookings });
       if (!row)
         throw new SubslotNotFoundError(`booking ${input.bookingId} not found`);
-      const gigStartsAt = new Date(row.booking.terms.startsAt).getTime();
-      if (
-        row.booking.state !== "confirmed" ||
-        !Number.isFinite(gigStartsAt) ||
-        gigStartsAt <= Date.now()
-      )
+      if (!parentIsAvailable(row.booking, new Date()))
         throw new TechSubslotParentUnavailableError();
       const [active] = await tx
         .select({ id: techSubslots.id })
@@ -199,15 +216,7 @@ export async function runSubslotTransition(
         .from(bookings)
         .where(eq(bookings.id, candidate.bookingId))
         .for("update");
-      const startsAt = parent
-        ? new Date(parent.terms.startsAt).getTime()
-        : Number.NaN;
-      if (
-        !parent ||
-        parent.state !== "confirmed" ||
-        !Number.isFinite(startsAt) ||
-        startsAt <= currentTime().getTime()
-      )
+      if (!parentIsAvailable(parent, currentTime()))
         throw new TechSubslotParentUnavailableError();
     }
 
@@ -432,24 +441,14 @@ async function lockAvailableTechSubslot(
     .from(bookings)
     .where(eq(bookings.id, candidate.bookingId))
     .for("update");
-  const parentIsAvailable = (now: Date) => {
-    const startsAt = parent
-      ? new Date(parent.terms.startsAt).getTime()
-      : Number.NaN;
-    return (
-      parent?.state === "confirmed" &&
-      Number.isFinite(startsAt) &&
-      startsAt > now.getTime()
-    );
-  };
-  if (!parentIsAvailable(currentTime()))
+  if (!parentIsAvailable(parent, currentTime()))
     throw new TechSubslotParentUnavailableError();
 
   const subslot = await lockTechSubslot(tx, input.subslotId);
   // The request can wait for the subslot after its parent check. Re-read time
   // only once both rows are ours so APPLY and TECH_BOOK cannot commit on or
   // after downbeat. The locked subslot row is the fresh state callers inspect.
-  if (!parentIsAvailable(currentTime()))
+  if (!parentIsAvailable(parent, currentTime()))
     throw new TechSubslotParentUnavailableError();
   return { ...subslot, bookingId: candidate.bookingId, parentTerms: parent!.terms };
 }

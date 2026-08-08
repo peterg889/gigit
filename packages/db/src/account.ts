@@ -55,58 +55,38 @@ export async function setProfileVisibility(
   status: "live" | "hidden" | "suspended",
   existingTx?: Tx,
 ): Promise<void> {
+  // Every role table this account can publish through. The order is fixed
+  // (performers → venues → techs) because the restore branch below takes a row
+  // lock in each one: two concurrent visibility changes on the same account
+  // must queue rather than deadlock holding one table while waiting on another.
+  const PROFILE_TABLES = [performers, venues, techs] as const;
+
   const apply = async (tx: Tx) => {
     if (status === "hidden") {
-      await tx
-        .update(performers)
-        .set({ status })
-        .where(
-          and(
-            eq(performers.ownerUserId, userId),
-            inArray(performers.status, ["live", "suspended"]),
-          ),
-        );
-      await tx
-        .update(venues)
-        .set({ status })
-        .where(
-          and(
-            eq(venues.ownerUserId, userId),
-            inArray(venues.status, ["live", "suspended"]),
-          ),
-        );
-      await tx
-        .update(techs)
-        .set({ status })
-        .where(
-          and(
-            eq(techs.ownerUserId, userId),
-            inArray(techs.status, ["live", "suspended"]),
-          ),
-        );
+      // Hiding also has to catch `suspended` rows: a deactivating account may
+      // already be suspended, and those profiles must come down too.
+      for (const table of PROFILE_TABLES)
+        await tx
+          .update(table)
+          .set({ status })
+          .where(
+            and(
+              eq(table.ownerUserId, userId),
+              inArray(table.status, ["live", "suspended"]),
+            ),
+          );
       return;
     }
 
     if (status === "suspended") {
-      await tx
-        .update(performers)
-        .set({ status })
-        .where(
-          and(
-            eq(performers.ownerUserId, userId),
-            eq(performers.status, "live"),
-          ),
-        );
-      await tx
-        .update(venues)
-        .set({ status })
-        .where(
-          and(eq(venues.ownerUserId, userId), eq(venues.status, "live")),
-        );
-      await tx
-        .update(techs)
-        .set({ status })
-        .where(and(eq(techs.ownerUserId, userId), eq(techs.status, "live")));
+      // Only `live` rows move here. Sweeping hidden/archived rows into
+      // `suspended` would make them eligible for the restore pick below and
+      // republish a profile the owner had deliberately taken down.
+      for (const table of PROFILE_TABLES)
+        await tx
+          .update(table)
+          .set({ status })
+          .where(and(eq(table.ownerUserId, userId), eq(table.status, "live")));
       return;
     }
 
@@ -114,100 +94,46 @@ export async function setProfileVisibility(
     // profile. Existing-live is next (idempotency), and hidden is a final,
     // deterministic fallback for accounts suspended before the dedicated
     // `suspended` profile status existed.
-    const [performer] = await tx
-      .select({ id: performers.id })
-      .from(performers)
-      .where(
-        and(
-          eq(performers.ownerUserId, userId),
-          inArray(performers.status, ["suspended", "live", "hidden"]),
-        ),
-      )
-      .orderBy(
-        desc(eq(performers.status, "suspended")),
-        desc(eq(performers.status, "live")),
-        asc(performers.createdAt),
-        asc(performers.id),
-      )
-      .limit(1)
-      .for("update");
-    const [venue] = await tx
-      .select({ id: venues.id })
-      .from(venues)
-      .where(
-        and(
-          eq(venues.ownerUserId, userId),
-          inArray(venues.status, ["suspended", "live", "hidden"]),
-        ),
-      )
-      .orderBy(
-        desc(eq(venues.status, "suspended")),
-        desc(eq(venues.status, "live")),
-        asc(venues.createdAt),
-        asc(venues.id),
-      )
-      .limit(1)
-      .for("update");
-    const [tech] = await tx
-      .select({ id: techs.id })
-      .from(techs)
-      .where(
-        and(
-          eq(techs.ownerUserId, userId),
-          inArray(techs.status, ["suspended", "live", "hidden"]),
-        ),
-      )
-      .orderBy(
-        desc(eq(techs.status, "suspended")),
-        desc(eq(techs.status, "live")),
-        asc(techs.createdAt),
-        asc(techs.id),
-      )
-      .limit(1)
-      .for("update");
+    const restored: (string | undefined)[] = [];
+    for (const table of PROFILE_TABLES) {
+      const [row] = await tx
+        .select({ id: table.id })
+        .from(table)
+        .where(
+          and(
+            eq(table.ownerUserId, userId),
+            inArray(table.status, ["suspended", "live", "hidden"]),
+          ),
+        )
+        .orderBy(
+          desc(eq(table.status, "suspended")),
+          desc(eq(table.status, "live")),
+          asc(table.createdAt),
+          asc(table.id),
+        )
+        .limit(1)
+        .for("update");
+      restored.push(row?.id);
+    }
 
-    await tx
-      .update(performers)
-      .set({ status: "hidden" })
-      .where(
-        and(
-          eq(performers.ownerUserId, userId),
-          inArray(performers.status, ["live", "suspended"]),
-        ),
-      );
-    await tx
-      .update(venues)
-      .set({ status: "hidden" })
-      .where(
-        and(
-          eq(venues.ownerUserId, userId),
-          inArray(venues.status, ["live", "suspended"]),
-        ),
-      );
-    await tx
-      .update(techs)
-      .set({ status: "hidden" })
-      .where(
-        and(
-          eq(techs.ownerUserId, userId),
-          inArray(techs.status, ["live", "suspended"]),
-        ),
-      );
-    if (performer)
+    // Demote first, promote second: the partial unique index allows only one
+    // live row per owner per role, so the previously live/suspended siblings
+    // have to be out of the way before the chosen row goes live.
+    for (const table of PROFILE_TABLES)
       await tx
-        .update(performers)
-        .set({ status: "live" })
-        .where(eq(performers.id, performer.id));
-    if (venue)
-      await tx
-        .update(venues)
-        .set({ status: "live" })
-        .where(eq(venues.id, venue.id));
-    if (tech)
-      await tx
-        .update(techs)
-        .set({ status: "live" })
-        .where(eq(techs.id, tech.id));
+        .update(table)
+        .set({ status: "hidden" })
+        .where(
+          and(
+            eq(table.ownerUserId, userId),
+            inArray(table.status, ["live", "suspended"]),
+          ),
+        );
+    for (const [index, table] of PROFILE_TABLES.entries()) {
+      const id = restored[index];
+      if (id)
+        await tx.update(table).set({ status: "live" }).where(eq(table.id, id));
+    }
   };
 
   if (existingTx) await apply(existingTx);
@@ -244,7 +170,8 @@ type WindDownHooks = {
   beforeTransition?: (state: string, attempt: number) => Promise<void>;
 };
 
-async function windDownBookingForAccountExit(
+/** @internal Exported so the integration suite can force a transition race. */
+export async function windDownBookingForAccountExit(
   bookingId: string,
   party: BookingParty,
   actor: string,
@@ -284,24 +211,6 @@ async function windDownBookingForAccountExit(
     }
   }
   throw new Error(`booking ${bookingId} kept moving during account exit`);
-}
-
-/** @internal Exported so the integration suite can force a transition race. */
-export async function windDownBookingForDeactivation(
-  bookingId: string,
-  party: BookingParty,
-  actor: string,
-  hooks?: WindDownHooks,
-  existingTx?: Tx,
-): Promise<void> {
-  await windDownBookingForAccountExit(
-    bookingId,
-    party,
-    actor,
-    "account_deactivated",
-    hooks,
-    existingTx,
-  );
 }
 
 export type AccountWindDownHooks = {

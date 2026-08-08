@@ -1,7 +1,7 @@
 import { appendEvent, db, schema } from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
-import { isAdmin, requireUser, respondError } from "@/lib/auth";
+import { requireAdmin, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -11,8 +11,7 @@ const bodySchema = z.object({ note: z.string().trim().min(1).max(2000) });
 export async function POST(req: Request, { params }: Params) {
   try {
     const { id } = await params;
-    const adminId = await requireUser();
-    if (!(await isAdmin(adminId))) return fail("forbidden", "That page is for EightGig staff.", 403);
+    const adminId = await requireAdmin();
     const parsed = await parseBody(req, bodySchema);
     if ("response" in parsed) return parsed.response;
 

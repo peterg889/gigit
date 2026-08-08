@@ -1,16 +1,15 @@
 import { db, schema } from "@gigit/db";
 import { and, desc, eq } from "drizzle-orm";
 import Link from "next/link";
-import { isAdmin } from "@/lib/auth";
-import { sessionUserId } from "@/lib/session";
+import { adminUserId } from "@/lib/auth";
+import { AdminOnly } from "../AdminOnly";
 import { ApiForm } from "@/components/ApiForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function AdminDisputesPage() {
-  const userId = await sessionUserId();
-  if (!userId || !(await isAdmin(userId)))
-    return <div className="card">Admin only. <Link href="/login">Sign in</Link></div>;
+  const userId = await adminUserId();
+  if (!userId) return <AdminOnly />;
 
   const d = db();
   const rows = await d

@@ -1,21 +1,15 @@
 import { db, schema } from "@gigit/db";
 import { desc, eq } from "drizzle-orm";
-import Link from "next/link";
-import { isAdmin } from "@/lib/auth";
-import { sessionUserId } from "@/lib/session";
+import { adminUserId } from "@/lib/auth";
+import { AdminOnly } from "../AdminOnly";
 import { ActionButton } from "@/components/ApiForm";
 
 export const dynamic = "force-dynamic";
 
 /** Moderation queue (F9.3): open fraud flags, decided by a person. */
 export default async function ModerationPage() {
-  const userId = await sessionUserId();
-  if (!userId || !(await isAdmin(userId)))
-    return (
-      <div className="card">
-        Admin only. <Link href="/login">Sign in</Link>
-      </div>
-    );
+  const userId = await adminUserId();
+  if (!userId) return <AdminOnly />;
 
   const flags = await db()
     .select()

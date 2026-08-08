@@ -7,8 +7,7 @@ import { ActionButton, ApiForm } from "@/components/ApiForm";
 import {
   formatAddress,
   formatAreaName,
-  formatVenueDateTime,
-  shortTimeZoneName,
+  formatVenueDateTimeWithZone,
 } from "@/lib/date-time";
 
 export const dynamic = "force-dynamic";
@@ -183,8 +182,7 @@ export default async function FeedPage({
             </Link>
           </div>
           <div>
-            {formatVenueDateTime(slot.startsAt, venueTimeZone)}{" "}
-            {shortTimeZoneName(slot.startsAt, venueTimeZone)}{" "}
+            {formatVenueDateTimeWithZone(slot.startsAt, venueTimeZone)}{" "}
             · {slot.durationMinutes} min ·{" "}
             <span className="money">${(slot.budgetCents / 100).toFixed(0)}</span>
           </div>

@@ -1,7 +1,7 @@
 import { AiNotConfiguredError, disputeBrief } from "@gigit/db";
 import Link from "next/link";
-import { isAdmin } from "@/lib/auth";
-import { sessionUserId } from "@/lib/session";
+import { adminUserId } from "@/lib/auth";
+import { AdminOnly } from "../AdminOnly";
 
 export const dynamic = "force-dynamic";
 
@@ -14,13 +14,8 @@ export default async function DisputeBriefPage({
 }: {
   searchParams: Promise<{ bookingId?: string }>;
 }) {
-  const userId = await sessionUserId();
-  if (!userId || !(await isAdmin(userId)))
-    return (
-      <div className="card">
-        Admin only. <Link href="/login">Sign in</Link>
-      </div>
-    );
+  const userId = await adminUserId();
+  if (!userId) return <AdminOnly />;
   const { bookingId } = await searchParams;
   if (!bookingId)
     return <div className="card">Pass ?bookingId=bkg_… to generate a brief.</div>;

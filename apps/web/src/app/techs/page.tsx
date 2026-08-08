@@ -7,8 +7,7 @@ import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm } from "@/components/ApiForm";
 import {
   formatAddress,
-  formatVenueDateTime,
-  shortTimeZoneName,
+  formatVenueDateTimeWithZone,
 } from "@/lib/date-time";
 import { GEAR_LABELS, SOUND_APPLICATION_LABELS_OWN } from "@/lib/labels";
 
@@ -143,8 +142,7 @@ export default async function TechsPage() {
             <strong>{performerName}</strong> at <strong>{venueName}</strong>{" "}
             <span className="money">${(subslot.budgetCents / 100).toFixed(0)}</span>
             <p className="muted">
-              {formatVenueDateTime(terms.startsAt, venueTimeZone)}{" "}
-              {shortTimeZoneName(terms.startsAt, venueTimeZone)}{" "}
+              {formatVenueDateTimeWithZone(terms.startsAt, venueTimeZone)}{" "}
               · {subslot.needs.inputs} inputs ·{" "}
               {paInventory.hasPA
                 ? paInventory.mixerChannels != null

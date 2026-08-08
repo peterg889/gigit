@@ -137,22 +137,35 @@ export const techUpdateSchema = techCreateSchema.partial().extend({
   rateWithRigCents: techCreateSchema.shape.rateWithRigCents.nullable(),
 });
 
+// A one-off slot and a recurring series describe the same event; only the
+// recurrence pattern differs, and it sits in the MIDDLE of the series' field
+// list. Hence two groups rather than one: zod reports issues in shape order and
+// `describeIssues` concatenates them in that order, so appending `freq` after
+// the shared fields would reorder the sentences in a real validation message.
+// Kept unexported — index.ts re-exports this module wholesale, and no caller
+// outside wants the un-refined shape.
+const eventWhenFields = {
+  startsAt: z.string().datetime(),
+  durationMinutes: z.number().int().min(30).max(720),
+};
+const eventDetailFields = {
+  format: z.enum(slotFormats),
+  genrePrefs: z.array(z.string().min(1).max(40)).max(10).default([]),
+  // budget is REQUIRED: pay transparency is policy — for a series, that applies
+  // to every occurrence.
+  budgetCents: z.number().int().min(1),
+  provides: z
+    .object({
+      pa: z.boolean().optional(),
+      meal: z.boolean().optional(),
+      parking: z.boolean().optional(),
+    })
+    .default({}),
+  notes: z.string().max(2000).optional(),
+};
+
 export const slotCreateSchema = z
-  .object({
-    startsAt: z.string().datetime(),
-    durationMinutes: z.number().int().min(30).max(720),
-    format: z.enum(slotFormats),
-    genrePrefs: z.array(z.string().min(1).max(40)).max(10).default([]),
-    budgetCents: z.number().int().min(1), // budget is REQUIRED: pay transparency is policy
-    provides: z
-      .object({
-        pa: z.boolean().optional(),
-        meal: z.boolean().optional(),
-        parking: z.boolean().optional(),
-      })
-      .default({}),
-    notes: z.string().max(2000).optional(),
-  })
+  .object({ ...eventWhenFields, ...eventDetailFields })
   .refine((s) => new Date(s.startsAt).getTime() > Date.now(), {
     // These refines carry no `path`, so `describeIssues` renders the message
     // alone with no field label in front of it — write them as whole sentences.
@@ -162,20 +175,9 @@ export const slotCreateSchema = z
 // Recurring series (PRD F2.2): the first occurrence anchors the pattern.
 export const seriesCreateSchema = z
   .object({
-    startsAt: z.string().datetime(), // first occurrence; weekday/time derive the pattern
-    durationMinutes: z.number().int().min(30).max(720),
+    ...eventWhenFields, // startsAt is the first occurrence; weekday/time derive the pattern
     freq: z.enum(["weekly", "monthly_dow"]),
-    format: z.enum(slotFormats),
-    genrePrefs: z.array(z.string().min(1).max(40)).max(10).default([]),
-    budgetCents: z.number().int().min(1), // transparency applies to every occurrence
-    provides: z
-      .object({
-        pa: z.boolean().optional(),
-        meal: z.boolean().optional(),
-        parking: z.boolean().optional(),
-      })
-      .default({}),
-    notes: z.string().max(2000).optional(),
+    ...eventDetailFields,
   })
   .refine((s) => new Date(s.startsAt).getTime() > Date.now(), {
     message: "The first date has already passed. Pick a date in the future.",

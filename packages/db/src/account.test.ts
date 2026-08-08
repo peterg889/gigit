@@ -1,9 +1,10 @@
 import { newId } from "@gigit/domain";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { afterAll, describe, expect, it } from "vitest";
 import {
   deactivateAccount,
-  windDownBookingForDeactivation,
+  setProfileVisibility,
+  windDownBookingForAccountExit,
 } from "./account.js";
 import { AccountUnavailableError } from "./account-gate.js";
 import { closeDb, db, getPool } from "./client.js";
@@ -721,10 +722,11 @@ describe("account deactivation lifecycle", () => {
       releaseFirstAttempt = resolve;
     });
     const observedStates: string[] = [];
-    const deactivation = windDownBookingForDeactivation(
+    const deactivation = windDownBookingForAccountExit(
       seeded.bookingId,
       "performer",
       seeded.performer.ownerUserId,
+      "account_deactivated",
       {
         beforeTransition: async (state, attempt) => {
           observedStates.push(state);
@@ -772,5 +774,277 @@ describe("account deactivation lifecycle", () => {
         },
       ]),
     );
+  });
+
+  /**
+   * setProfileVisibility's three destinations do NOT share one source predicate,
+   * and every existing test happens to give each role a single profile — which
+   * is the one shape where the difference cannot show. These pin it.
+   *
+   * `hidden` (and the restore's own demotion sweep) must take rows that are
+   * `live` OR `suspended`; `suspended` must take only `live`. Collapse the first
+   * into the second and a restore leaves the profiles it did not pick still
+   * marked `suspended` — an owner then holds two currently-valid profiles for
+   * one role, and `performers_owner_uq`/`venues_owner_uq`/`techs_owner_uq` only
+   * police `status = 'live'`, so nothing downstream catches it. Collapse it the
+   * same way in the `hidden` branch and deactivating a suspended account leaves
+   * a venue's street address published under a non-hidden status.
+   */
+  describe("profile visibility across an owner's mixed-state profiles", () => {
+    // Ordered so `chosen` is the oldest suspended row and therefore the one the
+    // restore's tie-break (suspended first, then oldest) has to land on.
+    const ARCHIVED_AT = new Date("2022-01-01T00:00:00Z");
+    const CHOSEN_AT = new Date("2023-01-01T00:00:00Z");
+    const SPARE_AT = new Date("2024-01-01T00:00:00Z");
+    const CURRENT_AT = new Date("2025-01-01T00:00:00Z");
+
+    type ProfileSlots = {
+      chosen: string;
+      spare: string;
+      current: string;
+      archived: string;
+    };
+    type MixedOwner = {
+      userId: string;
+      performer: ProfileSlots;
+      venue: ProfileSlots;
+      tech: ProfileSlots;
+    };
+
+    /**
+     * One owner holding four profiles per role in four different statuses at
+     * once. Accounts really reach this: an older profile was archived, an
+     * earlier admin round left a `suspended` row behind, the owner published a
+     * fresh one, and the latest suspension caught that.
+     */
+    async function mixedStateOwner(): Promise<MixedOwner> {
+      const userId = await makeUser();
+      const slots = (prefix: "performer" | "venue" | "tech"): ProfileSlots => ({
+        chosen: newId(prefix),
+        spare: newId(prefix),
+        current: newId(prefix),
+        archived: newId(prefix),
+      });
+      const owner: MixedOwner = {
+        userId,
+        performer: slots("performer"),
+        venue: slots("venue"),
+        tech: slots("tech"),
+      };
+
+      await db()
+        .insert(performers)
+        .values([
+          {
+            id: owner.performer.chosen,
+            ownerUserId: userId,
+            kind: "band",
+            name: "Mixed Act (suspended, oldest)",
+            homeMetro: "mixed-restore",
+            status: "suspended",
+            createdAt: CHOSEN_AT,
+          },
+          {
+            id: owner.performer.spare,
+            ownerUserId: userId,
+            kind: "band",
+            name: "Mixed Act (suspended, newer)",
+            homeMetro: "mixed-restore",
+            status: "suspended",
+            createdAt: SPARE_AT,
+          },
+          {
+            id: owner.performer.current,
+            ownerUserId: userId,
+            kind: "solo",
+            name: "Mixed Act (live)",
+            homeMetro: "mixed-restore",
+            status: "live",
+            createdAt: CURRENT_AT,
+          },
+          {
+            id: owner.performer.archived,
+            ownerUserId: userId,
+            kind: "band",
+            name: "Mixed Act (archived)",
+            homeMetro: "mixed-restore",
+            status: "hidden",
+            createdAt: ARCHIVED_AT,
+          },
+        ]);
+      await db()
+        .insert(venues)
+        .values([
+          {
+            id: owner.venue.chosen,
+            ownerUserId: userId,
+            kind: "bar",
+            name: "Mixed Room (suspended, oldest)",
+            metro: "mixed-restore",
+            addressLine1: "1 Private St",
+            status: "suspended",
+            createdAt: CHOSEN_AT,
+          },
+          {
+            id: owner.venue.spare,
+            ownerUserId: userId,
+            kind: "bar",
+            name: "Mixed Room (suspended, newer)",
+            metro: "mixed-restore",
+            addressLine1: "2 Private St",
+            status: "suspended",
+            createdAt: SPARE_AT,
+          },
+          {
+            id: owner.venue.current,
+            ownerUserId: userId,
+            kind: "brewery",
+            name: "Mixed Room (live)",
+            metro: "mixed-restore",
+            addressLine1: "3 Private St",
+            status: "live",
+            createdAt: CURRENT_AT,
+          },
+          {
+            id: owner.venue.archived,
+            ownerUserId: userId,
+            kind: "bar",
+            name: "Mixed Room (archived)",
+            metro: "mixed-restore",
+            addressLine1: "4 Private St",
+            status: "hidden",
+            createdAt: ARCHIVED_AT,
+          },
+        ]);
+      await db()
+        .insert(techs)
+        .values([
+          {
+            id: owner.tech.chosen,
+            ownerUserId: userId,
+            name: "Mixed Tech (suspended, oldest)",
+            gear: "full_rig",
+            status: "suspended",
+            createdAt: CHOSEN_AT,
+          },
+          {
+            id: owner.tech.spare,
+            ownerUserId: userId,
+            name: "Mixed Tech (suspended, newer)",
+            gear: "full_rig",
+            status: "suspended",
+            createdAt: SPARE_AT,
+          },
+          {
+            id: owner.tech.current,
+            ownerUserId: userId,
+            name: "Mixed Tech (live)",
+            gear: "partial",
+            status: "live",
+            createdAt: CURRENT_AT,
+          },
+          {
+            id: owner.tech.archived,
+            ownerUserId: userId,
+            name: "Mixed Tech (archived)",
+            gear: "none",
+            status: "hidden",
+            createdAt: ARCHIVED_AT,
+          },
+        ]);
+      return owner;
+    }
+
+    async function profileStatuses(owner: MixedOwner) {
+      const ids = [owner.performer, owner.venue, owner.tech].flatMap((role) =>
+        Object.values(role),
+      );
+      const byId = new Map<string, string>();
+      for (const row of await db()
+        .select({ id: performers.id, status: performers.status })
+        .from(performers)
+        .where(inArray(performers.id, ids)))
+        byId.set(row.id, row.status);
+      for (const row of await db()
+        .select({ id: venues.id, status: venues.status })
+        .from(venues)
+        .where(inArray(venues.id, ids)))
+        byId.set(row.id, row.status);
+      for (const row of await db()
+        .select({ id: techs.id, status: techs.status })
+        .from(techs)
+        .where(inArray(techs.id, ids)))
+        byId.set(row.id, row.status);
+      const forRole = (role: ProfileSlots) => ({
+        chosen: byId.get(role.chosen),
+        spare: byId.get(role.spare),
+        current: byId.get(role.current),
+        archived: byId.get(role.archived),
+      });
+      return {
+        performer: forRole(owner.performer),
+        venue: forRole(owner.venue),
+        tech: forRole(owner.tech),
+      };
+    }
+
+    it("restoring a mixed-state owner republishes one profile per role and demotes every other live or suspended one", async () => {
+      const owner = await mixedStateOwner();
+
+      await setProfileVisibility(owner.userId, "live");
+
+      // `spare` is the assertion that matters: it is suspended and NOT the
+      // profile the restore picked, so it is only reachable by a demotion sweep
+      // that takes suspended rows as well as live ones.
+      const expected = {
+        chosen: "live",
+        spare: "hidden",
+        current: "hidden",
+        archived: "hidden",
+      };
+      expect(await profileStatuses(owner)).toEqual({
+        performer: expected,
+        venue: expected,
+        tech: expected,
+      });
+    });
+
+    it("hiding a mixed-state owner unpublishes the suspended profiles too", async () => {
+      const owner = await mixedStateOwner();
+
+      await setProfileVisibility(owner.userId, "hidden");
+
+      const expected = {
+        chosen: "hidden",
+        spare: "hidden",
+        current: "hidden",
+        archived: "hidden",
+      };
+      expect(await profileStatuses(owner)).toEqual({
+        performer: expected,
+        venue: expected,
+        tech: expected,
+      });
+    });
+
+    it("suspending a mixed-state owner takes the live profiles and leaves archived ones archived", async () => {
+      const owner = await mixedStateOwner();
+
+      await setProfileVisibility(owner.userId, "suspended");
+
+      // Archived stays archived: suspension must never republish a profile the
+      // owner had already retired into a status an admin can reinstate.
+      const expected = {
+        chosen: "suspended",
+        spare: "suspended",
+        current: "suspended",
+        archived: "hidden",
+      };
+      expect(await profileStatuses(owner)).toEqual({
+        performer: expected,
+        venue: expected,
+        tech: expected,
+      });
+    });
   });
 });

@@ -5,8 +5,7 @@ import {
 } from "@gigit/domain";
 import type { BookingState } from "@gigit/domain";
 import { appendEvent, db, pgErrorCode, schema } from "@gigit/db";
-import { eq } from "drizzle-orm";
-import { performerOwnedBy, requireUser, respondError, venueOwnedBy } from "@/lib/auth";
+import { loadBookingForActor, requireUser, respondError } from "@/lib/auth";
 import { fail, ok, parseBody } from "@/lib/respond";
 
 type Params = { params: Promise<{ id: string }> };
@@ -19,22 +18,18 @@ export async function POST(req: Request, { params }: Params) {
   try {
     const { id: bookingId } = await params;
     const userId = await requireUser();
-    const [booking] = await db()
-      .select()
-      .from(schema.bookings)
-      .where(eq(schema.bookings.id, bookingId));
-    if (!booking) return fail("not_found", "We couldn't find that booking.", 404);
-    if (!isReviewableBookingState(booking.state as BookingState))
+    const actor = await loadBookingForActor(bookingId, userId);
+    if (!actor) return fail("not_found", "We couldn't find that booking.", 404);
+    // State before role: an outsider poking at a live booking learns only that
+    // reviews aren't open yet, which is public from the gig date anyway.
+    if (!isReviewableBookingState(actor.booking.state as BookingState))
       return fail("conflict", "Reviews open once the gig is done.", 409);
 
-    const [performer, venue] = await Promise.all([
-      performerOwnedBy(userId),
-      venueOwnedBy(userId),
-    ]);
+    // Venue first: an owner who is both parties to their own booking has always
+    // authored as the venue, and the double-blind pairing is keyed on the role.
     let authorRole: "venue" | "performer";
-    if (venue && venue.id === booking.venueId) authorRole = "venue";
-    else if (performer && performer.id === booking.performerId)
-      authorRole = "performer";
+    if (actor.asVenue) authorRole = "venue";
+    else if (actor.asPerformer) authorRole = "performer";
     else return fail("forbidden", "This booking isn't yours.", 403);
 
     const parsed = await parseBody(req, reviewCreateSchema);

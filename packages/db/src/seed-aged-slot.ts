@@ -7,7 +7,7 @@ import {
   slots,
   venues,
 } from "./schema.js";
-import { E2E_JOURNEYS } from "./seed-fixtures.js";
+import { E2E_JOURNEYS, performerRow, venueRow } from "./seed-fixtures.js";
 import { ensureActiveSeedUser } from "./seed-postgig.js";
 
 type AgedSlotAttempt = (typeof E2E_JOURNEYS.aged.attempts)[number];
@@ -33,20 +33,7 @@ async function ensureAgedSlotAttempt(
       .where(eq(venues.ownerUserId, venueUserId));
     const venueId = savedVenue?.id ?? newId("venue");
     const venueValues = {
-      kind: attempt.venue.kind,
-      name: attempt.venue.name,
-      bio: attempt.venue.bio,
-      metro: attempt.venue.metro,
-      addressLine1: attempt.venue.addressLine1,
-      city: attempt.venue.city,
-      region: attempt.venue.region,
-      postalCode: attempt.venue.postalCode,
-      timeZone: attempt.venue.timeZone,
-      lat: attempt.venue.lat,
-      lng: attempt.venue.lng,
-      capacity: attempt.venue.capacity,
-      paInventory: { ...attempt.venue.paInventory },
-      noiseCurfew: attempt.venue.noiseCurfew,
+      ...venueRow(attempt.venue),
       status: "live",
     };
     if (savedVenue)
@@ -68,16 +55,7 @@ async function ensureAgedSlotAttempt(
       .where(eq(performers.ownerUserId, performerUserId));
     const performerId = savedPerformer?.id ?? newId("performer");
     const performerValues = {
-      kind: attempt.performer.kind,
-      name: attempt.performer.name,
-      bio: attempt.performer.bio,
-      genreTags: [...attempt.performer.genreTags],
-      homeMetro: attempt.performer.homeMetro,
-      travelRadiusMiles: attempt.performer.travelRadiusMiles,
-      rateMinCents: attempt.performer.rateMinCents,
-      rateMaxCents: attempt.performer.rateMaxCents,
-      setLengthsMinutes: [...attempt.performer.setLengthsMinutes],
-      techNeeds: { ...attempt.performer.techNeeds },
+      ...performerRow(attempt.performer),
       status: "live",
     };
     if (savedPerformer)

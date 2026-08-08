@@ -9,7 +9,7 @@ import {
   users,
   venues,
 } from "./schema.js";
-import { E2E_JOURNEYS } from "./seed-fixtures.js";
+import { E2E_JOURNEYS, venueRow } from "./seed-fixtures.js";
 
 type LifecycleAttempt = (typeof E2E_JOURNEYS.lifecycle.attempts)[number];
 type DeactivationAttempt =
@@ -145,21 +145,12 @@ async function ensureLifecycleAttempt(
     );
     const venueId = savedVenue?.id ?? newId("venue");
     const venueValues = {
+      // Unlike the other seeds, this one looks the venue up by name rather
+      // than by owner, so the owner is a written column here: the insert below
+      // has no other source for it, and the update re-points a restored
+      // fixture at whichever user id ensureResettableUser just settled on.
       ownerUserId: venueUserId,
-      kind: attempt.venue.kind,
-      name: attempt.venue.name,
-      bio: attempt.venue.bio,
-      metro: attempt.venue.metro,
-      addressLine1: attempt.venue.addressLine1,
-      city: attempt.venue.city,
-      region: attempt.venue.region,
-      postalCode: attempt.venue.postalCode,
-      timeZone: attempt.venue.timeZone,
-      lat: attempt.venue.lat,
-      lng: attempt.venue.lng,
-      capacity: attempt.venue.capacity,
-      paInventory: { ...attempt.venue.paInventory },
-      noiseCurfew: attempt.venue.noiseCurfew,
+      ...venueRow(attempt.venue),
       status: "live",
     };
     if (savedVenue)

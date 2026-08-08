@@ -2,8 +2,8 @@ import { db, schema } from "@gigit/db";
 import { asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { formatOpsTimestamp } from "@/lib/date-time";
-import { isAdmin } from "@/lib/auth";
-import { sessionUserId } from "@/lib/session";
+import { adminUserId } from "@/lib/auth";
+import { AdminOnly } from "../AdminOnly";
 
 export const dynamic = "force-dynamic";
 
@@ -16,13 +16,8 @@ export default async function SupportQueuePage({
 }: {
   searchParams: Promise<{ state?: string }>;
 }) {
-  const userId = await sessionUserId();
-  if (!userId || !(await isAdmin(userId)))
-    return (
-      <div className="card">
-        Admin only. <Link href="/login">Sign in</Link>
-      </div>
-    );
+  const userId = await adminUserId();
+  if (!userId) return <AdminOnly />;
 
   const { state: requestedState } = await searchParams;
   const state = requestedState === "resolved" ? "resolved" : "open";

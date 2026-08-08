@@ -15,6 +15,7 @@ import {
 import { and, eq, gt, inArray, ne, sql } from "drizzle-orm";
 import { db, type Tx } from "./client.js";
 import { lockActiveProfileOwners } from "./account-gate.js";
+import { declinePendingApplications } from "./application-decline.js";
 import { ensureBookingThreadInTx } from "./booking-thread.js";
 import { appendEvent } from "./events.js";
 import { recordLedgerEntry } from "./ledger.js";
@@ -396,34 +397,11 @@ export async function runBookingTransition(
                 eq(applications.status, "offered"),
               ),
             );
-          const expiredApplicants = await tx
-            .update(applications)
-            .set({ status: "declined", declineReason: "slot_expired" })
-            .where(
-              and(
-                eq(applications.slotId, row.slotId),
-                eq(applications.status, "submitted"),
-              ),
-            )
-            .returning({ id: applications.id });
-          for (const app of expiredApplicants)
-            await appendEvent(tx, {
-              actor,
-              kind: "application.declined",
-              subjectType: "slot",
-              subjectId: row.slotId,
-              payload: {
-                applicationId: app.id,
-                reason: "slot_expired",
-                effects: [
-                  {
-                    kind: "notify",
-                    template: "application_expired",
-                    to: "performer",
-                  },
-                ],
-              },
-            });
+          await declinePendingApplications(tx, {
+            slotIds: [row.slotId],
+            actor,
+            reason: "slot_expired",
+          });
           continue;
         }
 
@@ -509,32 +487,12 @@ export async function runBookingTransition(
       // The losing applicants: decline them AND tell them. This bulk path is
       // the high-volume way an application ends, and it used to emit no event
       // at all — so most acts never heard anything back.
-      const declined = await tx
-        .update(applications)
-        .set({ status: "declined", declineReason: "slot_filled" })
-        .where(
-          and(
-            eq(applications.slotId, row.slotId),
-            ne(applications.performerId, row.performerId),
-            eq(applications.status, "submitted"),
-          ),
-        )
-        .returning({ id: applications.id });
-      for (const app of declined) {
-        await appendEvent(tx, {
-          actor,
-          kind: "application.declined",
-          subjectType: "slot",
-          subjectId: row.slotId,
-          payload: {
-            applicationId: app.id,
-            reason: "slot_filled",
-            effects: [
-              { kind: "notify", template: "application_declined", to: "performer" },
-            ],
-          },
-        });
-      }
+      await declinePendingApplications(tx, {
+        slotIds: [row.slotId],
+        actor,
+        reason: "slot_filled",
+        excludePerformerId: row.performerId,
+      });
     }
 
     await appendEvent(tx, {

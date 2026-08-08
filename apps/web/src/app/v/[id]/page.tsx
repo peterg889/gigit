@@ -4,16 +4,13 @@ import { and, asc, eq, gte } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { publicMediaUrl } from "@/lib/storage";
-import { formatAddress, formatVenueDateTime, shortTimeZoneName } from "@/lib/date-time";
+import { formatAddress, formatVenueDateTimeWithZone } from "@/lib/date-time";
 import { equipmentCount, houseOperatorLabel } from "@/lib/sound-display";
+import { averageOverall } from "@/lib/review-display";
+import { profileMetadata } from "@/lib/profile-metadata";
 
 export const dynamic = "force-dynamic";
 
-/**
- * A profile is the thing people SHARE — the act sends the link to a venue, the
- * venue puts it in a group chat. Without this every share unfurled as the generic
- * site title, which wastes the one moment the product is spreading by itself.
- */
 export async function generateMetadata({
   params,
 }: {
@@ -24,13 +21,7 @@ export async function generateMetadata({
     .select({ name: schema.venues.name, bio: schema.venues.bio, status: schema.venues.status })
     .from(schema.venues)
     .where(eq(schema.venues.id, id));
-  if (!row || row.status !== "live") return { title: "Not found — EightGig" };
-  const description = row.bio?.slice(0, 155) || `${row.name} — books live music on EightGig.`;
-  return {
-    title: `${row.name} — EightGig`,
-    description,
-    openGraph: { title: row.name, description, type: "profile" },
-  };
+  return profileMetadata(row, "books live music on EightGig.");
 }
 
 import { GIG_FORMAT_LABEL, VENUE_KIND_LABEL } from "@/lib/labels";
@@ -81,10 +72,7 @@ export default async function VenuePage({
   // the performer page with the role flipped (PRD F7.1 — reviews cut both ways).
   const allReviews = await reviewableProfileReviews({ kind: "venue", id });
   const visible = visibleReviews(allReviews, "performer");
-  const avg =
-    visible.length > 0
-      ? visible.reduce((s, r) => s + (r.ratings.overall ?? 0), 0) / visible.length
-      : null;
+  const avg = averageOverall(visible);
 
   const pa = v.paInventory;
   return (
@@ -153,8 +141,7 @@ export default async function VenuePage({
         {openSlots.map((s) => (
           <p key={s.id}>
             <Link href={`/slots/${s.id}`}>
-              {formatVenueDateTime(s.startsAt, v.timeZone)}{" "}
-              {shortTimeZoneName(s.startsAt, v.timeZone)}
+              {formatVenueDateTimeWithZone(s.startsAt, v.timeZone)}
             </Link>{" "}
             · <span className="badge">{GIG_FORMAT_LABEL[s.format] ?? "Open format"}</span> ·{" "}
             <span className="money">${(s.budgetCents / 100).toFixed(0)}</span>

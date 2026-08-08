@@ -1,4 +1,5 @@
 import { ACTIVE_SUBSLOT_STATES } from "@gigit/domain";
+import { startsInFuture } from "./date-time";
 
 export function equipmentCount(
   count: number | undefined,
@@ -13,6 +14,17 @@ export function houseOperatorLabel(value: boolean | undefined): string {
   if (value === true) return "house sound tech included";
   if (value === false) return "no house sound tech";
   return "house sound tech not confirmed";
+}
+
+/**
+ * Badge colour for a sound verdict. `unknown` is warn, not neutral: "nobody has
+ * said" is a thing to go chase before the downbeat, and rendering it in the same
+ * grey as a settled answer hides that. Only `covered` is good.
+ */
+export function soundVerdictClass(verdict: string): string {
+  if (verdict === "covered") return "badge good";
+  if (verdict === "unknown") return "badge warn";
+  return "badge";
 }
 
 export interface SoundParentAvailability {
@@ -40,12 +52,9 @@ export function isSoundParentActionable(
   job: SoundParentAvailability,
   now: Date = new Date(),
 ): boolean {
-  const startsAt =
-    job.startsAt instanceof Date ? job.startsAt : new Date(job.startsAt);
   return (
     job.bookingState === "confirmed" &&
-    Number.isFinite(startsAt.getTime()) &&
-    startsAt.getTime() > now.getTime() &&
+    startsInFuture(job.startsAt, now) &&
     job.venueProfileStatus === "live" &&
     job.performerProfileStatus === "live" &&
     job.venueOwnerStatus === "active" &&
@@ -116,11 +125,7 @@ export function payerSoundCancellationConfirmation(
 ): string {
   if (job.subslotState !== "booked")
     return "Cancel this sound job? The listing will close.";
-  const startsAt =
-    job.startsAt instanceof Date ? job.startsAt : new Date(job.startsAt);
-  const hasStarted =
-    !Number.isFinite(startsAt.getTime()) || startsAt.getTime() <= now.getTime();
-  return hasStarted
+  return !startsInFuture(job.startsAt, now)
     ? "Cancel this sound job? The gig has started and the assignment will close. Settle the agreed sound fee directly with the tech."
     : "Cancel this sound job? The booked tech will be notified and the job will close. Settle any cancellation amount you agreed directly with the tech.";
 }
