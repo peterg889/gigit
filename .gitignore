@@ -7,3 +7,6 @@ dist/
 coverage/
 test-results/
 screens/
+# vitest JSON report the nightly writes so scripts/assert-evals-ran.mjs can
+# prove the live evals executed rather than trusting a green exit code
+vitest-evals.json

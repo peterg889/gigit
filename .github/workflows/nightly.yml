@@ -1,0 +1,176 @@
+name: nightly
+on:
+  schedule:
+    # 08:15 UTC = 03:15 CDT / 02:15 CST. EightGig is a Milwaukee-first product,
+    # so "quiet" means quiet in US Central: no venue is posting a slot and no
+    # act is applying while this walks production. :15 and not :00 because
+    # GitHub queues every cron in the fleet at the top of the hour and drops
+    # scheduled runs it cannot service — an off-the-hour minute actually starts.
+    - cron: "15 8 * * *"
+  # Runnable by hand: after a prod promote you want the smoke NOW, not tomorrow.
+  workflow_dispatch:
+
+# One nightly at a time. A hand-dispatched run landing inside the cron window
+# would double every probe against production and make two jobs argue about
+# which one saw the outage; a duplicate waits instead of cancelling the run
+# that is already talking to prod (unlike ci.yml, nothing here is superseded by
+# a newer commit — these jobs test deployed environments, not this ref).
+concurrency:
+  group: nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Deployed-environment smoke (unauthenticated) ──
+  # The Playwright e2e suite CANNOT be pointed at these URLs: it signs in with
+  # the fixed dev OTP "000000", which apps/web/src/lib/otp.ts only honours when
+  # NODE_ENV !== "production". Both deployments run NODE_ENV=production and mint
+  # CSPRNG codes, so an e2e run there would hang on a code nobody can read —
+  # and the tempting "fix" is to weaken the production OTP path. Hence a
+  # signed-out probe script instead; see scripts/smoke-deployed.mjs.
+  smoke:
+    strategy:
+      fail-fast: false # staging breaking must never hide prod breaking
+      matrix:
+        include:
+          - name: prod
+            url: https://eightgig.com
+          - name: staging
+            url: https://staging.eightgig.com
+    name: smoke (${{ matrix.name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # Deliberately NOT ./.github/actions/setup: the smoke imports nothing but
+      # node: builtins, and a prod outage must still be reported when the
+      # lockfile, the pnpm store or a registry is having a bad day. The runner's
+      # own Node (>=18, so global fetch) is all it needs.
+      - name: Smoke ${{ matrix.name }} (${{ matrix.url }})
+        run: node scripts/smoke-deployed.mjs ${{ matrix.url }}
+      # `cancelled()` too: GitHub reports a job it kills on timeout as cancelled,
+      # not failed, so `failure()` alone stayed silent in the one case where the
+      # smoke is most likely to run long — a production that hangs rather than
+      # refuses.
+      - name: Say which environment broke
+        if: failure() || cancelled()
+        run: |
+          {
+            echo "## ❌ smoke failed: ${{ matrix.name }} (${{ matrix.url }})"
+            echo ""
+            echo "Reproduce locally — no credentials needed:"
+            echo ""
+            echo '```'
+            echo "node scripts/smoke-deployed.mjs ${{ matrix.url }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ── AI golden-set evals (live model) ──
+  # These 6 tests, prompt-injection corpus included, are gated on GEMINI_API_KEY
+  # and have therefore never executed anywhere. They belong here and NOT in
+  # ci.yml: they call a live model and assert a supermajority of 5 samples, so a
+  # bad sample is a coin flip — blocking a deploy on one would teach everyone to
+  # re-run CI until it goes green, which is how a real capitulation gets merged.
+  #
+  # This job FAILS when the secret is missing rather than quietly passing. A
+  # nightly that reports success while running nothing is worse than no nightly,
+  # and this is the one job whose "did it run?" cannot be read off the result.
+  # If the answer is genuinely "we are not paying for nightly model calls", set
+  # repo variable AI_EVALS_ENABLED=false and the job is SKIPPED — visibly, in
+  # the run graph — instead of lying. (Secrets cannot be used in a job-level
+  # `if`, same reason ci.yml gates its deploys on a var.)
+  ai-evals:
+    if: vars.AI_EVALS_ENABLED != 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gigit
+          POSTGRES_PASSWORD: gigit
+          POSTGRES_DB: gigit
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U gigit" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      # ai.ts writes every call to ai_tasks, so the evals need a real database
+      # even though what they exercise is the model.
+      DATABASE_URL: postgres://gigit:gigit@localhost:5433/gigit
+      SESSION_SECRET: ci-session-secret-0123456789abcdef0123456789
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require a live model key
+        run: |
+          if [ -z "$GEMINI_API_KEY" ]; then
+            echo "::error title=AI golden-set evals did not run::GEMINI_API_KEY is not configured as a repository secret, so packages/db/src/ai.eval.test.ts (including the prompt-injection corpus) would silently skip and report green. Add the secret, or set repository variable AI_EVALS_ENABLED=false to skip this job on purpose."
+            {
+              echo "## ❌ AI golden-set evals: NOT RUN"
+              echo ""
+              echo "\`GEMINI_API_KEY\` is not a repository secret, so the live evals —"
+              echo "including the prompt-injection corpus — would skip and still report green."
+              echo ""
+              echo "Fix one of two ways:"
+              echo ""
+              echo "- add the \`GEMINI_API_KEY\` secret, or"
+              echo "- set repository variable \`AI_EVALS_ENABLED=false\` to skip this job deliberately."
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          echo "GEMINI_API_KEY present (${#GEMINI_API_KEY} chars) — running the live golden set."
+      - uses: ./.github/actions/setup
+      - run: pnpm build:packages # @gigit/domain is consumed from dist
+      - name: Run the golden set against the live model
+        run: |
+          pnpm --filter @gigit/db exec vitest run src/ai.eval.test.ts \
+            --reporter=default --reporter=json --outputFile.json=vitest-evals.json
+      # A green vitest is NOT proof these ran — describe.skip is green too.
+      - name: Assert the live evals actually executed
+        if: always() # a skipped-not-run suite must be reported even if vitest exits 0
+        run: node scripts/assert-evals-ran.mjs packages/db/vitest-evals.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ai-eval-report
+          path: packages/db/vitest-evals.json
+          if-no-files-found: warn
+
+  # ── One place the failure email points at ──
+  # OpsAlerts (SNS) has zero subscribers, so routing there would be a pipe to
+  # nowhere. GitHub already emails the repo owner when a *scheduled* run fails;
+  # this job exists so that mail lands on a run whose summary says, in words,
+  # which environment broke and whether the evals ran — rather than a wall of
+  # green checks with one red dot in it.
+  nightly-summary:
+    needs: [smoke, ai-evals]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report
+        env:
+          SMOKE: ${{ needs.smoke.result }}
+          EVALS: ${{ needs.ai-evals.result }}
+        run: |
+          icon() { case "$1" in success) echo "✅";; failure) echo "❌";; cancelled) echo "🚫";; skipped) echo "⏭️";; *) echo "❔";; esac; }
+          {
+            echo "## EightGig nightly"
+            echo ""
+            echo "| check | result |"
+            echo "| --- | --- |"
+            echo "| smoke — eightgig.com + staging.eightgig.com | $(icon "$SMOKE") $SMOKE |"
+            echo "| AI golden-set evals (live model) | $(icon "$EVALS") $EVALS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$EVALS" = "skipped" ]; then
+            echo "::warning title=AI golden-set evals skipped::AI_EVALS_ENABLED=false, so the live evals and the prompt-injection corpus did not run tonight."
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "> ⚠️ The live evals did **not** run (\`AI_EVALS_ENABLED=false\`)." >> "$GITHUB_STEP_SUMMARY"
+          fi
+          # Restate the verdict as this job's own exit code so the run's
+          # conclusion is never "green with a red job buried in the matrix".
+          if [ "$SMOKE" != "success" ] || { [ "$EVALS" != "success" ] && [ "$EVALS" != "skipped" ]; }; then
+            echo "::error title=Nightly failed::smoke=$SMOKE ai-evals=$EVALS — open the failing job above for the exact probe."
+            exit 1
+          fi
+          echo "nightly clean: smoke=$SMOKE ai-evals=$EVALS"

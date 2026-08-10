@@ -172,7 +172,12 @@ describe("AI availability is not uniform", () => {
     expect(parse).not.toMatch(/catch \(/);
   });
 
-  it("slotParse has no fallback, so its widget must be gated on aiConfigured()", async () => {
+  // Only meaningful WITHOUT a key: it asserts the no-key behaviour by observing
+  // it. The nightly workflow runs this file with GEMINI_API_KEY set, where
+  // slotParse reaches the live model and aiConfigured() is true by definition —
+  // so unguarded, this test would fail the nightly for doing its job, and the
+  // obvious "fix" (dropping the assertion) would delete the check everywhere.
+  it.skipIf(hasKey)("slotParse has no fallback, so its widget must be gated on aiConfigured()", async () => {
     // If this ever stops throwing, slotParse grew a fallback and the gate in
     // apps/web/src/app/slots/new/page.tsx can be relaxed.
     await expect(slotParse("acoustic friday, $300", "usr_fallback")).rejects.toThrow(
