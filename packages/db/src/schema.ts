@@ -244,12 +244,19 @@ export const mediaAssets = pgTable(
     /** which profile this media belongs to */
     subjectType: text("subject_type").notNull(), // performer | venue | tech
     subjectId: text("subject_id").notNull(),
-    kind: text("kind").notNull(), // image | audio | video_embed
-    storageKey: text("storage_key"),
-    bytes: integer("bytes"),
-    embedUrl: text("embed_url"),
-    embedMeta: jsonb("embed_meta").$type<{ title?: string; thumbnailUrl?: string; provider?: string }>(),
-    status: text("status").notNull().default("uploaded"), // uploaded | processing | ready | rejected
+    // Every asset is a link to a third-party host; EightGig stores no user
+    // media (see migration 0033). There is no storage_key and no byte count
+    // because there is no file of ours to point at or measure.
+    kind: text("kind").notNull(), // photo | audio | video (oEmbed types)
+    embedUrl: text("embed_url").notNull(),
+    embedMeta: jsonb("embed_meta").$type<{
+      title?: string;
+      thumbnailUrl?: string;
+      /** photos only: direct image URL, rendered as an <img> */
+      imageUrl?: string;
+      provider?: string;
+    }>(),
+    status: text("status").notNull().default("held"), // held | ready | blocked
     position: integer("position").notNull().default(0),
     createdAt: ts("created_at").notNull().defaultNow(),
   },

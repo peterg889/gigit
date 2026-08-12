@@ -2,7 +2,7 @@
 
 > **Note (June 2026):** this is the M0 historical record. For the launch payments posture it is **superseded by [`pricing.md`](pricing.md)** — payments are deferred and the launch is discovery-first (the venue pays the act directly). The seams below are correct; the launch defaults changed.
 
-**Date:** June 2026. Implements milestone M0 from [`engineering-spec.md`](engineering-spec.md). This document is component-level and concrete: what exists, where it lives, exact states and routes. Scope: a venue can sign in, build a profile, post a slot; a performer can sign in, build a profile (bio, photos, YouTube/Vimeo embeds), browse the feed, apply; the venue can message/invite, offer; the performer accepts; terms are recorded (no payments in M0 — `NullPaymentGateway` auto-succeeds so the *full* state machine runs from day one; per [`pricing.md`](pricing.md) §4 the money path is now deferred *indefinitely*, until venue monetization, not just to M1); every change lands in `events`.
+**Date:** June 2026. Implements milestone M0 from [`engineering-spec.md`](engineering-spec.md). This document is component-level and concrete: what exists, where it lives, exact states and routes. Scope: a venue can sign in, build a profile, post a slot; a performer can sign in, build a profile (bio, plus photo/audio/video links on allow-listed hosts), browse the feed, apply; the venue can message/invite, offer; the performer accepts; terms are recorded (no payments in M0 — `NullPaymentGateway` auto-succeeds so the *full* state machine runs from day one; per [`pricing.md`](pricing.md) §4 the money path is now deferred *indefinitely*, until venue monetization, not just to M1); every change lands in `events`.
 
 ## 1. Repository layout (pnpm workspaces)
 
@@ -28,7 +28,7 @@ gigit/
 ├─ apps/
 │  ├─ web/               # Next.js App Router — UI + all API routes (webhooks land here later)
 │  └─ worker/            # Node: outbox dispatcher + pg-boss scheduled jobs
-├─ infra/cdk/            # CDK skeleton (App Runner + EC2 worker + RDS + S3/CloudFront) — wired in M1
+├─ infra/cdk/            # CDK skeleton (EC2 host + RDS + web CloudFront) — wired in M1
 └─ .github/workflows/ci.yml
 ```
 
@@ -63,7 +63,7 @@ Key decisions:
   known metros receive an approximate centroid until a geocoder/PostGIS lands.
 - `bookings.version int` — optimistic lock; transition runner does `UPDATE … WHERE id=$1 AND version=$2`.
 - `events` (append-only): `id bigserial, occurred_at, actor, kind, subject_type, subject_id, payload jsonb, dispatched_at`. **Outbox = `dispatched_at IS NULL`.** All transactional side-effects are event rows; the worker polls and dispatches (`FOR UPDATE SKIP LOCKED`, batch 50, 1s interval). pg-boss is used only for *scheduled* work (offer expiry, gig-end, auto-confirm timers), where post-commit enqueue is acceptable because the schedule is re-derivable from booking state (reconciler job re-arms missing timers every 10 min).
-- `media_assets`: `kind image|audio|video_embed`; uploads carry `storage_key`; embeds carry `embed_url + embed_meta`. M0 ships **image upload + video_embed** (audio lands M2 per build plan). Storage driver interface: `local` (dev, `.data/uploads`) and `s3` (presigned POST) — selected by env.
+- `media_assets`: `kind photo|audio|video`, `embed_url` NOT NULL + `embed_meta`, `status held|ready|blocked` (default `held`). **EightGig stores no user media** — every asset is a link on an allow-listed third-party host (engineering-spec K8/§8; the reason is DMCA §512(c) exposure). There is no storage driver, no `storage_key` and no bucket: the upload path and its columns were removed in migration `0033_media_links_only`.
 
 ## 4. Web app (Next.js 15, App Router)
 
@@ -80,8 +80,7 @@ Key decisions:
 | POST `/api/performers` · PATCH `/api/performers/:id` · GET (public) | user/owner | create/edit performer profile (bio, genres, rates, travel radius, tech needs) |
 | POST `/api/venues` · PATCH · GET | user/owner | venue profile incl. public postal address, IANA timezone, and `pa_inventory`; coordinates are internal/optional |
 | POST `/api/techs` · PATCH · GET | user/owner | tech profile |
-| POST `/api/media/presign` → POST `/api/media/:id/complete` | owner | image upload (quota-checked); complete flips `processing→ready` (screening hook stub) |
-| POST `/api/media/embed` | owner | add YouTube/Vimeo URL (host allow-list, oEmbed fetch, cache meta) |
+| POST `/api/media/embed` | owner | add a photo/audio/video **link** — the only media route. Host allow-list decides the kind (Flickr/Imgur → photo, SoundCloud/Bandcamp → audio, YouTube/Vimeo → video); a URL no provider claims is rejected. oEmbed fetch caches title/thumbnail; quota-checked |
 | POST `/api/slots` | venue | create slot (budget required) |
 | GET `/api/slots?lat&lng&radius_km&format&date_from&min_budget` | performer | feed (open slots, haversine, filters) |
 | GET `/api/slots/:id` | any | detail incl. venue room/PA summary |
@@ -95,7 +94,7 @@ Key decisions:
 | GET `/api/threads` · GET/POST `/api/threads/:id/messages` | participant | messaging (thread scopes: inquiry/application/booking) |
 
 ### 4.3 Pages (server components, minimal styling, mobile-first)
-`/` feed (role-aware) · `/slots/new` · `/slots/[id]` (detail + apply/applicants) · `/p/[id]` public performer EPK (bio, photos, embeds) · `/v/[id]` venue page · `/me` profile editor (per role, incl. media manager) · `/bookings` + `/bookings/[id]` (state, terms, agreement text, actions) · `/inbox` + `/inbox/[threadId]` · `/login`.
+`/` feed (role-aware) · `/slots/new` · `/slots/[id]` (detail + apply/applicants) · `/p/[id]` public performer EPK (bio, linked photos, tracks and video) · `/v/[id]` venue page · `/me` profile editor (per role, incl. media manager) · `/bookings` + `/bookings/[id]` (state, terms, agreement text, actions) · `/inbox` + `/inbox/[threadId]` · `/login`.
 
 ## 5. Worker
 
@@ -106,7 +105,7 @@ Single process, two loops + pg-boss:
 
 ## 6. Config & env
 
-`packages/db/src/env.ts` zod-validates: `DATABASE_URL`, `SESSION_SECRET` (≥32 chars), `APP_URL`, `STORAGE_DRIVER=local|s3`, (`S3_BUCKET`, `AWS_REGION` when s3), `NODE_ENV`. `.env.example` documents all. Fail-fast at boot.
+`packages/db/src/env.ts` zod-validates: `DATABASE_URL`, `SESSION_SECRET` (≥32 chars), `APP_URL`, `AWS_REGION`, `NODE_ENV` (the `STORAGE_DRIVER`/`S3_BUCKET` pair is vestigial — nothing is stored any more). `.env.example` documents all. Fail-fast at boot.
 
 ## 7. Local dev & testing
 

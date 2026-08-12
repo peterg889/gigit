@@ -193,9 +193,11 @@ export default async function OnboardingPage({
             <p>
               One more thing worth two minutes: a photo and a track. A booker
               deciding between two acts they haven&rsquo;t seen picks the one
-              they can hear.
+              they can hear. Your photos and music stay where they already live
+              — on Flickr, SoundCloud, Bandcamp, YouTube — and you paste the
+              link.
             </p>
-            <Link href="/me">Add photos, audio, or video</Link>
+            <Link href="/me">Link a photo, a track, or a video</Link>
           </div>
         )}
       </div>

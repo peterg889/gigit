@@ -1,9 +1,90 @@
 "use client";
 
-/** Upload photos/audio (presign → PUT → complete) and add video embeds. */
+/**
+ * Attach media to a profile by link (engineering-spec §8: media is link-only).
+ * EightGig hosts no user files, so there is nothing to upload here — a photo, a
+ * track and a video are all URLs on a host that already serves them.
+ */
+import {
+  EMBED_PROVIDER_HOSTS,
+  type EmbedProvider,
+  type MediaKind,
+  embedProviders,
+  mediaKinds,
+} from "@gigit/domain";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
+
+/** Each provider spelled the way it spells itself. */
+const PROVIDER_LABEL: Record<EmbedProvider, string> = {
+  youtube: "YouTube",
+  vimeo: "Vimeo",
+  flickr: "Flickr",
+  imgur: "Imgur",
+  soundcloud: "SoundCloud",
+  bandcamp: "Bandcamp",
+};
+
+const KIND_LABEL: Record<MediaKind, string> = {
+  photo: "Photos",
+  audio: "Music",
+  video: "Video",
+};
+
+/**
+ * Derived from the same allow-list the server enforces, so a provider added to
+ * @gigit/domain cannot quietly go unlisted here. This sentence is the only
+ * place a user finds out *before* pasting that a Dropbox link will be refused
+ * for being a Dropbox link — a bare "that link isn't from a site we support"
+ * after the fact reads as a bug.
+ */
+export const ACCEPTED_SERVICES = mediaKinds.map((kind) => {
+  const names = embedProviders
+    .filter((p) => EMBED_PROVIDER_HOSTS[p].kind === kind)
+    .map((p) => PROVIDER_LABEL[p]);
+  return `${KIND_LABEL[kind]}: ${names.join(" or ")}`;
+});
+
+/** What we call the thing that just arrived, by the kind the server resolved. */
+const ADDED: Record<MediaKind, string> = {
+  photo: "Photo added",
+  audio: "Track added",
+  video: "Video added",
+};
+
+/**
+ * POST the link and turn the response into one line for the user.
+ *
+ * `subjectType` is sent explicitly because the route defaults to `performer`:
+ * without it a venue pasting a room photo would file it against their act
+ * profile, or be told to "create an act profile first" while standing on their
+ * venue.
+ */
+export async function submitMediaLink(
+  subjectType: "performer" | "venue" | "tech",
+  url: string,
+): Promise<{ ok: boolean; message: string }> {
+  const res = await fetch("/api/media/embed", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ url: url.trim(), subjectType }),
+  });
+  const data = (await res.json().catch(() => null)) as
+    | { kind?: MediaKind; error?: { message?: string } }
+    | null;
+  if (!res.ok)
+    return {
+      ok: false,
+      message:
+        data?.error?.message ??
+        "Couldn't add that — check the link and try again.",
+    };
+  return {
+    ok: true,
+    message: (data?.kind && ADDED[data.kind]) ?? "Link added",
+  };
+}
 
 export function MediaManager({
   subjectType,
@@ -14,38 +95,7 @@ export function MediaManager({
   const uid = useId();
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
-  const [embedUrl, setEmbedUrl] = useState("");
-
-  async function upload(file: File) {
-    setBusy(true);
-    setMsg(null);
-    try {
-      const presign = await fetch("/api/media/presign", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          subjectType,
-          contentType: file.type,
-          bytes: file.size,
-        }),
-      });
-      const target = await presign.json();
-      if (!presign.ok) throw new Error(target?.error?.message ?? "Couldn't start the upload — try again.");
-      const put = await fetch(target.uploadUrl, {
-        method: "PUT",
-        headers: target.headers ?? {},
-        body: file,
-      });
-      if (!put.ok) throw new Error("The upload didn't go through — try again.");
-      const done = await fetch(`/api/media/${target.id}/complete`, { method: "POST" });
-      if (!done.ok) throw new Error("Couldn't finish the upload — try again.");
-      setMsg(`Uploaded ${file.name}`);
-      router.refresh();
-    } catch (e) {
-      setMsg(String(e instanceof Error ? e.message : e));
-    }
-    setBusy(false);
-  }
+  const [url, setUrl] = useState("");
 
   return (
     <div>
@@ -57,50 +107,43 @@ export function MediaManager({
         copyright complaints end an account —{" "}
         <Link href="/dmca">how that works</Link>.
       </p>
-      <label htmlFor={`${uid}-f1`}>Add photos or audio (JPG/PNG/WebP, MP3/M4A)</label>
-      <input id={`${uid}-f1`}
-        type="file"
-        accept="image/jpeg,image/png,image/webp,audio/mpeg,audio/mp4,audio/x-m4a"
-        disabled={busy}
-        onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void upload(f);
-        }}
+      <label htmlFor={`${uid}-link`}>
+        Add a photo, a track, or a video — paste its link
+      </label>
+      <input
+        id={`${uid}-link`}
+        type="url"
+        placeholder="https://soundcloud.com/your-band/your-track"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
       />
-      {subjectType === "performer" && (
-        <>
-          <label htmlFor={`${uid}-f2`}>Add a YouTube/Vimeo video</label>
-          <input id={`${uid}-f2`}
-            placeholder="https://youtube.com/watch?v=…"
-            value={embedUrl}
-            onChange={(e) => setEmbedUrl(e.target.value)}
-          />
-          <button
-            disabled={busy || !embedUrl}
-            onClick={async () => {
-              setBusy(true);
-              setMsg(null);
-              const res = await fetch("/api/media/embed", {
-                method: "POST",
-                headers: { "content-type": "application/json" },
-                body: JSON.stringify({ url: embedUrl }),
-              });
-              const data = await res.json().catch(() => null);
-              setMsg(res.ok ? "Video added" : (data?.error?.message ?? "Couldn't add that — check the link and try again."));
-              if (res.ok) {
-                setEmbedUrl("");
-                router.refresh();
-              }
-              setBusy(false);
-            }}
-          >
-            Add video
-          </button>
-        </>
-      )}
-      {/* A live region, matching ApiForm: an upload that fails is otherwise
-          silent for a screen-reader user, who gets no signal at all that the
-          file they chose did not take. */}
+      <button
+        disabled={busy || !url.trim()}
+        onClick={async () => {
+          setBusy(true);
+          setMsg(null);
+          const result = await submitMediaLink(subjectType, url).catch(() => ({
+            ok: false,
+            message: "Couldn't add that — check the link and try again.",
+          }));
+          setMsg(result.message);
+          if (result.ok) {
+            setUrl("");
+            router.refresh();
+          }
+          setBusy(false);
+        }}
+      >
+        Add link
+      </button>
+      <p className="muted">
+        Your files stay where they already live — we only keep the link.{" "}
+        {ACCEPTED_SERVICES.join(" · ")}. A link from anywhere else (Dropbox,
+        Google Drive, your own site) won&rsquo;t attach.
+      </p>
+      {/* A live region, matching ApiForm: a link that fails is otherwise
+          silent for a screen-reader user, who gets no signal at all that what
+          they pasted did not take. */}
       <div aria-live="polite" role="status">
         {msg && <p className="muted">{msg}</p>}
       </div>

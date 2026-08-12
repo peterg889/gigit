@@ -3,7 +3,6 @@ import { db, reviewableProfileReviews, schema } from "@gigit/db";
 import { and, asc, eq, gte } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { publicMediaUrl } from "@/lib/storage";
 import { formatAddress, formatVenueDateTimeWithZone } from "@/lib/date-time";
 import { equipmentCount, houseOperatorLabel } from "@/lib/sound-display";
 import { averageOverall } from "@/lib/review-display";
@@ -47,13 +46,21 @@ export default async function VenuePage({
         eq(schema.mediaAssets.subjectType, "venue"),
         eq(schema.mediaAssets.subjectId, id),
         eq(schema.mediaAssets.status, "ready"),
-        eq(schema.mediaAssets.kind, "image"),
+        eq(schema.mediaAssets.kind, "photo"),
       ),
     )
     .orderBy(asc(schema.mediaAssets.position));
-  const photoUrls = await Promise.all(
-    photos.map(async (m) => ({ id: m.id, url: await publicMediaUrl(m.storageKey!) })),
-  );
+  // A room photo is a link to the host that serves it. imageUrl (falling back to
+  // the provider's thumbnail) is the only field that ever holds a direct image,
+  // and lib/oembed has already confirmed it is on that provider's own CDN —
+  // without that check this <img src> would render any host on the internet.
+  // A photo host that volunteered neither still leaves a link worth following.
+  const roomPhotos = photos.map((m) => ({
+    id: m.id,
+    src: m.embedMeta?.imageUrl ?? m.embedMeta?.thumbnailUrl,
+    href: m.embedUrl,
+    title: m.embedMeta?.title,
+  }));
 
   const openSlots = await d
     .select()
@@ -123,17 +130,25 @@ export default async function VenuePage({
         </p>
       </div>
 
-      {photoUrls.length > 0 && (
+      {roomPhotos.length > 0 && (
         <div className="card">
-          {photoUrls.map((m) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={m.id}
-              src={m.url}
-              alt={v.name}
-              style={{ maxWidth: 160, marginRight: 8, borderRadius: 6 }}
-            />
-          ))}
+          {roomPhotos.map((m) =>
+            m.src ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={m.id}
+                src={m.src}
+                alt={m.title ?? v.name}
+                style={{ maxWidth: 160, marginRight: 8, borderRadius: 6 }}
+              />
+            ) : (
+              <p key={m.id}>
+                <a href={m.href} target="_blank" rel="noreferrer">
+                  ▣ {m.title ?? m.href}
+                </a>
+              </p>
+            ),
+          )}
         </div>
       )}
 

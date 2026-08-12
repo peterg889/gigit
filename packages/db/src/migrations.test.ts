@@ -372,4 +372,106 @@ describe("legacy-data migrations", () => {
       );
     });
   });
+
+  /** Shape of media_assets as 0033 finds it: storage-era columns still present. */
+  const legacyMediaAssets = `
+    create table media_assets (
+      id text primary key,
+      kind text not null,
+      storage_key text,
+      bytes integer,
+      embed_url text,
+      status text not null default 'uploaded',
+      position integer not null default 0
+    );
+  `;
+
+  it("retires the storage vocabulary when media becomes link-only", async () => {
+    await inIsolatedSchema(async (query) => {
+      await query(`
+        ${legacyMediaAssets}
+        insert into media_assets (id, kind, embed_url, status) values
+          ('photo-live',   'image',       'https://www.flickr.com/photos/a/1', 'ready'),
+          ('photo-new',    'image',       'https://i.imgur.com/a.jpg',         'uploaded'),
+          ('track-screen', 'audio',       'https://soundcloud.com/a/t',        'processing'),
+          ('video-bad',    'video_embed', 'https://vimeo.com/1',               'rejected');
+      `);
+
+      await query(
+        await readFile(new URL("0033_media_links_only.sql", migrations), "utf8"),
+      );
+
+      const { rows } = await query("select id, kind, status from media_assets order by id");
+      expect(rows).toEqual([
+        // 'ready' keeps its name on purpose: every public profile page filters
+        // on it, so renaming the visible state would blank every EPK.
+        { id: "photo-live", kind: "photo", status: "ready" },
+        { id: "photo-new", kind: "photo", status: "held" },
+        { id: "track-screen", kind: "audio", status: "held" },
+        { id: "video-bad", kind: "video", status: "blocked" },
+      ]);
+
+      // Nothing may be stored, so there is nowhere left to record a file.
+      const { rows: columns } = await query(`
+        select column_name from information_schema.columns
+         where table_name = 'media_assets' and table_schema = current_schema()
+      `);
+      const names = columns.map((c) => c.column_name);
+      expect(names).not.toContain("storage_key");
+      expect(names).not.toContain("bytes");
+
+      // A link is the asset; a row without one cannot render anything.
+      await query("savepoint linkless");
+      await expect(
+        query("insert into media_assets (id, kind) values ('no-link', 'photo')"),
+      ).rejects.toMatchObject({ code: "23502" });
+      await query("rollback to savepoint linkless");
+
+      // A writer that missed the rename must fail at the insert rather than
+      // write a row that silently never appears on a profile.
+      await query("savepoint retired_vocabulary");
+      await expect(
+        query(`
+          insert into media_assets (id, kind, embed_url, status)
+          values ('stale-kind', 'video_embed', 'https://vimeo.com/2', 'ready')
+        `),
+      ).rejects.toMatchObject({ code: "23514" });
+      await query("rollback to savepoint retired_vocabulary");
+      await expect(
+        query(`
+          insert into media_assets (id, kind, embed_url, status)
+          values ('stale-status', 'video', 'https://vimeo.com/2', 'uploaded')
+        `),
+      ).rejects.toMatchObject({ code: "23514" });
+      await query("rollback to savepoint retired_vocabulary");
+
+      // Default: withheld until a screen says otherwise.
+      await query(`
+        insert into media_assets (id, kind, embed_url)
+        values ('defaulted', 'video', 'https://vimeo.com/3')
+      `);
+      const { rows: defaulted } = await query(
+        "select status from media_assets where id = 'defaulted'",
+      );
+      expect(defaulted[0]).toEqual({ status: "held" });
+    });
+  });
+
+  it("drops rows that pointed at a file we will no longer serve", async () => {
+    await inIsolatedSchema(async (query) => {
+      await query(`
+        ${legacyMediaAssets}
+        insert into media_assets (id, kind, storage_key, embed_url, status) values
+          ('stored', 'image', 'media/stored.jpg', null, 'ready'),
+          ('linked', 'image', null, 'https://i.imgur.com/a.jpg', 'ready');
+      `);
+
+      await query(
+        await readFile(new URL("0033_media_links_only.sql", migrations), "utf8"),
+      );
+
+      const { rows } = await query("select id from media_assets order by id");
+      expect(rows).toEqual([{ id: "linked" }]);
+    });
+  });
 });

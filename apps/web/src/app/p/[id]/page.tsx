@@ -9,7 +9,6 @@ import { and, asc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { sessionUserId } from "@/lib/session";
-import { publicMediaUrl } from "@/lib/storage";
 import { ACT_KIND_LABEL } from "@/lib/labels";
 import { formatAreaName } from "@/lib/date-time";
 import { averageOverall } from "@/lib/review-display";
@@ -35,9 +34,37 @@ const MEDIA_PROVIDER_LABEL: Record<string, string> = {
   vimeo: "Vimeo",
   bandcamp: "Bandcamp",
   soundcloud: "SoundCloud",
+  flickr: "Flickr",
+  imgur: "Imgur",
 };
 
-/** Public performer EPK: bio, photos, audio, video embeds, reviews. */
+interface MediaLinkAsset {
+  id: string;
+  embedUrl: string;
+  embedMeta: { title?: string; provider?: string } | null;
+}
+
+/**
+ * A track or a video is a link out, badged with the host it lives on. We store
+ * a URL and whatever metadata the provider volunteered — never the provider's
+ * embed HTML — so there is no markup of theirs to inject here, and hand-building
+ * player URLs would be a second allow-list to keep honest against the first.
+ */
+function MediaLink({ asset, icon }: { asset: MediaLinkAsset; icon: string }) {
+  const provider = asset.embedMeta?.provider?.toLowerCase();
+  return (
+    <p>
+      <a href={asset.embedUrl} target="_blank" rel="noreferrer">
+        {icon} {asset.embedMeta?.title ?? asset.embedUrl}
+      </a>{" "}
+      {provider && (
+        <span className="badge">{MEDIA_PROVIDER_LABEL[provider] ?? provider}</span>
+      )}
+    </p>
+  );
+}
+
+/** Public performer EPK: bio, photo/audio/video links, reviews. */
 export default async function PerformerPage({
   params,
 }: {
@@ -77,15 +104,9 @@ export default async function PerformerPage({
     },
   );
 
-  const mediaWithUrls = await Promise.all(
-    media.map(async (m) => ({
-      ...m,
-      url: m.storageKey ? await publicMediaUrl(m.storageKey) : null,
-    })),
-  );
-  const images = mediaWithUrls.filter((m) => m.kind === "image");
-  const audio = mediaWithUrls.filter((m) => m.kind === "audio");
-  const embeds = mediaWithUrls.filter((m) => m.kind === "video_embed");
+  const photos = media.filter((m) => m.kind === "photo");
+  const audio = media.filter((m) => m.kind === "audio");
+  const videos = media.filter((m) => m.kind === "video");
 
   // This is the page an act SENDS to a venue. A new one used to open with two
   // apologies — "has not added a bio yet", "has not added photos, audio, video,
@@ -95,9 +116,9 @@ export default async function PerformerPage({
   // isn't.
   const isOwner = (await sessionUserId()) === p.ownerUserId;
   const nothingToShow =
-    images.length === 0 &&
+    photos.length === 0 &&
     audio.length === 0 &&
-    embeds.length === 0 &&
+    videos.length === 0 &&
     visible.length === 0;
 
   return (
@@ -150,22 +171,32 @@ export default async function PerformerPage({
             words. A photo and one track do more than any bio.
           </p>
           <Link className="btn" href="/me">
-            Add photos, audio, or video
+            Link a photo, a track, or a video
           </Link>
         </div>
       )}
 
-      {images.length > 0 && (
+      {photos.length > 0 && (
         <div className="card">
-          {images.map((m) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              key={m.id}
-              src={m.url!}
-              alt={p.name}
-              style={{ maxWidth: 160, marginRight: 8, borderRadius: 6 }}
-            />
-          ))}
+          {photos.map((m) => {
+            // imageUrl and thumbnailUrl only ever hold the provider's own
+            // allow-listed CDN host (lib/oembed drops anything else), which is
+            // what makes it safe to put one in an <img src> on a page anyone can
+            // load. A photo host that volunteered neither still leaves us a link
+            // worth following — better than an <img> pointed at a page of HTML.
+            const src = m.embedMeta?.imageUrl ?? m.embedMeta?.thumbnailUrl;
+            return src ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                key={m.id}
+                src={src}
+                alt={m.embedMeta?.title ?? p.name}
+                style={{ maxWidth: 160, marginRight: 8, borderRadius: 6 }}
+              />
+            ) : (
+              <MediaLink key={m.id} asset={m} icon="▣" />
+            );
+          })}
         </div>
       )}
 
@@ -173,26 +204,16 @@ export default async function PerformerPage({
         <div className="card">
           <h2>Listen</h2>
           {audio.map((m) => (
-            <audio key={m.id} controls src={m.url!} />
+            <MediaLink key={m.id} asset={m} icon="♪" />
           ))}
         </div>
       )}
 
-      {embeds.length > 0 && (
+      {videos.length > 0 && (
         <div className="card">
           <h2>Watch</h2>
-          {embeds.map((m) => (
-            <p key={m.id}>
-              <a href={m.embedUrl!} target="_blank" rel="noreferrer">
-                ▶ {m.embedMeta?.title ?? m.embedUrl}
-              </a>{" "}
-              {m.embedMeta?.provider && (
-                <span className="badge">
-                  {MEDIA_PROVIDER_LABEL[m.embedMeta.provider.toLowerCase()] ??
-                    m.embedMeta.provider}
-                </span>
-              )}
-            </p>
+          {videos.map((m) => (
+            <MediaLink key={m.id} asset={m} icon="▶" />
           ))}
         </div>
       )}

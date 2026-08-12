@@ -31,6 +31,13 @@ describe("notification copy", () => {
     expect(off).toEqual(on);
     expect(on.subject).toBe("Your act page is live");
     expect(on.body).toContain("https://x.test/me");
+    // Media is link-only: the welcome used to say "add photos, audio, or
+    // video", which sent a new act to /me looking for a file picker that isn't
+    // there. It has to ask for the thing the product takes — a link — and name
+    // where those links come from.
+    expect(on.body).toMatch(/paste the links/i);
+    expect(on.body).not.toMatch(/upload/i);
+    expect(on.body).toContain("SoundCloud");
     // Cross-mode identity alone cannot catch the failure described above: a
     // money clause added to the BASE copy is identical in both modes by
     // construction, so `off === on` stays green while the claim ships. With
@@ -44,6 +51,22 @@ describe("notification copy", () => {
       expect(rendered.subject).not.toMatch(/\{\w+\}/);
       expect(rendered.body).not.toMatch(/\{\w+\}/);
     }
+  });
+
+  it("reports a dead link without promising it is a video", () => {
+    // Media is link-only, so the rot recheck now covers photos and audio too.
+    // The old copy said "A video link went dead" / "no longer plays", which
+    // sends the owner of a dead Flickr photo looking at the wrong thing.
+    const rendered = renderTemplate("embed_dead", {}, false);
+    expect(rendered.subject.toLowerCase()).not.toContain("video link");
+    expect(rendered.body).toContain("photos, tracks or videos");
+  });
+
+  it("has no copy left for a file that failed a content check", () => {
+    // media_rejected's only trigger was the magic-byte sniff on an uploaded
+    // file. Nothing is uploaded any more, so the template could only ever be
+    // dead copy pointing users at a step that no longer exists.
+    expect(TEMPLATE_NAMES).not.toContain("media_rejected");
   });
 
   it("uses role-neutral conversation copy with a direct inbox link", () => {
@@ -106,8 +129,9 @@ describe("every template resolves", () => {
       new_inquiry: "/inbox/thr_1",
       slot_match: "/slots/slt_1",
       new_act: "/p/prf_1",
-      // The welcome's whole job is the upload; /me is the only act-facing
-      // upload surface, and /p/{id} (the public page) has no editor on it.
+      // The welcome's whole job is getting media onto the page; /me is the
+      // only act-facing place to paste a link, and /p/{id} (the public page)
+      // has no editor on it.
       act_welcome: "/me",
     };
     for (const [name, path] of Object.entries(deepLinked))

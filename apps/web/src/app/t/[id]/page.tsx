@@ -3,7 +3,6 @@ import { db, schema } from "@gigit/db";
 import { and, asc, desc, eq } from "drizzle-orm";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { publicMediaUrl } from "@/lib/storage";
 import { GEAR_LABELS } from "@/lib/labels";
 import { averageOverall } from "@/lib/review-display";
 import { profileMetadata } from "@/lib/profile-metadata";
@@ -46,10 +45,6 @@ export default async function TechPage({
       eq(schema.mediaAssets.status, "ready"),
     ))
     .orderBy(asc(schema.mediaAssets.position));
-  const withUrls = await Promise.all(media.map(async (asset) => ({
-    ...asset,
-    url: asset.storageKey ? await publicMediaUrl(asset.storageKey) : null,
-  })));
 
   const allReviews = await d
     .select({ review: schema.techSubslotReviews })
@@ -115,21 +110,37 @@ export default async function TechPage({
           {t.rateLaborCents == null && t.rateWithRigCents == null && "Rates on request."}
         </p>
       </div>
-      {withUrls.length > 0 && (
+      {media.length > 0 && (
         <div className="card">
-          {withUrls.map((asset) =>
-            asset.kind === "image" && asset.url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                key={asset.id}
-                src={asset.url}
-                alt={t.name}
-                style={{ maxWidth: 180, marginRight: 8, borderRadius: 6 }}
-              />
-            ) : asset.kind === "audio" && asset.url ? (
-              <audio key={asset.id} controls src={asset.url} />
-            ) : null,
-          )}
+          {media.map((asset) => {
+            // A photo renders as an <img> only from imageUrl/thumbnailUrl, the
+            // fields lib/oembed has already pinned to the provider's own CDN;
+            // anything else here would be an arbitrary host in an <img src> on a
+            // public page. Audio and video are links out — we hold a URL and the
+            // provider's metadata, never their embed HTML.
+            const src =
+              asset.kind === "photo"
+                ? (asset.embedMeta?.imageUrl ?? asset.embedMeta?.thumbnailUrl)
+                : undefined;
+            if (src)
+              return (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  key={asset.id}
+                  src={src}
+                  alt={asset.embedMeta?.title ?? t.name}
+                  style={{ maxWidth: 180, marginRight: 8, borderRadius: 6 }}
+                />
+              );
+            return (
+              <p key={asset.id}>
+                <a href={asset.embedUrl} target="_blank" rel="noreferrer">
+                  {asset.kind === "audio" ? "♪" : asset.kind === "video" ? "▶" : "▣"}{" "}
+                  {asset.embedMeta?.title ?? asset.embedUrl}
+                </a>
+              </p>
+            );
+          })}
         </div>
       )}
       {visible.length > 0 && (

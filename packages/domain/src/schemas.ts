@@ -234,14 +234,106 @@ export const reviewCreateSchema = z.object({
   body: z.string().max(2000).default(""),
 });
 
+/**
+ * Media kinds, named after the oEmbed response types the providers themselves
+ * return. EightGig hosts no user media: a photo, a track and a video are all
+ * links to somebody else's server, so the old `image`/`video_embed` pair — one
+ * named after a file format we stored, the other suffixed to distinguish it
+ * from video we stored — no longer describes anything.
+ */
+export const mediaKinds = ["photo", "audio", "video"] as const;
+export type MediaKind = (typeof mediaKinds)[number];
+
+export const embedProviders = [
+  "youtube",
+  "vimeo",
+  "flickr",
+  "imgur",
+  "soundcloud",
+  "bandcamp",
+] as const;
+export type EmbedProvider = (typeof embedProviders)[number];
+
+/**
+ * The host allow-list, and the only thing standing between this feature and two
+ * concrete holes: the oEmbed enrichment fetch would take an attacker-chosen
+ * host (SSRF against anything the web task can reach), and a profile page would
+ * render an <img>/<iframe> pointing at any server on the internet. An arbitrary
+ * URL is never a media asset — a link is only accepted if a named provider
+ * claims its host.
+ *
+ * `domains` matches subdomains as well; `hosts` must match exactly (after the
+ * usual `www.` strip). Suffix matching is deliberately opt-in per provider:
+ * endsWith("youtube.com") would have accepted youtube.com.evil.com.
+ */
+export const EMBED_PROVIDER_HOSTS: Record<
+  EmbedProvider,
+  { kind: MediaKind; hosts: readonly string[]; domains?: readonly string[] }
+> = {
+  youtube: {
+    kind: "video",
+    hosts: ["youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"],
+  },
+  vimeo: { kind: "video", hosts: ["vimeo.com", "player.vimeo.com"] },
+  flickr: { kind: "photo", hosts: ["flickr.com", "flic.kr"] },
+  imgur: { kind: "photo", hosts: ["imgur.com", "i.imgur.com", "m.imgur.com"] },
+  soundcloud: {
+    kind: "audio",
+    hosts: ["soundcloud.com", "m.soundcloud.com", "on.soundcloud.com"],
+  },
+  // Every act on Bandcamp gets its own subdomain (theact.bandcamp.com), so this
+  // is the one provider that cannot be expressed as a fixed set of hosts.
+  bandcamp: { kind: "audio", hosts: [], domains: ["bandcamp.com"] },
+};
+
+/**
+ * This package compiles against `lib: ["ES2023"]` — no DOM, no node types — so
+ * the runtime's global URL is invisible to the compiler even though it exists
+ * everywhere this package runs (Node 22, browsers; zod's own `.url()` uses it).
+ * Declaring it beats hand-rolling a host parser, which is the classic place to
+ * get https://youtube.com@evil.com/ or https://evil.com\@youtube.com wrong.
+ */
+declare const URL: {
+  new (input: string): { protocol: string; hostname: string };
+};
+
+/**
+ * Resolve a URL to its provider and media kind, or null if no provider claims
+ * it. Never throws: callers pass user input straight in.
+ */
+export function embedProviderFor(
+  url: string,
+): { provider: EmbedProvider; kind: MediaKind } | null {
+  let protocol: string;
+  let host: string;
+  try {
+    const parsed = new URL(url.trim());
+    protocol = parsed.protocol;
+    host = parsed.hostname.toLowerCase().replace(/^www\./, "");
+  } catch {
+    return null;
+  }
+  // https only. Over http an on-path attacker chooses what the oEmbed fetch
+  // talks to and what the profile page ends up rendering, which gives away the
+  // protection the allow-list exists to provide.
+  if (protocol !== "https:") return null;
+  for (const provider of embedProviders) {
+    const entry = EMBED_PROVIDER_HOSTS[provider];
+    if (entry.hosts.includes(host)) return { provider, kind: entry.kind };
+    if (entry.domains?.some((d) => host === d || host.endsWith(`.${d}`)))
+      return { provider, kind: entry.kind };
+  }
+  return null;
+}
+
 export const embedCreateSchema = z.object({
   url: z
     .string()
     .url()
-    .refine(
-      (u) => /^https?:\/\/(www\.)?(youtube\.com|youtu\.be|vimeo\.com)\//.test(u),
-      { message: "only YouTube and Vimeo URLs are supported" },
-    ),
+    .refine((u) => embedProviderFor(u) !== null, {
+      message:
+        "paste a link from YouTube, Vimeo, Flickr, Imgur, SoundCloud or Bandcamp.",
+    }),
 });
 
 /**

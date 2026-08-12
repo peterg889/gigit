@@ -418,9 +418,10 @@ export async function gearExtract(
 }
 
 // ── media_fraud_screen (F7.5 / F-AI.8): metadata risk screen ─────────────────
-// Magic-byte sniffing and hard rejections happen in the worker BEFORE this
-// task; this is the judgment layer over metadata (filenames, embed titles,
-// sizes). Per K9: output is a flag for the ops queue, never a publish.
+// This USED to be the judgment layer on top of a magic-byte sniff that ran in
+// the worker first. Media is link-only now — there are no bytes of ours to
+// sniff — so this is the ONLY screen an asset gets, over the provider and the
+// oEmbed title. Per K9: output is a flag for the ops queue, never a publish.
 
 export const fraudScreenSchema = z.object({
   risk: z.enum(["low", "medium", "high"]),
@@ -433,8 +434,6 @@ const MEDIA_FRAUD_SCREEN_V = "media_fraud_screen.v1";
 export async function mediaFraudScreen(
   meta: {
     kind: string;
-    bytes?: number | null;
-    contentSniff?: string;
     embedTitle?: string;
     embedProvider?: string;
     ownerName?: string;
@@ -476,8 +475,14 @@ export async function mediaFraudScreen(
       });
       throw err;
     }
-    // No model configured: structural checks (sniffing) already ran in the
-    // worker; without judgment capability we pass with a recorded caveat.
+    // No model configured. This used to read "structural checks already ran in
+    // the worker", which was true when we stored files and sniffed them; it is
+    // not true now that every asset is a link. So be plain about the posture:
+    // with GEMINI_API_KEY unset there is NO screening at all and links go
+    // public on the strength of the host allow-list alone. Failing closed
+    // instead would hold every photo on the site behind a queue nobody staffs,
+    // which is why this passes — but the caveat is recorded on the task so the
+    // gap is auditable rather than invisible.
     result = { risk: "low", reasons: ["screen_model_not_configured"] };
   }
   await logTask({

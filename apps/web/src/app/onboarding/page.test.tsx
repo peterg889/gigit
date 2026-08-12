@@ -90,13 +90,18 @@ describe("onboarding account capabilities", () => {
    * at a gig feed that, on a young marketplace, is usually empty. An act who
    * just submitted the form has no media by construction.
    */
-  it("asks a brand-new act for a photo and a track", async () => {
+  it("asks a brand-new act for a photo and a track, as links", async () => {
     const act = { name: "Fresh Act", status: "live", foundingMember: false };
     controls.capabilities.owned.performer = act;
     controls.capabilities.live.performer = act;
 
     const html = await renderOnboarding("performer", { welcome: "1" });
-    expect(html).toMatch(/Add photos, audio, or video/i);
+    expect(html).toMatch(/Link a photo, a track, or a video/i);
+    // EightGig hosts no user media, so the one screen that asks for it must not
+    // promise an uploader. "Add photos, audio, or video" sent a new act looking
+    // for a file picker that no longer exists on /me.
+    expect(html).toMatch(/paste the link/i);
+    expect(html).not.toMatch(/upload/i);
   });
 
   it("does not nag an act who came back to the page later", async () => {
@@ -105,7 +110,7 @@ describe("onboarding account capabilities", () => {
     controls.capabilities.live.performer = act;
 
     const html = await renderOnboarding("performer");
-    expect(html).not.toMatch(/Add photos, audio, or video/i);
+    expect(html).not.toMatch(/Link a photo, a track, or a video/i);
   });
 
   /**

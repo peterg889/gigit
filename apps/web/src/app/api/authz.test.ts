@@ -27,7 +27,7 @@ import { POST as offerPost } from "./applications/[id]/offer/route";
 import { POST as adminStatusPost } from "./admin/users/[id]/status/route";
 import { GET as slotApplicantsGet } from "./slots/[id]/applications/route";
 import { PATCH as venuePatch } from "./venues/[id]/route";
-import { POST as presignPost } from "./media/presign/route";
+import { POST as mediaEmbedPost } from "./media/embed/route";
 
 type Handler = (
   req: Request,
@@ -375,16 +375,17 @@ describe("web API authz matrix (audit #5)", () => {
       expect(v!.name).toBe("Authz Bar"); // and nothing changed
     });
 
-    it("a stranger cannot presign an upload against a profile they don't own", async () => {
+    // Was the presign route until media went link-only; /api/media/embed is now
+    // the only way anything attaches to a profile, so it inherits the check.
+    it("a stranger cannot attach media to a profile they don't own", async () => {
       as(uStranger);
-      const res = await presignPost(
+      const res = await mediaEmbedPost(
         new Request("http://test", {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
             subjectType: "venue",
-            contentType: "image/jpeg",
-            bytes: 1000,
+            url: "https://flickr.com/photos/stranger/1",
           }),
         }),
       );

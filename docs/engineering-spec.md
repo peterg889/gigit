@@ -28,10 +28,10 @@
 | K5 | **Append-only `events` table (outbox + audit + analytics) from day one.** Every domain event (state transitions, messages, AI decisions, money intents) is a row; consumers (webhooks out, notification fan-out, the future warehouse) read from it. | PRD requires audit (disputes, F7.4), the ROI loop needs historical baselines from MVP (F8.5), and analytics shouldn't require instrumentation archaeology later. | High to retrofit, trivial to start |
 | K6 | **Phone-first passwordless auth** (SMS OTP, email magic-link fallback). Sessions via secure cookies; no passwords ever stored. | SMS is a first-class product surface (F2.8); venue managers are phone people; passwords are support debt. | Low |
 | K7 | **Contracts = versioned click-wrap, not e-signature SaaS.** Agreement text rendered from booking terms + template version; both parties accept in-flow; acceptance event (user, IP, timestamp, template hash) recorded. No DocuSign. **DEFERRED at launch** — the click-wrap performance agreement turns on with payments in Phase 2; until then the booking record + plain-terms summary (PRD F3.2) is the receipt, and the deal closes on the mutual accept. | Click-wrap with audit trail is legally sufficient for these agreement values; e-sign SaaS adds cost and flow friction. | Low (can add e-sign for high-value bookings later) |
-| K8 | **Media kept simple: photos and audio tracks uploaded natively (stored as-is, no transcode service); video via YouTube/Vimeo embed only (§8).** S3 + CloudFront; image renditions via sharp in the worker; MP3/M4A served directly. | Photos have no embed alternative; audio-as-is costs pennies and needs no pipeline; video was the only media demanding a transcode service (MediaConvert) — embeds delete that entire subsystem. `profile_ingest` (F1.8) finds artists' existing YouTube links automatically, so the embed requirement costs performers nothing. | Low |
+| K8 | **We host no user media at all: every photo, track and video is a link to an allow-listed third-party host (§8).** Photos → Flickr/Imgur, audio → SoundCloud/Bandcamp, video → YouTube/Vimeo. No S3 bucket, no media CDN, no upload endpoint, no transcode service. | **DMCA exposure is the reason.** Storing material at the direction of users makes us a §512(c) service provider, with the designated-agent, takedown, counter-notice and repeat-infringer machinery that comes with it — and a one-to-three person team cannot staff that. Linking removes the material from our systems entirely; the host that already has the DMCA process keeps it. The secondary win is that the entire storage/transcode/screening-for-bytes subsystem stops existing. Cost: acts with no online presence have to create one before they get a photo on their EPK. | Low to run, **high to reverse** — the allow-list and the absence of a bucket are the whole feature |
 | K9 | **All LLM use flows through one internal `ai` module** ("AI gateway"): task registry, repo-versioned prompts, zod-validated structured outputs, per-task model routing, full I/O logging to `events`, cost metering, golden-set eval harness in CI. No ad-hoc model calls anywhere else in the codebase. | Centralizes safety (injection surface, output validation), cost control, and the PRD's draft-never-publish invariant; makes model swaps a config change. | High to retrofit |
 | K10 | **Single region, single metro-aware schema.** Every domain row carries `metro_id`; no per-metro databases, no sharding. | Metro #2 must be an INSERT, not a deployment. | Low |
-| K11 | **AWS-native but minimal, IaC in CDK (TypeScript): one x86 `t3.small` EC2 host runs the web and worker linux/amd64 containers — no Fargate, cluster, or NAT gateway.** CloudFront provides the public HTTPS origin in front of a public ALB; the ALB permits only the CloudFront origin prefix and a generated verification header. The host sits in a public subnet for direct internet-gateway egress, has no SSH ingress, and accepts its web port only from the ALB security group; the worker has no inbound surface. RDS Postgres is encrypted, single-AZ, and in private-isolated subnets. S3 + CloudFront, SES, Secrets Manager, CloudWatch, and GitHub Actions OIDC complete the staging stack; production is an optional, manually gated per-account deployment. | One small host is the lowest-cost shape a 1–3 person team can operate. Web and worker remain separate containers, so moving either to a second host or managed compute later is a CDK change rather than an application redesign. | Low |
+| K11 | **AWS-native but minimal, IaC in CDK (TypeScript): one x86 `t3.small` EC2 host runs the web and worker linux/amd64 containers — no Fargate, cluster, or NAT gateway.** CloudFront provides the public HTTPS origin in front of a public ALB; the ALB permits only the CloudFront origin prefix and a generated verification header. The host sits in a public subnet for direct internet-gateway egress, has no SSH ingress, and accepts its web port only from the ALB security group; the worker has no inbound surface. RDS Postgres is encrypted, single-AZ, and in private-isolated subnets. There is no object store and no second CloudFront distribution: the media bucket and media CDN were deleted with K8, so the only durable state in the account is the database. SES, Secrets Manager, CloudWatch, and GitHub Actions OIDC complete the staging stack; production is an optional, manually gated per-account deployment. | One small host is the lowest-cost shape a 1–3 person team can operate. Web and worker remain separate containers, so moving either to a second host or managed compute later is a CDK change rather than an application redesign. | Low |
 
 > **2026 deployment constraint:** AWS App Runner stopped accepting new customers on March 31, 2026, and this AWS account has no recorded App Runner usage before that cutoff. The EC2/ALB/CloudFront shape is therefore the dependable first-deploy path, not a speculative optimization. See the [AWS App Runner availability notice](https://docs.aws.amazon.com/apprunner/latest/dg/apprunner-availability-change.html).
 
@@ -41,8 +41,9 @@
    Performers / Venues / Techs
                 │ HTTPS
                 ▼
-        CloudFront (web TLS) ─────────────── CloudFront (media) ◀── private S3
-                │
+        CloudFront (web TLS)      no media origin: photos, tracks and video
+                │                 load straight from the third-party hosts
+                │                 named in the allow-list (K8/§8)
                 ▼
         Public application load balancer
                 │ web port; ALB security group is the only inbound source
@@ -51,7 +52,7 @@
 │ Public-subnet x86 t3.small EC2 host (no SSH; internet-gateway egress)       │
 │                                                                             │
 │  web container — Next.js mobile web/API/webhooks                            │
-│   • feeds, profiles, slots, booking flows, reviews, presigned S3 grants     │
+│   • feeds, profiles, slots, booking flows, reviews, media link validation  │
 │   • Stripe/Twilio webhooks verify, write, enqueue transactionally           │
 │                                                                             │
 │  worker container — no inbound surface                                      │
@@ -89,11 +90,10 @@ venues           (id, metro_id, kind, name, bio, geo point, capacity, room jsonb
 techs            (id, user_id, bio, gear: none|partial|full_rig, rig_specs jsonb,
                   rate_labor, rate_with_rig, travel_radius_miles)
 coi_documents    (id, owner_role_id, file, insurer, expires_on, verified_by)
-media_assets     (id, owner_role_id, kind: image|audio|video_embed,
-                  s3_key?, bytes?, duration_s?,                           -- uploads (image/audio)
-                  embed_url?, embed_meta jsonb?,                          -- video (YouTube/Vimeo oEmbed)
-                  status: uploaded|processing|ready|rejected,
-                  renditions jsonb {responsive[]}, fraud_screen_ref, position int)  -- §8; profile ordering
+media_assets     (id, owner_role_id, kind: photo|audio|video,             -- the oEmbed types; we store none of it
+                  embed_url, embed_meta jsonb?,                           -- NOT NULL: a row with no link is not an asset
+                  status: held|ready|blocked,                             -- held is the default; nothing is public unblessed
+                  fraud_screen_ref, position int)                         -- §8; profile ordering
 
 -- marketplace --------------------------------------------------------------
 slot_series      (id, venue_id, recurrence rule, defaults jsonb, status)
@@ -191,17 +191,24 @@ soundPlan(venuePA, performerNeeds) → { verdict: covered | tech_needed | tech_a
 - Verdict drives slot UX ("this gig needs sound — add a tech sub-slot?") and the tech brief (F-AI.12: the brief is a *template over structured data*, with an LLM polish pass that cannot alter facts).
 - The AI's only role in this subsystem is **extraction**: photo/free-text → draft `pa_inventory`/`tech_needs` JSON (task `gear_extract`, §9), human-confirmed before the engine consumes it. Confidence below threshold → field left empty and asked explicitly. Garbage-in is the engine's only failure mode, so extraction review UX is part of this feature, not separate.
 
-## 8. Media (photos + audio uploaded; video embedded — K8)
+## 8. Media (link-only, every kind — K8)
 
-Profiles are the storefront. We host the two things that have no good embed story (photos, audio files) and embed the thing that does (video).
+Profiles are the storefront, and **EightGig stores none of it**. A photo, a track and a video are the same thing here: a URL on a host that already has the copyright machinery to answer for what it serves. See K8 for the reasoning — the short version is DMCA §512(c), which attaches to storing material at the direction of users and does not attach to linking to it.
 
-- **Photos (uploaded):** browser → presigned S3 POST (content-type/size constrained, quota-checked) → worker job: EXIF-strip + responsive renditions (sharp) → CloudFront. Venues upload room photos through the same path.
-- **Audio (uploaded, stored as-is):** MP3/M4A, ≤25MB / ≤15 min per track, validated and served directly via CloudFront into an HTML5 player. **No transcode service** — what's uploaded is what plays. (Waveform rendering is a later nicety, computable in the worker if wanted.)
-- **Video (embed-only):** YouTube or Vimeo URLs; we fetch oEmbed metadata, cache the title/thumbnail, and render the official embed player. No video storage, no MediaConvert, no transcode pipeline — most working acts already have a YouTube link, and `profile_ingest` (F1.8) discovers it automatically.
-- **Screening before visibility:** uploads run `media_fraud_screen` (F7.5) + virus scan + content-type sniffing during processing; embeds are screened on their fetched metadata/thumbnail. `media_assets.status`: uploaded → processing → ready | rejected; nothing public until `ready`.
-- **Delivery:** CloudFront over S3 — public cache paths for profile media, signed URLs for private documents (COIs, stage plots).
-- **Quotas (config-driven):** ≈ 20 photos, 10 audio tracks, 5 video embeds per profile; per-file caps enforced at presign time.
-- **Lifecycle:** S3 lifecycle rules purge abandoned multipart uploads and rejected assets (30 days); deletes cascade from profile edits and account deletion (§11). Embed rot (deleted YouTube videos) detected by a weekly oEmbed recheck job that flags dead links to the owner.
+- **The allow-list is the feature.** `EMBED_PROVIDER_HOSTS` in `packages/domain` maps a host to its provider and media kind: Flickr/Imgur → photo, SoundCloud/Bandcamp → audio, YouTube/Vimeo → video. `https` only, exact hosts (Bandcamp is the one suffix match, because every act gets `theact.bandcamp.com`). **A URL no provider claims is not a media asset and is rejected at the schema.** This is not tidiness: an open URL field is an SSRF vector on the oEmbed fetch and lets anyone put arbitrary remote content in an `<img>`/`<iframe>` on a public profile.
+- **The kind is derived, never submitted.** The provider decides whether a link is a photo, a track or a video; the client cannot claim otherwise.
+- **Adding a link** (`POST /api/media/embed`): normalize (https, lowercase host, fragment stripped, so the same track pasted twice is the same string) → resolve the provider → quota check → insert `held` → enqueue the screen.
+- **Metadata, best-effort:** one oEmbed call with a 4s timeout fetches title/thumbnail, and for photos the direct image URL. Failure is non-fatal — we keep the link and enrich later. Bandcamp publishes no oEmbed endpoint at all, so a Bandcamp link simply has no title.
+- **A second allow-list on what we render:** thumbnail and image URLs arrive inside a *provider's response*, so they get checked against that provider's own asset CDNs (`ASSET_DOMAINS` in `lib/oembed.ts`) before they can reach an `<img src>`. Anything else is dropped and the asset falls back to a plain link.
+- **Screening before visibility:** `media_fraud_screen` (F7.5) reads the link's metadata; high risk stays `held` for the ops queue, otherwise `ready`. `media_assets.status`: held → ready | blocked, default `held`; nothing is public until `ready`. There is no virus scan and no content-type sniff because there is no file — we never take delivery of one.
+- **Delivery:** the browser fetches media directly from the provider. A `Content-Security-Policy` (`apps/web/next.config.ts`) pins `img-src`/`frame-src` to the same provider hosts, so the allow-list is enforced a second time by the browser, on the rendered page, where a bug in our own handling would otherwise show.
+- **Quotas:** 20 photos, 10 audio links, 5 videos per profile. A link costs no bytes, but an unbounded list still makes a profile page unloadable and aims an unbounded number of oEmbed fetches wherever the poster likes.
+- **Lifecycle:** nothing to purge — deleting a link deletes the asset. Deletes cascade from profile edits and account deletion (§11). Embed rot (a deleted YouTube video) is detected by a weekly oEmbed recheck that flags dead links to the owner.
+- **Private documents (COIs, stage plots)** are a separate question from profile media and are *not* covered by this section; they are not user-facing content and do not travel through the media pipeline.
+
+> **Legal pages need review by counsel.** The hosting posture changed: we no longer store user-submitted material. `/dmca`, `/terms` and `/privacy` were written for a product that did, and this spec deliberately makes no claim about what obligations do or do not now apply — that is a lawyer's call, not an engineering one. Flagged here so the review is not forgotten.
+>
+> `/privacy` has had one FACTUAL correction applied already, because it listed "uploaded media" as a category of information collected and nothing is uploaded any more — a privacy notice describing collection that does not happen is wrong on its own terms, separately from any question of obligation. The wording of what it now says still wants a lawyer's eye.
 
 ## 9. AI subsystem (the gateway — K9)
 
@@ -236,7 +243,7 @@ Profiles are the storefront. We host the two things that have no good embed stor
 
 - AuthZ: role-scoped access checked in the domain layer (not just routes); venues see applicant profiles, never contact info pre-confirmation; performers never see venue payment instruments.
 - PII map maintained in repo (`docs/pii.md`): what we hold, where, retention. Deletion endpoint anonymizes user rows and strips PII from events payloads (events keep structural data — bookings/money history is legally retained).
-- Media: secured by the §8 pipeline (content-type sniffing, EXIF-strip, virus scan, fraud screening before public visibility); CloudFront signed URLs for non-public assets (COIs, stage plots).
+- Media: we hold none of it (§8). The controls are the host allow-list (enforced at the schema, again on provider responses, and again by the CSP in the browser) and fraud screening before public visibility. Non-public documents (COIs, stage plots) are outside the media path and keep their own access-controlled delivery.
 - Secrets in platform secret manager; no secrets in repo; quarterly key rotation checklist.
 - Backups: managed Postgres PITR + nightly logical dump to object storage, restore-tested monthly (calendar reminder is part of this spec).
 - Rate limits on auth, application, and messaging endpoints (abuse + scraping).
@@ -266,9 +273,9 @@ Profiles are the storefront. We host the two things that have no good embed stor
 
 | Milestone | Scope | Exit criteria |
 |---|---|---|
-| **M0 — Walking skeleton** (wk 1–3) | Auth, profiles with bios + photo upload + YouTube/Vimeo embeds + inquiry messaging, slot post/feed/apply, offer→accept with NO payments (terms recorded, pay-direct), events table, CDK + deploy pipeline to AWS | A real venue messages and books a real performer end-to-end in staging; events show the full story |
+| **M0 — Walking skeleton** (wk 1–3) | Auth, profiles with bios + allow-listed photo/audio/video links + inquiry messaging, slot post/feed/apply, offer→accept with NO payments (terms recorded, pay-direct), events table, CDK + deploy pipeline to AWS | A real venue messages and books a real performer end-to-end in staging; events show the full story |
 | **M1 — Money** *(built dormant; activates with Phase 2 venue monetization, not at MVP launch)* (wk 4–7) | Full state machine, Stripe Connect Express, charge/hold/release, ledger + reconciliation, cancellation fees, click-wrap contracts, critical-path notifications (SMS/email) | Property suite green; test-mode lifecycle incl. disputes and both cancel branches; reconciliation catches seeded faults. **The money path stays behind the gateway seam, off by default**; what launches is the handshake-only configuration (§5 launch note). Critical-path notifications ship live |
-| **M2 — AI & the third side** (wk 8–11) | AI gateway + `profile_ingest`, `slot_parse` (SMS posting), `gear_extract`, sound-plan engine, tech sub-slots on the same rails, review system, audio track uploads | <5-min link-in onboarding measured with 10 real performers; SMS slot post → confirmed booking demonstrated; tech books through a sub-slot; uploaded audio plays on a profile |
+| **M2 — AI & the third side** (wk 8–11) | AI gateway + `profile_ingest`, `slot_parse` (SMS posting), `gear_extract`, sound-plan engine, tech sub-slots on the same rails, review system, SoundCloud/Bandcamp audio links | <5-min link-in onboarding measured with 10 real performers; SMS slot post → confirmed booking demonstrated; tech books through a sub-slot; a linked track is reachable from a profile |
 | **M3 — Launch hardening** (wk 12–14) | `media_fraud_screen`, `support_triage`, dispute flow + ops dashboard, liquidity dashboard, iCal, rate limits, backup-restore drill, load test at 100× | Ops can run a dispute start-to-finish; on-call runbook exists; Phase 0 anchor venues onboarded to staging |
 
 Deliberately deferred (with their seams): replacement engine (consumes `cancelled_by_performer` events), split payouts (ledger rows already per-member), promotion generation (consumes `confirmed` events), POS integration (joins `venue_night_facts`), native apps (PWA until push becomes the binding constraint), ML ranking (pgvector columns waiting).

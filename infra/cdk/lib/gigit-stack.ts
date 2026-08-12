@@ -1,7 +1,12 @@
 /**
  * Gigit infrastructure (engineering-spec K11): deliberately minimal —
- * one EC2 host (web + worker) + ALB/CloudFront + RDS + S3/CloudFront + SES.
+ * one EC2 host (web + worker) + ALB/CloudFront + RDS + SES.
  * No Fargate, no NAT gateway, no cluster.
+ *
+ * There is no media bucket and no media CDN: EightGig stores no user files at
+ * all (engineering-spec §8), so photos, tracks and video are links to
+ * allow-listed third-party hosts. Removing the storage removes the DMCA
+ * §512(c) exposure that comes with hosting material at users' direction.
  */
 import * as cdk from "aws-cdk-lib";
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
@@ -18,7 +23,6 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as route53Targets from "aws-cdk-lib/aws-route53-targets";
-import * as s3 from "aws-cdk-lib/aws-s3";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as ssm from "aws-cdk-lib/aws-ssm";
 import { Construct } from "constructs";
@@ -88,33 +92,11 @@ export class GigitStack extends cdk.Stack {
     });
     database.connections.allowFrom(hostSg, ec2.Port.tcp(5432));
 
-    // ── media (S3 + CloudFront) ─────────────────────────────────────────────
-    const media = new s3.Bucket(this, "Media", {
-      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
-      cors: [
-        {
-          allowedMethods: [s3.HttpMethods.PUT],
-          allowedOrigins: publicAppUrl ? [publicAppUrl] : ["*"],
-          allowedHeaders: ["*"],
-        },
-      ],
-      lifecycleRules: [{ abortIncompleteMultipartUploadAfter: cdk.Duration.days(2) }],
-    });
     // Fresh AWS accounts cannot create CloudFront distributions until AWS
     // Support verifies the account. `-c enableCdn=false` deploys everything
-    // else meanwhile — the app serves media via presigned S3 GETs when
-    // MEDIA_CDN_URL is absent (apps/web/src/lib/storage.ts) — and a later
-    // deploy without the flag turns the CDN on in place.
+    // else meanwhile — TLS terminates at the ALB instead (see WebCdn below) —
+    // and a later deploy without the flag turns the CDN on in place.
     const enableCdn = this.node.tryGetContext("enableCdn") !== "false";
-    const cdn = enableCdn
-      ? new cloudfront.Distribution(this, "MediaCdn", {
-          defaultBehavior: {
-            origin: origins.S3BucketOrigin.withOriginAccessControl(media),
-            viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-            cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-          },
-        })
-      : undefined;
 
     // ── container registries (created by the bootstrap stack, imported here) ─
     // Imported by name so immutable release images can be pushed before the
@@ -192,10 +174,7 @@ export class GigitStack extends cdk.Stack {
     // so operator-managed provider secrets cannot make them drift.
     const computedEnv: Record<string, string> = {
       NODE_ENV: "production",
-      STORAGE_DRIVER: "s3",
-      S3_BUCKET: media.bucketName,
       AWS_REGION: this.region,
-      ...(cdn ? { MEDIA_CDN_URL: `https://${cdn.distributionDomainName}` } : {}),
       // Presence tells the worker it is on AWS and doubles as the metric
       // dimension, keeping staging and prod outbox metrics separate.
       GIGIT_STAGE: props.stage,
@@ -210,7 +189,6 @@ export class GigitStack extends cdk.Stack {
     });
     webRepo.grantPull(hostRole);
     workerRepo.grantPull(hostRole);
-    media.grantReadWrite(hostRole);
     appSecrets.grantRead(hostRole);
     hostRole.addToPolicy(
       new iam.PolicyStatement({ actions: ["ses:SendEmail"], resources: ["*"] }),
@@ -594,8 +572,6 @@ export class GigitStack extends cdk.Stack {
       },
     );
     new cdk.CfnOutput(this, "OpsAlertsTopic", { value: alerts.topicArn });
-    if (cdn)
-      new cdk.CfnOutput(this, "MediaCdnDomain", { value: cdn.distributionDomainName });
     new cdk.CfnOutput(this, "DbEndpoint", { value: database.instanceEndpoint.hostname });
     new cdk.CfnOutput(this, "WebUrl", { value: webUrl });
     new cdk.CfnOutput(this, "HostInstanceId", { value: host.instanceId });

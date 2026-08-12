@@ -9,7 +9,7 @@ const bodySchema = z.object({ action: z.enum(["clear", "uphold"]) });
 
 /**
  * Moderation queue resolution (F9.3): clear = flag dismissed and any held
- * media released; uphold = media rejected. A person decides — always.
+ * media released; uphold = media blocked. A person decides — always.
  */
 export async function POST(req: Request, { params }: Params) {
   try {
@@ -39,15 +39,20 @@ export async function POST(req: Request, { params }: Params) {
         .from(schema.mediaAssets)
         .where(eq(schema.mediaAssets.id, flagRow.subjectId));
       if (asset) {
-        if (action === "clear" && asset.status === "processing")
+        // 'held' / 'blocked', not the retired 'processing' / 'rejected':
+        // migration 0033 renamed the media lifecycle when uploads went away and
+        // added a CHECK constraint, so writing the old names here no longer
+        // half-works — upholding a flag would throw at the insert and leave the
+        // moderator staring at a 500 with the flag still open.
+        if (action === "clear" && asset.status === "held")
           await d
             .update(schema.mediaAssets)
             .set({ status: "ready" })
             .where(eq(schema.mediaAssets.id, asset.id));
-        if (action === "uphold" && asset.status !== "rejected")
+        if (action === "uphold" && asset.status !== "blocked")
           await d
             .update(schema.mediaAssets)
-            .set({ status: "rejected" })
+            .set({ status: "blocked" })
             .where(eq(schema.mediaAssets.id, asset.id));
       }
     }

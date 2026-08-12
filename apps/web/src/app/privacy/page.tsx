@@ -19,7 +19,10 @@ export default function PrivacyPage() {
         We collect the email address or phone number you use to sign in;
         act, venue, or sound tech profile details you choose to publish; open
         gig, application, booking, message, review, support, and dispute
-        records; uploaded media; and basic security and delivery logs.
+        records; links to photos, tracks, and videos you host elsewhere; and
+        basic security and delivery logs. We do not host media ourselves — a
+        photo, track, or video on EightGig is a link to the service that holds
+        it, and following that link means their privacy policy applies too.
       </p>
       <p>
         Venue profiles and open gigs are public, including the venue name,

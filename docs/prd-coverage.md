@@ -29,6 +29,31 @@
 > Remaining external items live in the runbook checklist (A2P, SES production
 > access, Stripe live keys, GuardDuty S3 scanning, counsel review). The matrix
 > below is preserved as the pre-sprint audit record.
+>
+> **Update (July 2026) — media is link-only; EightGig hosts nothing.** Every
+> photo, track and video is now a URL on an allow-listed third-party host
+> (Flickr/Imgur, SoundCloud/Bandcamp, YouTube/Vimeo). The reason is DMCA
+> §512(c): storing material at the direction of users is what makes a company a
+> service provider with takedown machinery to staff, and this one cannot staff
+> it. See engineering-spec K8/§8 and technical-design §3.6.
+>
+> This retires several rows below *as requirements*, not as work: the upload
+> half of the media trust pipeline (virus scan, EXIF strip, content-type
+> sniffing, image renditions — gap #7, F7.5) defended bytes we no longer accept,
+> and **GuardDuty S3 scanning** in the remaining-external list above has nothing
+> left to scan. The parts that survive are the host allow-list (schema →
+> provider-response check → browser CSP), the fraud screen over link metadata,
+> the moderation queue, and the embed-rot recheck. F1.2's stage-plot gap is
+> unaffected and now needs a non-media answer, since there is no upload path to
+> extend. Infrastructure: the media S3 bucket and media CloudFront distribution
+> are deleted from the CDK stack (the NFR row below still names them; it is a
+> June snapshot, and per the warning at the top this document does not rewrite
+> its marks in place).
+>
+> **Counsel review is outstanding and now more specific:** `/dmca` and `/terms`
+> were written for a product that stored user uploads. What obligations do or do
+> not follow from the change is a lawyer's call; nothing in these docs asserts
+> an answer.
 
 > **Discovery-first launch posture (June 2026 reframe — see [`docs/pricing.md`](pricing.md)):**
 > Gigit launches mission-first and discovery-first: it touches **no gig money** —

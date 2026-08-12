@@ -163,15 +163,16 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     // (apps/web/src/app/p/[id]/page.tsx): claiming the page is "ready" would
     // contradict that and defuse its own ask.
     subject: "Your act page is live",
-    body: "It's the page you send to a venue, and right now it's just words. A photo and one track do more than any bio — add photos, audio, or video: {url}/me",
+    body: "It's the page you send to a venue, and right now it's just words. A photo and one track do more than any bio — paste the links to yours (Flickr, Imgur, SoundCloud, Bandcamp, YouTube, Vimeo): {url}/me",
   },
-  media_rejected: {
-    subject: "An upload didn't pass",
-    body: "A file you uploaded didn't pass our checks (its contents don't match its type). Try re-exporting and uploading again: {url}/me",
-  },
+  // Covers photos and audio as well as video: with media link-only, a dead
+  // Flickr photo and a pulled SoundCloud track reach the owner through this
+  // same message, and naming video would tell them to go look at the wrong
+  // thing. media_rejected went with the upload path — nothing can fail a
+  // content-type check any more, because no file is ever delivered to us.
   embed_dead: {
-    subject: "A video link went dead",
-    body: "One of the videos on your profile no longer plays. Swap it for a live link: {url}/me",
+    subject: "A link on your profile went dead",
+    body: "One of the photos, tracks or videos on your profile no longer loads. Swap it for a live link: {url}/me",
   },
   otp: {
     subject: "Your EightGig sign-in code",
