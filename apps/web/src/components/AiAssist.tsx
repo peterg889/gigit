@@ -67,14 +67,24 @@ export function ProfileIngestWidget() {
       >
         {busy ? "Drafting…" : "Draft my profile"}
       </button>
-      {error && <p className="error">{error}</p>}
+      {/* The same gap ApiForm closed: the region has to be in the DOM before
+          the request so a screen-reader user hears the failure. Without it the
+          draft never arrives and nothing is announced at all. */}
+      <div aria-live="polite" role="status">
+        {error && <p className="error">{error}</p>}
+      </div>
       {draft && (
         <div className="card">
           <p className="muted">
             Your draft. Fix anything we got wrong — it&apos;s your name on the
             poster.
           </p>
-          <p className="muted">{draft.confidenceNote}</p>
+          {/* What the model was unsure about. It arrives with the draft, so it
+              is announced rather than left for someone to stumble onto while
+              editing fields the model may have guessed wrong. */}
+          <div aria-live="polite" role="status">
+            <p className="muted">{draft.confidenceNote}</p>
+          </div>
           <label htmlFor={`${uid}-f1`}>Act name</label>
           <input id={`${uid}-f1`}
             value={draft.name}
@@ -187,12 +197,21 @@ export function SlotParseWidget({ timeZone }: { timeZone: string }) {
       >
         {busy ? "Reading…" : "Draft the listing"}
       </button>
-      {error && <p className="error">{error}</p>}
+      {/* The same gap ApiForm closed: the region has to be in the DOM before
+          the request so a screen-reader user hears the failure. Without it the
+          draft never arrives and nothing is announced at all. */}
+      <div aria-live="polite" role="status">
+        {error && <p className="error">{error}</p>}
+      </div>
       {draft && (
         <div className="card">
-          {draft.clarificationNeeded && (
-            <p className="error">Needs clarifying: {draft.clarificationNeeded}</p>
-          )}
+          {/* This is why "Post this date" is disabled — it has to be spoken,
+              not just shown in red above the button. */}
+          <div aria-live="polite" role="status">
+            {draft.clarificationNeeded && (
+              <p className="error">Needs clarifying: {draft.clarificationNeeded}</p>
+            )}
+          </div>
           <p>
             <span className="badge">
               {GIG_FORMAT_LABEL[draft.format] ?? draft.format}
@@ -225,11 +244,15 @@ export function SlotParseWidget({ timeZone }: { timeZone: string }) {
           >
             Post this date
           </button>
-          {draft.budgetCents < 1 && (
-            <p className="muted">
-              Add the pay — every open gig on EightGig shows it up front.
-            </p>
-          )}
+          {/* The other reason "Post this date" is disabled. Announced for the
+              same reason as the clarification note above it. */}
+          <div aria-live="polite" role="status">
+            {draft.budgetCents < 1 && (
+              <p className="muted">
+                Add the pay — every open gig on EightGig shows it up front.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -305,7 +328,12 @@ export function GearExtractWidget({ venueId }: { venueId: string }) {
       >
         {busy ? "Reading…" : "Draft my room specs"}
       </button>
-      {error && <p className="error">{error}</p>}
+      {/* The same gap ApiForm closed: the region has to be in the DOM before
+          the request so a screen-reader user hears the failure. Without it the
+          draft never arrives and nothing is announced at all. */}
+      <div aria-live="polite" role="status">
+        {error && <p className="error">{error}</p>}
+      </div>
       {draft && (
         <div className="card">
           <p className="muted">
@@ -343,7 +371,11 @@ export function GearExtractWidget({ venueId }: { venueId: string }) {
             <option value="true">Yes</option>
             <option value="false">No</option>
           </select>
-          {draft.uncertainties && <p className="muted">Unsure about: {draft.uncertainties}</p>}
+          {/* Counts the model could not read off the photo. Announced so the
+              numbers to double-check are heard, not only seen. */}
+          <div aria-live="polite" role="status">
+            {draft.uncertainties && <p className="muted">Unsure about: {draft.uncertainties}</p>}
+          </div>
           <button
             disabled={busy}
             onClick={async () => {

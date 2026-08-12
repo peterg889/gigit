@@ -92,7 +92,13 @@ export default async function TechPage({
           )}
         </h1>
         <p className="muted">Travels {t.travelRadiusMiles} miles</p>
-        <p>{t.bio || <span className="muted">No experience summary yet.</span>}</p>
+        <p>
+          {t.bio ? (
+            <span className="user-text">{t.bio}</span>
+          ) : (
+            <span className="muted">No experience summary yet.</span>
+          )}
+        </p>
         <p className="muted">
           {t.rateLaborCents != null && (
             <>
@@ -132,7 +138,11 @@ export default async function TechPage({
           {visible.map((review) => (
             <p key={review.id}>
               ★ {review.ratings.overall} —{" "}
-              {review.body || <span className="muted">No written comment.</span>}
+              {review.body ? (
+                <span className="user-text">{review.body}</span>
+              ) : (
+                <span className="muted">No written comment.</span>
+              )}
             </p>
           ))}
         </div>

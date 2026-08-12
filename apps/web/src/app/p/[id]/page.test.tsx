@@ -63,4 +63,23 @@ describe("an act's shareable profile, before they've filled it in", () => {
     expect(html).toContain("Four-piece out of Bay View");
     expect(html).not.toMatch(/no bio yet/i);
   });
+
+  /**
+   * Acts write their bio in verses and paragraphs — the lineup on one line, the
+   * pitch under it. HTML collapses those newlines, so the page a booker pastes
+   * into a group chat used to show the whole thing as one unbroken grey block.
+   */
+  it("keeps the line breaks the act typed into their bio", async () => {
+    const act = await makePerformer({
+      name: "Formatted Bio Act",
+      bio: "Four-piece out of Bay View.\n\nLoud, and on time.",
+    });
+    sessionUserId.mockResolvedValue(null);
+
+    const html = await render(act.id);
+
+    expect(html).toContain(
+      '<p class="user-text">Four-piece out of Bay View.\n\nLoud, and on time.</p>',
+    );
+  });
 });

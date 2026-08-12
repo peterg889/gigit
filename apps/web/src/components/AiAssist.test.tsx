@@ -42,3 +42,18 @@ describe("AI-assist control labels", () => {
     );
   });
 });
+
+describe("AI-assist failure announcements", () => {
+  // The region has to be in the markup BEFORE the request fails: a live region
+  // that only appears together with its text is not reliably announced, so a
+  // screen-reader user pressed the draft button and heard nothing at all.
+  it.each([
+    ["ProfileIngestWidget", <ProfileIngestWidget key="profile" />],
+    ["SlotParseWidget", <SlotParseWidget key="slot" timeZone="America/Chicago" />],
+    ["GearExtractWidget", <GearExtractWidget key="gear" venueId="ven_test" />],
+  ])("%s mounts its error region before anything fails", (_name, element) => {
+    const html = renderToStaticMarkup(element);
+
+    expect(html).toContain('<div aria-live="polite" role="status">');
+  });
+});

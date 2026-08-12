@@ -116,7 +116,11 @@ export default function LoginPage() {
           </div>
         </form>
       )}
-      {error && <p className="error">{error}</p>}
+      {/* See ApiForm: a wrong sign-in code announced to nobody leaves a
+          screen-reader user retyping a code that was never going to work. */}
+      <div aria-live="polite" role="status">
+        {error && <p className="error">{error}</p>}
+      </div>
     </div>
   );
 }

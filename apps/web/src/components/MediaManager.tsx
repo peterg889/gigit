@@ -98,7 +98,12 @@ export function MediaManager({
           </button>
         </>
       )}
-      {msg && <p className="muted">{msg}</p>}
+      {/* A live region, matching ApiForm: an upload that fails is otherwise
+          silent for a screen-reader user, who gets no signal at all that the
+          file they chose did not take. */}
+      <div aria-live="polite" role="status">
+        {msg && <p className="muted">{msg}</p>}
+      </div>
     </div>
   );
 }

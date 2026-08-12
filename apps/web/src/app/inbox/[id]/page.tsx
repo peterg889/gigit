@@ -135,7 +135,7 @@ export default async function ThreadPage({
             ·{" "}
             {formatRelativeTime(m.createdAt)}
           </span>
-          <p>{m.body}</p>
+          <p className="user-text">{m.body}</p>
         </div>
       ))}
       <div className="card">

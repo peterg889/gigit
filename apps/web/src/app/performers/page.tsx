@@ -198,7 +198,7 @@ export default async function PerformerSearchPage({
           {p.genreTags.length > 0 && (
             <span className="muted"> · {p.genreTags.join(", ")}</span>
           )}
-          <p className="muted">{p.bio}</p>
+          <p className="muted user-text">{p.bio}</p>
           {p.rateMinCents != null && p.rateMaxCents != null && (
             <p className="muted">
               Typical rate:{" "}

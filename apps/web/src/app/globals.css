@@ -190,6 +190,14 @@ p { margin: 0.5em 0; }
 
 .muted { color: var(--muted); font-size: var(--step-small); }
 
+/* Anything a person typed. Bios, notes, applications and messages are stored
+   with the newlines their author pressed, but HTML collapses those, so a bio
+   laid out as verses and a venue's multi-paragraph message both arrived as one
+   grey wall. pre-wrap keeps the breaks and still wraps long lines. Only for
+   authored text — never for strings the product itself writes, which would then
+   be at the mercy of whatever whitespace the source happened to have. */
+.user-text { white-space: pre-wrap; }
+
 /* ── Badges: ticket stubs ── */
 .badge {
   display: inline-block;
@@ -255,7 +263,10 @@ button[disabled]:hover { background: var(--amber); }
 button.quiet, .btn.quiet {
   background: transparent;
   color: var(--amber);
-  border: 1px solid var(--line);
+  /* --line is 1.54:1 on --room / 1.44:1 on --panel, so the only thing marking
+     "cancel"/"withdraw" as a pressable control was 1px of near-invisible rule.
+     --line-strong is 3.27:1 / 3.06:1 and clears WCAG 1.4.11's 3:1. */
+  border: 1px solid var(--line-strong);
   box-shadow: none;
 }
 button.quiet:hover, .btn.quiet:hover { background: rgba(255, 176, 46, 0.08); }
@@ -275,7 +286,9 @@ button.quiet[disabled]:hover { background: transparent; }
   letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 6px 12px 5px;
-  border: 1px solid var(--line);
+  /* Same 1.4:1 problem as button.quiet: an unselected filter chip is a control,
+     and at --line its boundary vanished into the card behind it. */
+  border: 1px solid var(--line-strong);
   border-radius: 2px;
   color: var(--ink-dim, var(--ink));
   text-decoration: none;
@@ -315,13 +328,16 @@ input, select, textarea {
   color: var(--ink);
   font: inherit;
 }
-/* A placeholder has to differ from entered text in SHAPE, not just in shade. At
-   0.8 alpha a tan "53212" in a ZIP field read as a filled value — verified in a
-   real browser against staging — and a venue could plausibly submit believing the
-   field was set. Italic reads instantly as "this is a hint", and entered text is
-   near-white cream against this. */
+/* A placeholder has to differ from entered text in SHAPE, not just in shade. A
+   tan "53212" in a ZIP field once read as a filled value — verified in a real
+   browser against staging — and a venue could plausibly submit believing the
+   field was set. Italic is what fixed that; it reads instantly as "this is a
+   hint". The shade half of that fix went too far: 0.62 alpha composites to
+   #6f6247 on the #100b05 field, only 3.28:1, under the 4.5:1 WCAG 1.4.3 needs
+   for text this size. 0.8 composites to #8a7c5a — 4.77:1 — while entered --ink
+   stays at 16.12:1, so the two are still 3.4x apart on top of the italic. */
 input::placeholder, textarea::placeholder {
-  color: rgba(169, 152, 111, 0.62);
+  color: rgba(169, 152, 111, 0.8);
   font-style: italic;
 }
 /* `outline: none` on input:focus (0,1,1) out-specifies the global

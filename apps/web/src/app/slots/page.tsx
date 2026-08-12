@@ -195,7 +195,7 @@ export default async function FeedPage({
               postalCode: venuePostalCode,
             })}
           </div>
-          {slot.notes && <div className="muted">{slot.notes}</div>}
+          {slot.notes && <div className="muted user-text">{slot.notes}</div>}
         </div>
       ))}
       {performer && (

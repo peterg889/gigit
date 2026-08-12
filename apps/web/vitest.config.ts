@@ -3,6 +3,10 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    // Migrate before anything connects. The web suite owns no schema of its own
+    // but every route test inserts fixtures, so a fresh database must be built
+    // here rather than assumed to have been built by the db package's run.
+    globalSetup: "./src/test/global-setup.ts",
     setupFiles: ["./src/test/setup.ts"],
     // Web route tests hit the SAME Postgres as the db package's, and several
     // assert exact row counts. Without this, ~30 files ran in parallel against

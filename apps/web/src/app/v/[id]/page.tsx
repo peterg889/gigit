@@ -99,7 +99,13 @@ export default async function VenuePage({
           {formatAddress(v)} · {v.capacity != null ? `capacity ${v.capacity}` : "capacity not listed"}
           {v.noiseCurfew && <> · curfew {v.noiseCurfew}</>}
         </p>
-        <p>{v.bio || <span className="muted">No description yet.</span>}</p>
+        <p>
+          {v.bio ? (
+            <span className="user-text">{v.bio}</span>
+          ) : (
+            <span className="muted">No description yet.</span>
+          )}
+        </p>
         <p className="muted">
           {pa.hasPA ? (
             <>
@@ -155,7 +161,11 @@ export default async function VenuePage({
           {visible.map((r) => (
             <p key={r.id}>
               ★ {r.ratings.overall} —{" "}
-              {r.body || <span className="muted">No written comment.</span>}
+              {r.body ? (
+                <span className="user-text">{r.body}</span>
+              ) : (
+                <span className="muted">No written comment.</span>
+              )}
             </p>
           ))}
         </div>

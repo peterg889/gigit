@@ -67,6 +67,26 @@ describe("conversation reply availability", () => {
     );
   }
 
+  /**
+   * A venue types load-in details as a list, one per line. Collapsed into a
+   * single paragraph the 6pm and the door code run together, which is how a
+   * load-in time gets missed on the night.
+   */
+  it("keeps the line breaks the sender typed into a message", async () => {
+    await db().insert(schema.messages).values({
+      id: newId("message"),
+      threadId,
+      senderUserId: counterpartId,
+      body: "Load-in 6pm.\nDoor code 4412.\n\nAsk for Dana.",
+    });
+
+    const html = await renderThread();
+
+    expect(html).toContain(
+      '<p class="user-text">Load-in 6pm.\nDoor code 4412.\n\nAsk for Dana.</p>',
+    );
+  });
+
   it("shows Reply only while every participant account is active", async () => {
     const active = await renderThread();
     expect(active).toContain("Keep this history visible");

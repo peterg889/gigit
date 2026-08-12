@@ -23,10 +23,26 @@ export default async function AdminPage() {
     Number(slots.total) > 0
       ? ((Number(slots.filled) / Number(slots.total)) * 100).toFixed(0)
       : "—";
-  const ttf = await q(`select round(extract(epoch from avg(b.created_at - s.created_at))/3600) as hours
+  // A true median, not avg(): time-to-fill is heavily right-skewed — a handful
+  // of nights that sat open for weeks drag the mean far above what a typical
+  // slot experiences, so the old avg() under a "Median-ish" label overstated
+  // the wait a venue should actually expect.
+  const ttf = await q(`select round(percentile_cont(0.5) within group (
+        order by extract(epoch from b.created_at - s.created_at)
+      )/3600) as hours
     from bookings b join slots s on b.slot_id = s.id`);
+  // Per SLOT, so slots that drew nobody count as the zeroes they are. Grouping
+  // applications by slot_id silently dropped every empty slot from the
+  // denominator, turning "applications per slot" into "applications per slot
+  // that got at least one" — the figure read healthiest exactly when supply was
+  // failing to show up. Drafts are excluded: they were never visible to an act,
+  // so their zero is not a miss.
   const apps = await q(`select round(avg(c),1) as depth from
-    (select count(*) c from applications group by slot_id) t`);
+    (select count(a.id) c
+       from slots s
+       left join applications a on a.slot_id = s.id
+      where s.status <> 'draft'
+      group by s.id) t`);
   const bookings = await q(`select count(*) as total,
       count(*) filter (where state='confirmed') as confirmed,
       count(*) filter (where state='released') as released,
@@ -68,7 +84,7 @@ export default async function AdminPage() {
         <h2>Slots</h2>
         <Row k="Fill rate" v={`${fillRate}%`} />
         <Row k="Open now" v={slots.open} />
-        <Row k="Median-ish time-to-fill (h)" v={ttf.hours} />
+        <Row k="Median time-to-fill (h)" v={ttf.hours} />
         <Row k="Avg applications per slot" v={apps.depth} />
       </div>
       <div className="card">

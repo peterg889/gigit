@@ -119,7 +119,7 @@ export default async function MePage() {
               <span className="muted">Profile saved but not public ({performer.status}).</span>
             )}
             <br />
-            <span className="muted">{performer.bio}</span>
+            <span className="muted user-text">{performer.bio}</span>
           </p>
           {paymentsEnabled() ? (
             <p>
@@ -231,7 +231,7 @@ export default async function MePage() {
               <span className="muted">Profile saved but not public ({venue.status}).</span>
             )}
             <br />
-            <span className="muted">{venue.bio}</span>
+            <span className="muted user-text">{venue.bio}</span>
           </p>
           <p className="muted">
             {formatAddress(venue)} · {friendlyTimeZoneName(venue.timeZone)}
@@ -425,7 +425,7 @@ export default async function MePage() {
             <strong>{tech.name}</strong>{" "}
             <span className="badge">{GEAR_LABELS[tech.gear] ?? tech.gear}</span>
             <br />
-            <span className="muted">{tech.bio}</span>
+            <span className="muted user-text">{tech.bio}</span>
           </p>
           <details>
             <summary className="muted">Edit profile</summary>

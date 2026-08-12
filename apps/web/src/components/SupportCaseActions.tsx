@@ -60,7 +60,10 @@ function NoteForm({
             : "Context for the next person working this request"
         }
       />
-      {error && <p className="error">{error}</p>}
+      {/* See ApiForm: without a live region the failure is announced to nobody. */}
+      <div aria-live="polite" role="status">
+        {error && <p className="error">{error}</p>}
+      </div>
       <button disabled={busy}>
         {busy ? "Working…" : resolving ? "Resolve request" : "Add internal note"}
       </button>

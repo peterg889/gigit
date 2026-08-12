@@ -175,7 +175,9 @@ export default async function SoundBookingPage({
         </p>
         {canSeeOperationalDetails && (
           <>
-            {row.subslot.needs.notes && <p>{row.subslot.needs.notes}</p>}
+            {row.subslot.needs.notes && (
+              <p className="user-text">{row.subslot.needs.notes}</p>
+            )}
             <p className="muted">
               House PA:{" "}
               {row.venue.paInventory.hasPA ? (

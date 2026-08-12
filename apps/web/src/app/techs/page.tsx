@@ -150,7 +150,9 @@ export default async function TechsPage() {
                   : "house PA · channel count not listed"
                 : "no house PA · bring a rig"}
               {subslot.needs.gaps.length > 0 && <> · sound gaps: {subslot.needs.gaps.join("; ")}</>}
-              {subslot.needs.notes && <> · {subslot.needs.notes}</>}
+              {subslot.needs.notes && (
+                <> · <span className="user-text">{subslot.needs.notes}</span></>
+              )}
             </p>
             <p className="muted">
               {formatAddress({
@@ -209,7 +211,13 @@ export default async function TechsPage() {
           {t.reliabilityStrikes > 0 && (
             <span className="badge bad">{t.reliabilityStrikes} cancellation{t.reliabilityStrikes === 1 ? "" : "s"}</span>
           )}
-          <p className="muted">{t.bio || "No experience summary yet."}</p>
+          <p className="muted">
+            {t.bio ? (
+              <span className="user-text">{t.bio}</span>
+            ) : (
+              "No experience summary yet."
+            )}
+          </p>
           <p className="muted">
             {t.rateLaborCents != null && (
               <>

@@ -86,7 +86,7 @@ export default async function SupportRequestPage({
       </p>
       <div className="card">
         <h2>{row.request.id}</h2>
-        <p style={{ whiteSpace: "pre-wrap" }}>{row.request.message}</p>
+        <p className="user-text">{row.request.message}</p>
         <p className="muted">
           Submitted {formatOpsTimestamp(row.request.createdAt)} ·{" "}
           {friendly(row.request.escalationReason)}
@@ -140,7 +140,7 @@ export default async function SupportRequestPage({
               <strong>{authorEmail ?? authorPhone ?? note.authorUserId}</strong>{" "}
               <span className="muted">{formatOpsTimestamp(note.createdAt)}</span>
             </p>
-            {note.body && <p style={{ whiteSpace: "pre-wrap" }}>{note.body}</p>}
+            {note.body && <p className="user-text">{note.body}</p>}
           </div>
         ))}
       </div>

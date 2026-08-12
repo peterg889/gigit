@@ -473,7 +473,11 @@ export default async function BookingPage({
                       )}
                     </span>
                     {application.note && (
-                      <span className="muted"> / “{application.note}”</span>
+                      <span className="muted">
+                        {" / “"}
+                        <span className="user-text">{application.note}</span>
+                        {"”"}
+                      </span>
                     )}{" "}
                     {accountActive && applicantIsBookable && (
                       <ActionButton

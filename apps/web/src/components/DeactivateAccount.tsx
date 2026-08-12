@@ -39,7 +39,11 @@ export function DeactivateAccount() {
       >
         {busy ? "Deactivating…" : "Deactivate my account"}
       </button>
-      {error && <p className="error">{error}</p>}
+      {/* See ApiForm: without a live region the failure is announced to nobody —
+          and this is the form where not knowing it failed is worst. */}
+      <div aria-live="polite" role="status">
+        {error && <p className="error">{error}</p>}
+      </div>
     </div>
   );
 }

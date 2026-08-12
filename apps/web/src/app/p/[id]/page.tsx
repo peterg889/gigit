@@ -123,7 +123,7 @@ export default async function PerformerPage({
           {p.genreTags.length > 0 && <> · {p.genreTags.join(", ")}</>}
         </p>
         {p.bio ? (
-          <p>{p.bio}</p>
+          <p className="user-text">{p.bio}</p>
         ) : (
           isOwner && (
             <p className="muted">
@@ -203,7 +203,11 @@ export default async function PerformerPage({
           {visible.map((r) => (
             <p key={r.id}>
               ★ {r.ratings.overall} —{" "}
-              {r.body || <span className="muted">No written comment.</span>}
+              {r.body ? (
+                <span className="user-text">{r.body}</span>
+              ) : (
+                <span className="muted">No written comment.</span>
+              )}
             </p>
           ))}
         </div>

@@ -139,9 +139,9 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
             {formatVenueDateTimeWithZone(slot.startsAt, venue.timeZone)} · {slot.durationMinutes} min
           </span>
         </p>
-        {slot.notes && <p>{slot.notes}</p>}
+        {slot.notes && <p className="user-text">{slot.notes}</p>}
         <p className="muted">{formatAddress(venue)}</p>
-        {venue.bio && <p className="muted">{venue.bio}</p>}
+        {venue.bio && <p className="muted user-text">{venue.bio}</p>}
         <p className="muted">
           Sound: {venue.paInventory.hasPA ? "house PA" : "no house PA"} · Capacity:{" "}
           {venue.capacity ?? "not listed"}
@@ -301,8 +301,12 @@ export default async function SlotPage({ params }: { params: Promise<{ id: strin
               {plan.gaps.length > 0 && (
                 <p className="muted">Sound gaps: {plan.gaps.join("; ")}</p>
               )}
-              <p className="muted">{p.bio}</p>
-              {application.note && <p>“{application.note}”</p>}
+              <p className="muted user-text">{p.bio}</p>
+              {application.note && (
+                <p>
+                  “<span className="user-text">{application.note}</span>”
+                </p>
+              )}
               {application.status === "offered" &&
                 holdingBooking?.performerId === p.id && (
                   holdingBooking.state === "offered" ? (

@@ -52,7 +52,9 @@ export default async function AdminDisputesPage() {
             <span className="badge">{String(report?.payload.openedBy ?? "unknown")} reported</span>{" "}
             <Link href={"/admin/dispute-brief?bookingId=" + booking.id}>Draft evidence brief</Link>
           </p>
-          <p>{String(report?.payload.reason ?? "No reason recorded.")}</p>
+          <p className="user-text">
+            {String(report?.payload.reason ?? "No reason recorded.")}
+          </p>
           <p className="muted">
             Choose responsibility deliberately. “Neither” closes the report
             without changing either side’s standing.
