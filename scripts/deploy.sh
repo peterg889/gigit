@@ -94,4 +94,23 @@ else
   ROLE_SECRET="AWS_DEPLOY_ROLE_ARN"
 fi
 echo "   • Put the deploy-role ARN (from the foundation outputs) in the GitHub secret ${ROLE_SECRET}"
-echo "   • Subscribe to the OpsAlertsTopic SNS topic"
+
+# Advice is what this used to be, and it went unheeded for weeks: seven alarms
+# were armed against a topic with no subscribers, and production raised a real
+# HostStatusAlarm that reached nobody. No CDK test can catch this — the topic
+# and the alarm wiring are both correct in the template; what is missing is a
+# runtime fact. So state it, every deploy, in terms of what it means.
+OPS_TOPIC="$(node -e 'const fs=require("fs");const [f,s]=process.argv.slice(1);const v=JSON.parse(fs.readFileSync(f,"utf8"))[s]?.OpsAlertsTopic;process.stdout.write(v??"")' "/tmp/gigit-${STAGE}-outputs.json" "$STACK" 2>/dev/null || true)"
+if [[ -n "$OPS_TOPIC" ]]; then
+  CONFIRMED="$(aws sns list-subscriptions-by-topic --region "$REGION" --topic-arn "$OPS_TOPIC"     --query "length(Subscriptions[?SubscriptionArn!='PendingConfirmation'])" --output text 2>/dev/null || echo "?")"
+  PENDING="$(aws sns list-subscriptions-by-topic --region "$REGION" --topic-arn "$OPS_TOPIC"     --query "length(Subscriptions[?SubscriptionArn=='PendingConfirmation'])" --output text 2>/dev/null || echo "0")"
+  if [[ "$CONFIRMED" == "0" ]]; then
+    echo ""
+    echo "   ⚠  OpsAlerts has NO confirmed subscribers (${PENDING} pending)."
+    echo "      Every alarm on this stack currently notifies nobody:"
+    aws cloudwatch describe-alarms --region "$REGION" --alarm-name-prefix "$STACK"       --query 'MetricAlarms[].AlarmName' --output text 2>/dev/null | tr '\t' '\n' | sed 's/^/        · /'
+    echo "      aws sns subscribe --topic-arn $OPS_TOPIC --protocol email --notification-endpoint you@example.com"
+  else
+    echo "   • OpsAlerts: ${CONFIRMED} confirmed subscriber(s), ${PENDING} pending"
+  fi
+fi
