@@ -62,22 +62,33 @@ test("release script lives in a stage-scoped standard-tier SSM parameter", () =>
   const [, param] = params[0];
   assert.equal(param.Properties.Name, "/gigit/staging/deploy-release-script");
   assert.equal(param.Properties.Tier, "Standard"); // advanced tier is billed per parameter
-  // The value is BASE64, not the script: SSM rejects any value containing
-  // "{{}}" (its own dynamic-reference syntax) and the release script legitimately
-  // carries docker's `-f '{{.State.Running}}'`. Decode before asserting, so this
-  // test still describes the script rather than an opaque blob.
-  const encoded = param.Properties.Value as string;
-  assert.doesNotMatch(encoded, /\{\{/, "stored value must not contain {{ }} — SSM refuses it at PutParameter");
-  const script = Buffer.from(encoded, "base64").toString("utf8");
-  assert.match(script, /^#!\/bin\/bash/);
-  assert.match(script, /GIGIT_STAGE=staging/);
-  assert.match(script, /docker run -d .*--name web/);
-  // The 4KB standard-tier ceiling applies to what is STORED, i.e. the encoding,
-  // which is ~33% larger than the script. Measuring the script would let a
-  // ~3.5KB one pass here and fail at PutParameter.
+  // The value is the script VERBATIM, rendered as a CloudFormation intrinsic so
+  // the CDK tokens inside it (the AppSecrets ARN, the ECR URIs) resolve at
+  // deploy time. Serialize the whole intrinsic and assert against that.
+  const rendered = JSON.stringify(param.Properties.Value);
+  assert.match(rendered, /GIGIT_STAGE=staging/);
+  assert.match(rendered, /docker run -d .*--name web/);
+
+  // TWO deploy-time failures that synth alone will not catch, both of which we
+  // have now hit for real:
+  //
+  // 1. SSM rejects ANY value containing "{{}}" — its own dynamic-reference
+  //    syntax, refused on the literal braces (even 'hello {{foo}} world'
+  //    fails). The script used to run `docker inspect -f '{{.State.Running}}'`,
+  //    which made the stack undeployable while synthesizing perfectly.
+  assert.doesNotMatch(rendered, /\{\{/, "SSM refuses any value containing {{ }} at PutParameter");
+  //
+  // 2. An unresolved token means CDK could not substitute a real value, and the
+  //    host would execute the literal placeholder. That is what
+  //    `TOKEN.1361: syntax error` was: the script had been base64-encoded in
+  //    TypeScript, freezing the tokens inside a blob CDK could no longer see.
+  assert.doesNotMatch(rendered, /Token\[/, "unresolved CDK token would be executed literally on the host");
+
+  // 4KB standard-tier ceiling. The stored value is LONGER than the source
+  // string, because tokens resolve to full ARNs, so leave headroom.
   assert.ok(
-    Buffer.byteLength(encoded, "utf8") < 4096,
-    `encoded script is ${Buffer.byteLength(encoded, "utf8")} bytes, over the 4KB standard-tier limit`,
+    rendered.length < 3500,
+    `rendered script is ${rendered.length} bytes; too close to the 4KB standard-tier limit`,
   );
 });
 

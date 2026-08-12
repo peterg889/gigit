@@ -275,7 +275,14 @@ export class GigitStack extends cdk.Stack {
       "done",
       'docker run -d --restart=always --log-opt max-size=10m --log-opt max-file=3 --name worker --env-file /etc/gigit.env "$WORKER_IMAGE"',
       "sleep 5",
-      "test \"$(docker inspect -f '{{.State.Running}}' worker)\" = \"true\"",
+      // `docker ps -q`, not `docker inspect -f '{{.State.Running}}'`. SSM
+      // Parameter Store rejects ANY value containing "{{}}" — that is its own
+      // dynamic-reference syntax, and the rejection is on the literal braces
+      // (verified: even 'hello {{foo}} world' fails PutParameter). Since this
+      // script now lives in a parameter, one Go template in it would make the
+      // whole stack undeployable. Same assertion, no braces: a running worker
+      // yields a container id, a stopped or missing one yields nothing.
+      '[ -n "$(docker ps -q --filter name=^worker$ --filter status=running)" ]',
       "docker image prune -a -f >/dev/null",
       'printf "%s\\n" "$IMAGE_TAG" > /var/lib/gigit-release',
     ].join("\n");
@@ -283,17 +290,15 @@ export class GigitStack extends cdk.Stack {
     // Standard tier is free and caps at 4KB; advanced tier bills per parameter
     // per month. Fail at synth rather than discovering the limit mid-deploy.
     //
-    // Measure what is actually STORED, which is the base64 encoding — about a
-    // third larger than the script. Checking the raw length would let a ~3.5KB
-    // script pass synth and then blow the limit at PutParameter, which is the
-    // same "fails at deploy, not at synth" trap the encoding itself exists to
-    // avoid.
-    const releaseScriptValue = Buffer.from(deployHostScript, "utf8").toString(
-      "base64",
-    );
-    if (Buffer.byteLength(releaseScriptValue, "utf8") > 4096) {
+    // Stored VERBATIM, not encoded. The script is full of CDK tokens (the
+    // AppSecrets ARN, the ECR URIs); base64-encoding it here would freeze
+    // "${Token[TOKEN.1639]}" inside an opaque blob that CDK can no longer
+    // resolve, and the host would faithfully execute the placeholder text —
+    // which is exactly what happened, dying with
+    // `TOKEN.1361: syntax error: invalid arithmetic operator`.
+    if (Buffer.byteLength(deployHostScript, "utf8") > 3500) {
       throw new Error(
-        "deploy-release.sh, base64-encoded, exceeds the 4KB SSM standard-tier limit; shrink the script rather than moving to advanced tier (advanced is billed per parameter)",
+        "deploy-release.sh approaches the 4KB SSM standard-tier limit; shrink it rather than moving to advanced tier (advanced is billed per parameter). Note the stored value is LONGER than this source string, because CDK tokens resolve to full ARNs at deploy time.",
       );
     }
     // One parameter per stage (the name carries props.stage), so staging edits
@@ -313,7 +318,7 @@ export class GigitStack extends cdk.Stack {
         // undeployable — and it fails at PutParameter, i.e. at deploy time,
         // long after synth has said everything is fine. Encoding sidesteps the
         // whole class rather than banning braces from a shell script forever.
-        stringValue: releaseScriptValue,
+        stringValue: deployHostScript,
         tier: ssm.ParameterTier.STANDARD,
         description: `Release script executed by gigit-deploy-release-${props.stage}. Edited via CDK only; the host refuses to deploy if it cannot read this.`,
       },
@@ -554,19 +559,12 @@ export class GigitStack extends cdk.Stack {
           "    sleep 5",
           "  done",
           '  SCRIPT_TMP="$(mktemp)"',
-          '  SCRIPT_B64="$(mktemp)"',
-          `  if ! aws ssm get-parameter --region ${this.region} --name '${releaseScriptParameterName}' --query Parameter.Value --output text > "$SCRIPT_B64"; then`,
+          `  if ! aws ssm get-parameter --region ${this.region} --name '${releaseScriptParameterName}' --query Parameter.Value --output text > "$SCRIPT_TMP"; then`,
           `    echo "FATAL: cannot read SSM parameter ${releaseScriptParameterName} (IAM, region, or parameter missing); refusing to deploy" >&2`,
           "    exit 90",
           "  fi",
           // A truncated or non-script value is the same class of failure as a
           // failed fetch: abort, never improvise.
-          // Decode before validating: a corrupt or truncated base64 payload
-          // fails here rather than being installed as a half-script.
-          '  if ! base64 -d "$SCRIPT_B64" > "$SCRIPT_TMP" 2>/dev/null; then',
-          `    echo "FATAL: SSM parameter ${releaseScriptParameterName} is not valid base64; refusing to deploy" >&2`,
-          "    exit 90",
-          "  fi",
           '  if [ ! -s "$SCRIPT_TMP" ] || ! head -n 1 "$SCRIPT_TMP" | grep -q "^#!/bin/bash"; then',
           `    echo "FATAL: SSM parameter ${releaseScriptParameterName} is empty or is not a shell script; refusing to deploy" >&2`,
           "    exit 90",
