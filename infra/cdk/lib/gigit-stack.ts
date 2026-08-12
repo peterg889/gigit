@@ -225,8 +225,16 @@ export class GigitStack extends cdk.Stack {
       ec2.Port.tcp(80),
     );
 
-    // This script stays stable across releases: the SSM association passes both
-    // the immutable tag and final CloudFront origin on every rollout.
+    // The release script takes the immutable tag and final CloudFront origin as
+    // arguments, so it does not change per rollout — but it DOES change whenever
+    // the release procedure or `computedEnv` changes, and that used to be fatal:
+    // it lived inside UserData (below), and `userDataCausesReplacement` hashes
+    // UserData into the instance's logical id. A deploy that only dropped two
+    // unused vars from computedEnv therefore replaced the host
+    // (HostB4E45AD7eda76556df701033 -> HostB4E45AD7eed94486936fd059) and took
+    // production down for 128.8s / 415 failed requests. It now lives in an SSM
+    // parameter that the association fetches, so the same edit rewrites a
+    // parameter and the deploy stays the measured ~1.6s container swap.
     const deployHostScript = [
       "#!/bin/bash",
       "set -euo pipefail",
@@ -272,11 +280,65 @@ export class GigitStack extends cdk.Stack {
       'printf "%s\\n" "$IMAGE_TAG" > /var/lib/gigit-release',
     ].join("\n");
 
+    // Standard tier is free and caps at 4KB; advanced tier bills per parameter
+    // per month. Fail at synth rather than discovering the limit mid-deploy.
+    //
+    // Measure what is actually STORED, which is the base64 encoding — about a
+    // third larger than the script. Checking the raw length would let a ~3.5KB
+    // script pass synth and then blow the limit at PutParameter, which is the
+    // same "fails at deploy, not at synth" trap the encoding itself exists to
+    // avoid.
+    const releaseScriptValue = Buffer.from(deployHostScript, "utf8").toString(
+      "base64",
+    );
+    if (Buffer.byteLength(releaseScriptValue, "utf8") > 4096) {
+      throw new Error(
+        "deploy-release.sh, base64-encoded, exceeds the 4KB SSM standard-tier limit; shrink the script rather than moving to advanced tier (advanced is billed per parameter)",
+      );
+    }
+    // One parameter per stage (the name carries props.stage), so staging edits
+    // can never reach the prod host.
+    const releaseScriptParameterName = `/gigit/${props.stage}/deploy-release-script`;
+    const releaseScriptParameter = new ssm.StringParameter(
+      this,
+      "DeployReleaseScript",
+      {
+        parameterName: releaseScriptParameterName,
+        // BASE64, not the script itself. SSM Parameter Store rejects any value
+        // containing "{{}}" — that is its own dynamic-reference syntax, and the
+        // rejection is on the literal braces, not just the "{{ssm:" form
+        // (verified: putting 'hello {{foo}} world' fails the same way). The
+        // release script legitimately contains docker's
+        // `-f '{{.State.Running}}'`, so storing it raw makes the stack
+        // undeployable — and it fails at PutParameter, i.e. at deploy time,
+        // long after synth has said everything is fine. Encoding sidesteps the
+        // whole class rather than banning braces from a shell script forever.
+        stringValue: releaseScriptValue,
+        tier: ssm.ParameterTier.STANDARD,
+        description: `Release script executed by gigit-deploy-release-${props.stage}. Edited via CDK only; the host refuses to deploy if it cannot read this.`,
+      },
+    );
+    // Least privilege: exactly GetParameter, exactly this stage's parameter ARN.
+    // Not "*" and not /gigit/* — the host has no business reading prod's script
+    // (or any other secret parked under /gigit) to run its own release.
+    hostRole.addToPolicy(
+      new iam.PolicyStatement({
+        actions: ["ssm:GetParameter"],
+        resources: [releaseScriptParameter.parameterArn],
+      }),
+    );
+
+    // UserData is now INSTANCE IDENTITY ONLY: the packages a booted host must
+    // have before any release can run. Nothing here varies per release or per
+    // config, which is what makes `userDataCausesReplacement: true` (below)
+    // affordable — it still guarantees a host matches its boot configuration,
+    // but it now fires only for changes that genuinely are boot configuration.
+    // Anything you are tempted to add here that changes when the app changes
+    // belongs in the release script parameter instead; adding it here brings
+    // back the 128.8s replacement outage.
     const userData = ec2.UserData.forLinux();
     userData.addCommands(
       "dnf install -y docker jq && systemctl enable --now docker",
-      `cat > /usr/local/bin/deploy-release.sh <<'EOS'\n${deployHostScript}\nEOS`,
-      "chmod +x /usr/local/bin/deploy-release.sh",
     );
 
     const host = new ec2.Instance(this, "Host", {
@@ -290,6 +352,12 @@ export class GigitStack extends cdk.Stack {
       securityGroup: hostSg,
       role: hostRole,
       userData,
+      // Stays true on purpose. It is the only thing that keeps a running host
+      // honest about its boot configuration — without it a UserData edit would
+      // apply to future instances only, leaving this one silently on the old
+      // one. The 128.8s outage was never caused by this flag; it was caused by
+      // per-release content living in UserData. With that content in SSM, this
+      // flag fires only when the host's identity genuinely changes.
       userDataCausesReplacement: true,
       httpTokens: ec2.HttpTokens.REQUIRED,
       httpPutResponseHopLimit: 2,
@@ -438,8 +506,15 @@ export class GigitStack extends cdk.Stack {
     // SSM, which makes CloudFormation report CREATE_COMPLETE before the command
     // eventually runs. A fresh wait-condition handle for every release turns
     // the host's actual health-gated result into the deployment result.
+    // The script hash is folded in because the script now lives outside the
+    // template's execution path: with only the parameter changing, an edit to
+    // the release procedure or computedEnv would leave the association byte
+    // identical, so CloudFormation would not re-run it and the new script would
+    // sit unread until the next tag/nonce change. Hashing it in re-runs the
+    // association (and re-arms the health-gated wait condition) for exactly the
+    // edits that used to force a host replacement.
     const deploymentKey = createHash("sha256")
-      .update(`${imageTag}:${deploymentNonce}`)
+      .update(`${imageTag}:${deploymentNonce}:${createHash("sha256").update(deployHostScript).digest("hex")}`)
       .digest("hex")
       .slice(0, 12);
     const deploySignalHandle = new cdk.CfnWaitConditionHandle(
@@ -454,12 +529,55 @@ export class GigitStack extends cdk.Stack {
       parameters: {
         commands: [
           `printf '%s\\n' '${deploymentNonce}' > /var/lib/gigit-deployment-nonce`,
-          "until [ -x /usr/local/bin/deploy-release.sh ]; do sleep 5; done",
           "set +e",
-          `/usr/local/bin/deploy-release.sh '${imageTag}' '${webUrl}' > /var/log/gigit-deploy.log 2>&1`,
+          // Everything that can fail runs in one -e subshell so a single exit
+          // status reaches the wait condition, with distinct codes for the two
+          // ways the host can be unfit to deploy at all (90/91).
+          "(",
+          "  set -euo pipefail",
+          // Delete first, fetch second. The old association waited for UserData
+          // to write this file; now the association writes it, and the ONLY
+          // acceptable source is the parameter. Removing it up front makes
+          // "run last week's release logic" physically impossible rather than
+          // merely unlikely — a silent stale deploy is far worse than a loud
+          // failed one.
+          "  rm -f /usr/local/bin/deploy-release.sh",
+          // The replaced `until [ -x deploy-release.sh ]` wait existed because
+          // the association could beat UserData on a fresh boot. That race is
+          // real and still exists — it just moved: what UserData still owes us
+          // is docker and jq, so wait for those instead. Bounded, because an
+          // unbounded wait would burn the full 900s association timeout and
+          // report a timeout instead of a cause.
+          "  for attempt in $(seq 1 60); do",
+          "    if command -v docker >/dev/null && command -v jq >/dev/null && systemctl is-active --quiet docker; then break; fi",
+          '    if [ "$attempt" -eq 60 ]; then echo "FATAL: docker/jq not ready after 300s; UserData bootstrap did not complete" >&2; exit 91; fi',
+          "    sleep 5",
+          "  done",
+          '  SCRIPT_TMP="$(mktemp)"',
+          '  SCRIPT_B64="$(mktemp)"',
+          `  if ! aws ssm get-parameter --region ${this.region} --name '${releaseScriptParameterName}' --query Parameter.Value --output text > "$SCRIPT_B64"; then`,
+          `    echo "FATAL: cannot read SSM parameter ${releaseScriptParameterName} (IAM, region, or parameter missing); refusing to deploy" >&2`,
+          "    exit 90",
+          "  fi",
+          // A truncated or non-script value is the same class of failure as a
+          // failed fetch: abort, never improvise.
+          // Decode before validating: a corrupt or truncated base64 payload
+          // fails here rather than being installed as a half-script.
+          '  if ! base64 -d "$SCRIPT_B64" > "$SCRIPT_TMP" 2>/dev/null; then',
+          `    echo "FATAL: SSM parameter ${releaseScriptParameterName} is not valid base64; refusing to deploy" >&2`,
+          "    exit 90",
+          "  fi",
+          '  if [ ! -s "$SCRIPT_TMP" ] || ! head -n 1 "$SCRIPT_TMP" | grep -q "^#!/bin/bash"; then',
+          `    echo "FATAL: SSM parameter ${releaseScriptParameterName} is empty or is not a shell script; refusing to deploy" >&2`,
+          "    exit 90",
+          "  fi",
+          '  install -m 700 "$SCRIPT_TMP" /usr/local/bin/deploy-release.sh',
+          '  rm -f "$SCRIPT_TMP"',
+          `  /usr/local/bin/deploy-release.sh '${imageTag}' '${webUrl}'`,
+          ") > /var/log/gigit-deploy.log 2>&1",
           "DEPLOY_STATUS=$?",
           "tail -n 200 /var/log/gigit-deploy.log > /dev/console || true",
-          `if [ "$DEPLOY_STATUS" -eq 0 ]; then SIGNAL_STATUS=SUCCESS; SIGNAL_REASON='release ${imageTag} healthy'; else SIGNAL_STATUS=FAILURE; SIGNAL_REASON='release ${imageTag} failed; inspect EC2 console'; fi`,
+          `if [ "$DEPLOY_STATUS" -eq 0 ]; then SIGNAL_STATUS=SUCCESS; SIGNAL_REASON='release ${imageTag} healthy'; elif [ "$DEPLOY_STATUS" -eq 90 ]; then SIGNAL_STATUS=FAILURE; SIGNAL_REASON='release ${imageTag} aborted: release script unreadable from ${releaseScriptParameterName}; no stale script was run'; elif [ "$DEPLOY_STATUS" -eq 91 ]; then SIGNAL_STATUS=FAILURE; SIGNAL_REASON='release ${imageTag} aborted: host bootstrap incomplete, docker/jq missing'; else SIGNAL_STATUS=FAILURE; SIGNAL_REASON='release ${imageTag} failed; inspect EC2 console'; fi`,
           `SIGNAL_URL='${deploySignalHandle.ref}'`,
           `curl -fsS -X PUT -H 'Content-Type:' --data-binary "{\\"Status\\":\\"$SIGNAL_STATUS\\",\\"Reason\\":\\"$SIGNAL_REASON\\",\\"UniqueId\\":\\"${deploymentKey}\\",\\"Data\\":\\"${imageTag}\\"}" "$SIGNAL_URL"`,
           'exit "$DEPLOY_STATUS"',
@@ -468,6 +586,13 @@ export class GigitStack extends cdk.Stack {
       waitForSuccessTimeoutSeconds: 900,
     });
     deployAssociation.node.addDependency(host);
+    // Ordering matters on UPDATE as much as on create: the parameter must carry
+    // the new script before the association fetches it, or the rollout would
+    // deploy the previous release's procedure and report success.
+    deployAssociation.node.addDependency(releaseScriptParameter);
+    // ...and the GetParameter grant must be live before the host tries to use
+    // it, or the first run after this change would abort on AccessDenied.
+    deployAssociation.node.addDependency(hostRole);
     const deployWaitCondition = new cdk.CfnWaitCondition(
       this,
       `DeployWaitCondition${deploymentKey}`,
