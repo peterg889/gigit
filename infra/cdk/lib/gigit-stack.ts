@@ -332,7 +332,22 @@ export class GigitStack extends cdk.Stack {
       healthCheck: {
         path: "/api/health",
         healthyHttpCodes: "200",
-        interval: cdk.Duration.seconds(30),
+        // 10s, not 30s — for FAILURE DETECTION, not for deploys.
+        //
+        // Deploy downtime was measured, not assumed: probing /api/health every
+        // 250ms across a staging release gives 3 failed requests spanning 1.6s,
+        // with UnHealthyHostCount flat at 0 the whole time. The release does
+        // stop the old container before starting the new one, but it comes back
+        // long before two checks fail, so the target is never deregistered and
+        // the only casualties are requests arriving in that ~1.6s. Dropping the
+        // interval does NOT shorten that window; nothing here will, short of
+        // running two containers.
+        //
+        // What it does buy is noticing a target that is genuinely dead: two
+        // failed checks at 30s meant up to 60s of routing traffic into a black
+        // hole, and now it is ~20s. That is the case worth tuning for once real
+        // venues are on the board. Timeout stays 5s, well inside the interval.
+        interval: cdk.Duration.seconds(10),
         timeout: cdk.Duration.seconds(5),
         healthyThresholdCount: 2,
         unhealthyThresholdCount: 2,
