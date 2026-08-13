@@ -27,7 +27,11 @@ export const envSchema = z.object({
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
   // AI gateway: Gemini. Unset → heuristic fallbacks / "not configured" errors.
   GEMINI_API_KEY: z.string().optional(),
-  GEMINI_MODEL: z.string().default("gemini-3.6-flash"),
+  // Pinned, never "-latest": every ai_tasks row records the model that produced
+  // it (ai.ts:86), so a floating alias would silently rewrite the provenance of
+  // work already reviewed. Bumping is a deliberate edit, verified against the
+  // golden set and the injection corpus before it lands.
+  GEMINI_MODEL: z.string().default("gemini-3.7-flash"),
   // Notifications: unset → structured-log sink (dev).
   TWILIO_ACCOUNT_SID: z.string().optional(),
   TWILIO_AUTH_TOKEN: z.string().optional(),
