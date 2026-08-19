@@ -1,7 +1,8 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { closeDb, db, makePerformer, schema } from "@gigit/db";
+import { closeDb, db, makePerformer, makeUser, schema } from "@gigit/db";
+import { eq } from "drizzle-orm";
 import { newId } from "@gigit/domain";
 
 vi.stubGlobal("React", React);
@@ -10,6 +11,13 @@ const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
 
 import PerformerPage from "./page";
+// The two real writers of media status, driven here rather than imitated: the
+// embed route is the only way a link ever reaches a profile (and the only thing
+// that decides it starts `held`), and the flag resolver is the only way ops
+// blocks one. Seeding the statuses by hand would prove the fixture agreed with
+// the page, not that the rail a moderator actually operates has any effect.
+import { POST as addEmbedPost } from "../../api/media/embed/route";
+import { POST as resolveFlagPost } from "../../api/admin/flags/[id]/resolve/route";
 
 // File-level, not per-describe: unstubbing React at the end of the first
 // describe left every later test in this file rendering with no global React.
@@ -17,6 +25,29 @@ afterAll(async () => {
   vi.unstubAllGlobals();
   await closeDb();
 });
+
+const render = async (id: string) =>
+  renderToStaticMarkup(await PerformerPage({ params: Promise.resolve({ id }) }));
+
+/**
+ * `status` is required, deliberately. This helper used to default it to
+ * "ready", which meant no test in this file ever rendered a page holding an
+ * unscreened asset — and `eq(mediaAssets.status, "ready")` could be deleted from
+ * the page with a green suite.
+ */
+const addMedia = (row: {
+  /** Pass one when a later step (an ops flag) has to name the asset. */
+  id?: string;
+  subjectId: string;
+  ownerUserId: string;
+  kind: string;
+  status: "held" | "ready" | "blocked";
+  embedUrl: string;
+  embedMeta?: typeof schema.mediaAssets.$inferInsert.embedMeta;
+}) =>
+  db()
+    .insert(schema.mediaAssets)
+    .values({ id: newId("media"), subjectType: "performer", ...row });
 
 /**
  * `/p/[id]` is the one page that travels on its own: the act sends the link to a
@@ -27,9 +58,6 @@ afterAll(async () => {
  * only person who can fix either is the owner, so they're the only one told.
  */
 describe("an act's shareable profile, before they've filled it in", () => {
-  const render = async (id: string) =>
-    renderToStaticMarkup(await PerformerPage({ params: Promise.resolve({ id }) }));
-
   it("says nothing to a booker about what the act is missing", async () => {
     const act = await makePerformer({ name: "Bare Profile Act", bio: "" });
     sessionUserId.mockResolvedValue(null);
@@ -95,25 +123,6 @@ describe("an act's shareable profile, before they've filled it in", () => {
  * embed_url and the metadata the provider volunteered.
  */
 describe("an act's media, rendered from links", () => {
-  const addMedia = (row: {
-    subjectId: string;
-    ownerUserId: string;
-    kind: string;
-    embedUrl: string;
-    embedMeta?: typeof schema.mediaAssets.$inferInsert.embedMeta;
-  }) =>
-    db()
-      .insert(schema.mediaAssets)
-      .values({
-        id: newId("media"),
-        subjectType: "performer",
-        status: "ready",
-        ...row,
-      });
-
-  const render = async (id: string) =>
-    renderToStaticMarkup(await PerformerPage({ params: Promise.resolve({ id }) }));
-
   it("shows a photo as an image served by the host that holds it", async () => {
     const act = await makePerformer({ name: "Photo Act" });
     sessionUserId.mockResolvedValue(null);
@@ -121,6 +130,7 @@ describe("an act's media, rendered from links", () => {
       subjectId: act.id,
       ownerUserId: act.ownerUserId,
       kind: "photo",
+      status: "ready",
       embedUrl: "https://www.flickr.com/photos/band/51234567890/",
       embedMeta: {
         provider: "flickr",
@@ -149,6 +159,7 @@ describe("an act's media, rendered from links", () => {
       subjectId: act.id,
       ownerUserId: act.ownerUserId,
       kind: "photo",
+      status: "ready",
       embedUrl: "https://imgur.com/gallery/abc123",
       embedMeta: { provider: "imgur" },
     });
@@ -171,6 +182,7 @@ describe("an act's media, rendered from links", () => {
       subjectId: act.id,
       ownerUserId: act.ownerUserId,
       kind: "audio",
+      status: "ready",
       embedUrl: "https://soundcloud.com/audio-act/live-at-x",
       embedMeta: { provider: "soundcloud", title: "Live at X" },
     });
@@ -191,6 +203,7 @@ describe("an act's media, rendered from links", () => {
       subjectId: act.id,
       ownerUserId: act.ownerUserId,
       kind: "video",
+      status: "ready",
       embedUrl: "https://www.youtube.com/watch?v=abcdefghijk",
       embedMeta: { provider: "youtube", title: "Whole set, Bay View" },
     });
@@ -201,5 +214,149 @@ describe("an act's media, rendered from links", () => {
     expect(html).toContain('href="https://www.youtube.com/watch?v=abcdefghijk"');
     expect(html).toContain("YouTube");
     expect(html).not.toMatch(/Link a photo, a track, or a video/i);
+  });
+});
+
+/**
+ * The moderation gate. `/p/[id]` is the page an act mails to a booker and the
+ * booker pastes into a group chat, so an unscreened link on it is a stranger's
+ * URL republished under the act's name — which is the entire reason an asset
+ * lands `held` and the entire reason ops can push one to `blocked`
+ * (technical-design A10: "nothing publishes media before screening").
+ *
+ * Both writes were already covered — the worker keeps a high-risk asset held,
+ * the flag resolver writes blocked — and neither state meant anything, because
+ * every media fixture in this file hardcoded "ready". Deleting
+ * `eq(schema.mediaAssets.status, "ready")` from page.tsx published every held
+ * and blocked link on every act profile and broke no test.
+ *
+ * Each case puts a screened asset and an unscreened one on the SAME act, so the
+ * media card is definitely rendering: absence of the unscreened link is the
+ * filter doing its job, not the section being missing.
+ */
+describe("only screened media reaches an act's public page", () => {
+  const realFetch = globalThis.fetch;
+  afterAll(() => {
+    // Restored by hand rather than through vi.unstubAllGlobals(), which the
+    // file-level afterAll owns — it would take the React stub with it and every
+    // later render in this file would have no global React.
+    globalThis.fetch = realFetch;
+  });
+
+  /** Every provider oEmbed lookup in this describe answers from here. */
+  const stubOembed = (title: string) => {
+    globalThis.fetch = (async () => Response.json({ title })) as typeof fetch;
+  };
+
+  it("holds a link the act just pasted until it has been screened", async () => {
+    const act = await makePerformer({ name: "Screening Act" });
+    // Already screened and public: this is what the booker is meant to see.
+    await addMedia({
+      subjectId: act.id,
+      ownerUserId: act.ownerUserId,
+      kind: "audio",
+      status: "ready",
+      embedUrl: "https://soundcloud.com/screening-act/cleared-board-mix",
+      embedMeta: { provider: "soundcloud", title: "Cleared board mix" },
+    });
+
+    // The real front door: the embed route is the only way media reaches a
+    // profile, and it is what decides a fresh link starts held.
+    sessionUserId.mockResolvedValue(act.ownerUserId);
+    stubOembed("Unscreened demo");
+    const res = await addEmbedPost(
+      new Request("http://test/api/media/embed", {
+        method: "POST",
+        body: JSON.stringify({
+          url: "https://soundcloud.com/screening-act/unscreened-demo",
+          subjectType: "performer",
+        }),
+      }),
+    );
+    expect(res.status).toBe(201);
+    const { id: pastedId } = (await res.json()) as { id: string };
+    const [pasted] = await db()
+      .select()
+      .from(schema.mediaAssets)
+      .where(eq(schema.mediaAssets.id, pastedId));
+    // Pin the producer too: if the route ever started writing "ready", the
+    // assertions below would still pass while nothing was being screened.
+    expect(pasted?.status).toBe("held");
+    expect(pasted?.embedMeta?.title).toBe("Unscreened demo");
+
+    sessionUserId.mockResolvedValue(null);
+    const html = await render(act.id);
+
+    expect(html).toContain(
+      'href="https://soundcloud.com/screening-act/cleared-board-mix"',
+    );
+    expect(html).toContain("Cleared board mix");
+    // The unscreened link is on the page in neither of the two forms the page
+    // can render it in: the href, and the provider's title as the link text.
+    expect(html).not.toContain("unscreened-demo");
+    expect(html).not.toContain("Unscreened demo");
+  });
+
+  it("takes a link off the page the moment ops upholds the flag on it", async () => {
+    const act = await makePerformer({ name: "Flagged Media Act" });
+    await addMedia({
+      subjectId: act.id,
+      ownerUserId: act.ownerUserId,
+      kind: "audio",
+      status: "ready",
+      embedUrl: "https://soundcloud.com/flagged-act/kept-track",
+      embedMeta: { provider: "soundcloud", title: "Kept track" },
+    });
+    const flaggedId = newId("media");
+    await addMedia({
+      id: flaggedId,
+      subjectId: act.id,
+      ownerUserId: act.ownerUserId,
+      kind: "video",
+      status: "ready",
+      embedUrl: "https://www.youtube.com/watch?v=rippedset",
+      embedMeta: { provider: "youtube", title: "Ripped set video" },
+    });
+
+    sessionUserId.mockResolvedValue(null);
+    const before = await render(act.id);
+    // Before the verdict it is public — so the disappearance below is the
+    // uphold, not a link the page never knew how to render.
+    expect(before).toContain('href="https://www.youtube.com/watch?v=rippedset"');
+    expect(before).toContain("Ripped set video");
+
+    // The real ops queue: a flag on the asset, resolved by a real admin through
+    // the route a moderator uses. `blocked` is reachable no other way.
+    const flagId = newId("media");
+    await db().insert(schema.fraudFlags).values({
+      id: flagId,
+      kind: "ai_screen",
+      subjectType: "media",
+      subjectId: flaggedId,
+      confidence: 90,
+      state: "open",
+    });
+    const admin = await makeUser();
+    await db()
+      .insert(schema.actorRoles)
+      .values({ id: newId("role"), userId: admin, kind: "admin" });
+    sessionUserId.mockResolvedValue(admin);
+    const verdict = await resolveFlagPost(
+      new Request(`http://test/api/admin/flags/${flagId}/resolve`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "uphold" }),
+      }),
+      { params: Promise.resolve({ id: flagId }) },
+    );
+    expect(verdict.status).toBe(200);
+
+    sessionUserId.mockResolvedValue(null);
+    const after = await render(act.id);
+
+    expect(after).not.toContain("rippedset");
+    expect(after).not.toContain("Ripped set video");
+    // The act's other track is untouched: upholding one flag blocks one asset.
+    expect(after).toContain('href="https://soundcloud.com/flagged-act/kept-track"');
   });
 });

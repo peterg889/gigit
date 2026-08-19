@@ -1,7 +1,18 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type PgBoss from "pg-boss";
 import { newId } from "@gigit/domain";
-import { closeDb, db, getPool, schema } from "@gigit/db";
+import {
+  bookTechApplicant,
+  closeDb,
+  createOffer,
+  createOpenSlot,
+  db,
+  getPool,
+  makePerformer,
+  makeTech,
+  makeVenue,
+  schema,
+} from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { drainOutboxOnce } from "./index.js";
 import { notifyUser } from "./notify.js";
@@ -132,23 +143,30 @@ describe("worker notification routing", () => {
     await closeDb();
   });
 
-  /** Park backlog, inject events, drain, and return the notify.log_sink lines. */
-  async function drainAndCaptureSinks(
-    events: { kind: string; subjectType: string; subjectId: string; actor: string; payload: unknown }[],
-  ) {
+  /**
+   * Mark everything already queued as dispatched so a drain observes only the
+   * rows this test is responsible for. Split out of `drainAndCaptureSinks`
+   * because the producer-driven cases below cannot inject their own row: they
+   * have to park FIRST, then call the real producer, then drain.
+   */
+  async function parkOutboxBacklog() {
     await getPool().query(
       `update events set dispatched_at = now() where dispatched_at is null and dead_lettered_at is null`,
     );
-    for (const e of events)
-      await getPool().query(
-        `insert into events (actor, kind, subject_type, subject_id, payload)
-         values ($1,$2,$3,$4,$5::jsonb)`,
-        [e.actor, e.kind, e.subjectType, e.subjectId, JSON.stringify(e.payload)],
-      );
+  }
+
+  /** Drain whatever is pending and return the notify.log_sink lines it wrote. */
+  async function captureDrainSinks(boss: PgBoss = noBoss) {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    await drainOutboxOnce(noBoss);
-    const calls = spy.mock.calls.slice();
-    spy.mockRestore();
+    let calls: unknown[][] = [];
+    try {
+      await drainOutboxOnce(boss);
+    } finally {
+      // Copy before restoring: mockRestore drops the recorded calls with the
+      // spy, so reading them afterwards yields an empty (silently passing) list.
+      calls = spy.mock.calls.slice();
+      spy.mockRestore();
+    }
     return calls
       .map((c) => {
         try {
@@ -158,6 +176,20 @@ describe("worker notification routing", () => {
         }
       })
       .filter((x) => x && x.kind === "notify.log_sink");
+  }
+
+  /** Park backlog, inject events, drain, and return the notify.log_sink lines. */
+  async function drainAndCaptureSinks(
+    events: { kind: string; subjectType: string; subjectId: string; actor: string; payload: unknown }[],
+  ) {
+    await parkOutboxBacklog();
+    for (const e of events)
+      await getPool().query(
+        `insert into events (actor, kind, subject_type, subject_id, payload)
+         values ($1,$2,$3,$4,$5::jsonb)`,
+        [e.actor, e.kind, e.subjectType, e.subjectId, JSON.stringify(e.payload)],
+      );
+    return captureDrainSinks();
   }
 
   const notify = (template: string, to: string, extra: Record<string, unknown> = {}) => ({
@@ -467,6 +499,178 @@ describe("worker notification routing", () => {
         subject: "Your act page is live",
       }),
     );
+  });
+
+  /**
+   * The cases above inject the outbox row themselves, which proves routing but
+   * leaves the emitting side unjoined: nothing checks that any producer ever
+   * writes a row of that shape. The three below drive the REAL producer
+   * (`createOffer`, `bookTechApplicant`, `createOpenSlot`) and then drain, so a
+   * changed event kind, subject type or effect target breaks them — which is
+   * exactly how "the act is never told it has an offer" would ship green today.
+   */
+  it("tells the act, and only the act, about an offer the real createOffer path made", async () => {
+    const venue = await makeVenue({ name: "Offer Room", metro: "route-offer" });
+    const act = await makePerformer({ name: "Offer Act", homeMetro: "route-offer" });
+    const startsAt = new Date(Date.now() + 14 * 86_400_000);
+    const offerSlotId = newId("slot");
+    await db().insert(schema.slots).values({
+      id: offerSlotId,
+      venueId: venue.id,
+      metro: "route-offer",
+      startsAt,
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 30_000,
+    });
+    const offerApplicationId = newId("application");
+    await db()
+      .insert(schema.applications)
+      .values({ id: offerApplicationId, slotId: offerSlotId, performerId: act.id });
+
+    await parkOutboxBacklog();
+    const bookingId = await createOffer({
+      applicationId: offerApplicationId,
+      slotId: offerSlotId,
+      performerId: act.id,
+      venueId: venue.id,
+      actor: venue.ownerUserId,
+      terms: {
+        amountCents: 30_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 120 * 60_000).toISOString(),
+      },
+    });
+    // `offerCreatedEffects` also arms the expiry timer, so the drain needs a
+    // boss: with the bare `{}` stub the schedule effect throws and the notify
+    // that follows it in the same row never runs.
+    const send = vi.fn(async () => null);
+    const sinks = await captureDrainSinks({ send } as unknown as PgBoss);
+
+    // The venue just made the offer; "You got an offer" is news for the act
+    // alone. A `to:"venue"`/`to:"both"` slip here is silent — the booking exists
+    // either way, and the act simply never hears about it until the offer expires.
+    expect(sinks.filter((s) => s.template === "offer_received").map((s) => s.userId)).toEqual([
+      act.ownerUserId,
+    ]);
+    // Same produced row, other effect: the offer must not be able to outlive
+    // its own TTL because nobody armed the timer.
+    expect(send).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ bookingId }),
+      expect.objectContaining({ singletonKey: `${bookingId}:offer_expiry` }),
+    );
+  });
+
+  it("tells both the payer and the booked tech when bookTechApplicant fills a sound job", async () => {
+    const venue = await makeVenue({ name: "Sound Room", metro: "route-sound" });
+    const act = await makePerformer({ name: "Sound Act", homeMetro: "route-sound" });
+    const tech = await makeTech({ name: "Booked Sound Tech" });
+    const startsAt = new Date(Date.now() + 14 * 86_400_000);
+    const soundSlot = newId("slot");
+    const parentBooking = newId("booking");
+    const filledSubslot = newId("slot");
+    await db().insert(schema.slots).values({
+      id: soundSlot,
+      venueId: venue.id,
+      metro: "route-sound",
+      startsAt,
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 30_000,
+      status: "filled",
+    });
+    await db().insert(schema.bookings).values({
+      id: parentBooking,
+      slotId: soundSlot,
+      performerId: act.id,
+      venueId: venue.id,
+      state: "confirmed",
+      terms: {
+        amountCents: 30_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+      },
+      offerExpiresAt: new Date(startsAt.getTime() - 86_400_000),
+    });
+    await db().insert(schema.techSubslots).values({
+      id: filledSubslot,
+      bookingId: parentBooking,
+      payer: "venue",
+      budgetCents: 12_000,
+      needs: { verdict: "tech_needed", gaps: ["operator"], inputs: 4 },
+    });
+    await db().insert(schema.techSubslotApplications).values({
+      id: newId("application"),
+      subslotId: filledSubslot,
+      techId: tech.id,
+    });
+
+    await parkOutboxBacklog();
+    await bookTechApplicant({
+      subslotId: filledSubslot,
+      techId: tech.id,
+      actor: venue.ownerUserId,
+    });
+    const sinks = await captureDrainSinks();
+
+    // `to:"both"` is the only target that reaches the tech, and the tech-owner
+    // half needs a second lookup through techs.owner_user_id — so a decayed
+    // `to:"payer"` (or a broken lookup) leaves the person who just got the job
+    // as the only party who doesn't know. Exact array: payer first, tech second.
+    expect(sinks.filter((s) => s.template === "subslot_booked").map((s) => s.userId)).toEqual([
+      venue.ownerUserId,
+      tech.ownerUserId,
+    ]);
+  });
+
+  it("alerts a saved-search subscriber about a slot the real create path posted", async () => {
+    // A fresh metro per run: the database persists between runs, so a fixed one
+    // would let a previous run's saved searches match this slot too.
+    const metro = `route-saved-search-${Date.now()}`;
+    const venue = await makeVenue({ name: "Alert Room", metro });
+    const watcher = await makePerformer({ name: "Watching Act", homeMetro: metro });
+    const priced = await makePerformer({ name: "Pricier Act", homeMetro: metro });
+    await db().insert(schema.savedSearches).values([
+      {
+        id: newId("search"),
+        performerId: watcher.id,
+        format: "music",
+        metro,
+        minBudgetCents: 20_000,
+      },
+      {
+        id: newId("search"),
+        performerId: priced.id,
+        format: "music",
+        metro,
+        minBudgetCents: 90_000,
+      },
+    ]);
+
+    await parkOutboxBacklog();
+    await createOpenSlot({
+      venueId: venue.id,
+      actor: venue.ownerUserId,
+      startsAt: new Date(Date.now() + 10 * 86_400_000),
+      durationMinutes: 120,
+      format: "music",
+      genrePrefs: [],
+      budgetCents: 30_000,
+      provides: {},
+      source: "web",
+    });
+    const sinks = await captureDrainSinks();
+
+    // slot.created carries no `effects`, so this alert lives in a kind-matched
+    // branch of the dispatcher rather than the effect loop: rename the kind on
+    // either side and acts stop hearing about new gigs with nothing to show it.
+    expect(sinks).toContainEqual(
+      expect.objectContaining({ userId: watcher.ownerUserId, template: "slot_match" }),
+    );
+    // ...and it is the saved search being consulted, not a blanket fan-out: this
+    // act's floor is above the posted budget.
+    expect(sinks.some((s) => s.userId === priced.ownerUserId)).toBe(false);
   });
 
   it("does not welcome an act whose owner is no longer active", async () => {
