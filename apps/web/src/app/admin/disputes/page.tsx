@@ -29,6 +29,14 @@ export default async function AdminDisputesPage() {
       .select({ payload: schema.events.payload, occurredAt: schema.events.occurredAt })
       .from(schema.events)
       .where(and(
+        // subjectType FIRST, and not decoration: events_subject_idx leads with
+        // (subject_type, subject_id, id), so a predicate that omits it cannot
+        // use the index at all. Without this the lookup is a sequential scan of
+        // every event ever written — measured at 10.6ms against 117k rows
+        // versus 0.089ms for the index scan — and it runs ONCE PER DISPUTE.
+        // That is what made this page exceed a 5s test timeout on a database
+        // with real history. transition.ts:229 already queries this way.
+        eq(schema.events.subjectType, "booking"),
         eq(schema.events.kind, "booking.transition"),
         eq(schema.events.subjectId, row.booking.id),
       ))

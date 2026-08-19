@@ -241,7 +241,9 @@ export async function ensurePostGigE2EJourney(
     // This booking is a resettable browser fixture, so remove only its prior
     // journey output before restoring the one initial charge intent.
     await tx.delete(reviews).where(eq(reviews.bookingId, bookingId));
-    await tx.delete(events).where(eq(events.subjectId, bookingId));
+    await tx
+      .delete(events)
+      .where(and(eq(events.subjectType, "booking"), eq(events.subjectId, bookingId)));
     await tx
       .delete(ledgerEntries)
       .where(eq(ledgerEntries.bookingId, bookingId));

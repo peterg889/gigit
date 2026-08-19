@@ -93,6 +93,10 @@ export async function POST(req: Request, { params }: Params) {
           .from(schema.events)
           .where(
             and(
+              // Leads the events_subject_idx (subject_type, subject_id, id).
+              // Omitting it drops this to a sequential scan of the whole events
+              // table — inside a transaction, on the idempotency check.
+              eq(schema.events.subjectType, "booking"),
               eq(schema.events.kind, "booking.adjustment"),
               eq(schema.events.subjectId, bookingId),
               sql`${schema.events.payload}->>'idempotencyKey' = ${idempotencyKey}`,
