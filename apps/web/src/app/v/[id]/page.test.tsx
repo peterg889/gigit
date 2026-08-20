@@ -1,7 +1,7 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { closeDb, db, makeVenue, schema } from "@gigit/db";
+import { closeDb, db, makeVenue, schema, setProfileVisibility } from "@gigit/db";
 import { newId } from "@gigit/domain";
 
 vi.stubGlobal("React", React);
@@ -12,6 +12,16 @@ afterAll(async () => {
   vi.unstubAllGlobals();
   await closeDb();
 });
+
+/**
+ * What the real `notFound()` throws — `next/navigation` is deliberately NOT
+ * mocked here, so a page that stopped calling it cannot pass by throwing
+ * something else, and the assertion is against Next's own control flow.
+ */
+const NOT_FOUND = "NEXT_HTTP_ERROR_FALLBACK;404";
+
+const renderVenue = async (id: string) =>
+  renderToStaticMarkup(await VenuePage({ params: Promise.resolve({ id }) }));
 
 /**
  * A room photo is a link on a photo host, not a file in our bucket — there is no
@@ -140,5 +150,37 @@ describe("a venue's room photos, rendered from links", () => {
     expect(html).not.toContain("Unscreened back room");
     expect(html).not.toContain("blocked-room");
     expect(html).not.toContain("Blocked room shot");
+  });
+});
+
+/**
+ * This page publishes a full street address. When the owner deactivates or ops
+ * suspends the account, `setProfileVisibility` — the single writer both paths
+ * share — flips `venues.status`, and the page is what has to read it back.
+ * `packages/db/src/visibility.test.ts` proves the column moves and
+ * `profile-metadata.test.ts` proves the unfurl gate fails closed; nothing
+ * proved the BODY stops being served, so the status check could be deleted from
+ * page.tsx with a green suite and a suspended room kept publishing its address.
+ *
+ * Each case renders the venue live first, so the 404 that follows is the status
+ * gate and not a fixture that never rendered in the first place.
+ */
+describe("a venue's page stops being served once the profile is not live", () => {
+  it("404s after the owner deactivates the account", async () => {
+    const venue = await makeVenue({ name: "Deactivated Room" });
+    expect(await renderVenue(venue.id)).toContain("Deactivated Room");
+
+    await setProfileVisibility(venue.ownerUserId, "hidden");
+
+    await expect(renderVenue(venue.id)).rejects.toThrow(NOT_FOUND);
+  });
+
+  it("404s while ops has the account suspended", async () => {
+    const venue = await makeVenue({ name: "Suspended Room" });
+    expect(await renderVenue(venue.id)).toContain("Suspended Room");
+
+    await setProfileVisibility(venue.ownerUserId, "suspended");
+
+    await expect(renderVenue(venue.id)).rejects.toThrow(NOT_FOUND);
   });
 });

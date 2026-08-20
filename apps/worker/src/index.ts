@@ -47,6 +47,7 @@ import {
   notifySuspendedAccount,
 } from "./notify.js";
 import { recheckEmbeds, screenMedia } from "./media.js";
+import { WORKER_METRICS } from "./metric-names.js";
 import {
   matchSavedSearches,
   matchOpenSlotsForPerformer,
@@ -82,7 +83,14 @@ const jobToEvent: Record<
 
 let stopping = false;
 
-async function main() {
+/**
+ * Boot: register every queue, schedule and self-heal, then hand off to the
+ * outbox and reconcile loops. Exported for the same reason `drainOutboxOnce` is
+ * — the module guards its own boot on `!process.env.VITEST`, so a test that
+ * only imports this file executes none of it, and the cron strings and the
+ * fire-and-forget boot self-heals below were reachable from no test at all.
+ */
+export async function main() {
   // Escalation emails throw (and eventually dead-letter) until both are set,
   // and the CDK-provisioned AppSecrets starts with them blank — say so at boot,
   // loudly and on every restart, instead of leaving a silent alarm to find.
@@ -187,7 +195,7 @@ async function main() {
     const mismatches = await reconcileMoney();
     // Emit on BOTH paths: a zero clears the alarm once the books balance again.
     await putMetrics([
-      { name: "MoneyMismatches", value: mismatches.length, unit: "Count" },
+      { name: WORKER_METRICS.moneyMismatches, value: mismatches.length, unit: "Count" },
     ]).catch((err) =>
       log("reconcile.metric_error", { err: String(err) }),
     );
@@ -792,8 +800,8 @@ async function reconcileLoop(boss: PgBoss) {
         Sentry.captureMessage(`outbox has ${dead} dead-lettered event(s)`, "error");
       }
       await putMetrics([
-        { name: "OutboxLagMs", value: lag, unit: "Milliseconds" },
-        { name: "DeadLetteredEvents", value: dead, unit: "Count" },
+        { name: WORKER_METRICS.outboxLagMs, value: lag, unit: "Milliseconds" },
+        { name: WORKER_METRICS.deadLetteredEvents, value: dead, unit: "Count" },
       ]);
     } catch {
       /* health check must never kill the loop */

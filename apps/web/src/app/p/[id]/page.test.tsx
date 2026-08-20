@@ -1,7 +1,15 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterAll, describe, expect, it, vi } from "vitest";
-import { closeDb, db, makePerformer, makeUser, schema } from "@gigit/db";
+import {
+  closeDb,
+  db,
+  makePerformer,
+  makeUser,
+  makeVenue,
+  schema,
+  setProfileVisibility,
+} from "@gigit/db";
 import { eq } from "drizzle-orm";
 import { newId } from "@gigit/domain";
 
@@ -18,6 +26,16 @@ import PerformerPage from "./page";
 // the page, not that the rail a moderator actually operates has any effect.
 import { POST as addEmbedPost } from "../../api/media/embed/route";
 import { POST as resolveFlagPost } from "../../api/admin/flags/[id]/resolve/route";
+// The only writer of a review row. Inserting one by hand would pick its own
+// author_role, which is the exact field the double-blind rule below turns on.
+import { POST as submitReviewPost } from "../../api/bookings/[id]/review/route";
+
+/**
+ * What the real `notFound()` throws — `next/navigation` is deliberately NOT
+ * mocked here, so a page that stopped calling it cannot pass by throwing
+ * something else, and the assertion is against Next's own control flow.
+ */
+const NOT_FOUND = "NEXT_HTTP_ERROR_FALLBACK;404";
 
 // File-level, not per-describe: unstubbing React at the end of the first
 // describe left every later test in this file rendering with no global React.
@@ -358,5 +376,152 @@ describe("only screened media reaches an act's public page", () => {
     expect(after).not.toContain("Ripped set video");
     // The act's other track is untouched: upholding one flag blocks one asset.
     expect(after).toContain('href="https://soundcloud.com/flagged-act/kept-track"');
+  });
+});
+
+/**
+ * Double-blind, applied (PRD F7.1). The pure rule is exhaustively covered in
+ * `packages/domain/src/reviews.test.ts` — including the exactly-7-days boundary
+ * — but nothing exercised the one line that USES it here, and the e2e submits
+ * both reviews before it looks at the page, so it never sees the held state.
+ * A regression that passed the wrong role to `visibleReviews`, or dropped the
+ * call entirely, published a one-sided review to the whole internet on the day
+ * it was written, which is precisely the retaliatory review the mechanism
+ * exists to prevent — and it shipped green.
+ *
+ * Both reviews are written through the real POST route: it is the only thing
+ * that decides `author_role`, and author_role is the field the rule turns on.
+ */
+describe("an act's reviews stay sealed until the act has written theirs", () => {
+  /** A finished gig, the only state the review route will open on. */
+  const releasedBooking = async (venueId: string, performerId: string) => {
+    const slotId = newId("slot");
+    const startsAt = new Date(Date.now() - 3 * 86_400_000);
+    await db().insert(schema.slots).values({
+      id: slotId,
+      venueId,
+      metro: "blind-metro",
+      startsAt,
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 40_000,
+      status: "filled",
+    });
+    const id = newId("booking");
+    await db().insert(schema.bookings).values({
+      id,
+      slotId,
+      performerId,
+      venueId,
+      state: "released",
+      terms: {
+        amountCents: 40_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 7_200_000).toISOString(),
+      },
+      offerExpiresAt: startsAt,
+    });
+    return id;
+  };
+
+  const submitReview = async (
+    bookingId: string,
+    authorUserId: string,
+    ratings: Record<string, number>,
+    body: string,
+  ) => {
+    sessionUserId.mockResolvedValue(authorUserId);
+    const res = await submitReviewPost(
+      new Request(`http://test/api/bookings/${bookingId}/review`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ ratings, body }),
+      }),
+      { params: Promise.resolve({ id: bookingId }) },
+    );
+    expect(res.status).toBe(201);
+    sessionUserId.mockResolvedValue(null);
+  };
+
+  it("hides a one-sided venue review, then publishes it once the act answers", async () => {
+    const venue = await makeVenue({ name: "Blind Test Room", metro: "blind-metro" });
+    const act = await makePerformer({ name: "Sealed Review Act", bio: "On time." });
+    const bookingId = await releasedBooking(venue.id, act.id);
+
+    await submitReview(
+      bookingId,
+      venue.ownerUserId,
+      { overall: 5 },
+      "Packed the room and loaded out clean.",
+    );
+    // One day old: inside the 7-day window, so the ONLY thing that could
+    // publish it is the act's counterpart review, which hasn't been written.
+    await db()
+      .update(schema.reviews)
+      .set({ createdAt: new Date(Date.now() - 86_400_000) })
+      .where(eq(schema.reviews.bookingId, bookingId));
+
+    const sealed = await render(act.id);
+
+    expect(sealed).toContain("Sealed Review Act");
+    expect(sealed).not.toContain("Packed the room and loaded out clean.");
+    expect(sealed).not.toContain("Reviews from venues");
+    // No star badge AT ALL, not "★ 0.0 (0)": averageOverall returns null on an
+    // empty set precisely so a profile with nothing visible doesn't wear a
+    // rating that reads as "everyone who worked with them hated it".
+    expect(sealed).not.toContain("★");
+
+    // The act answers on the same booking. Deliberately a different score, so a
+    // page that stopped filtering by author role would read "★ 4.0 (2)" here
+    // and the exact-string assertion below would fail rather than coincide.
+    await submitReview(
+      bookingId,
+      act.ownerUserId,
+      { overall: 3 },
+      "Sound was rough but they paid on the night.",
+    );
+
+    const opened = await render(act.id);
+
+    expect(opened).toContain("Reviews from venues");
+    expect(opened).toContain("Packed the room and loaded out clean.");
+    expect(opened).toContain("★ 5.0 (1)");
+    // The act's own words about the ROOM belong on the venue's page, never on
+    // their own — the header count above would be 2 if they leaked in here.
+    expect(opened).not.toContain("Sound was rough but they paid on the night.");
+  });
+});
+
+/**
+ * `/p/[id]` publishes an act's EPK to anyone with the link. When the owner
+ * deactivates or ops suspends the account, `setProfileVisibility` — the one
+ * writer both paths share — flips `performers.status`, and this page is what
+ * has to read it back. `packages/db/src/visibility.test.ts` proves the column
+ * moves and `profile-metadata.test.ts` proves the unfurl gate fails closed;
+ * neither proves the BODY stops being served, so the status check could be
+ * deleted from page.tsx with a green suite.
+ *
+ * Each case renders the profile live first, so the 404 that follows is the
+ * status gate and not a fixture that never rendered in the first place.
+ */
+describe("an act's page stops being served once the profile is not live", () => {
+  it("404s after the owner deactivates the account", async () => {
+    const act = await makePerformer({ name: "Deactivated Act", bio: "Was here." });
+    sessionUserId.mockResolvedValue(null);
+    expect(await render(act.id)).toContain("Deactivated Act");
+
+    await setProfileVisibility(act.ownerUserId, "hidden");
+
+    await expect(render(act.id)).rejects.toThrow(NOT_FOUND);
+  });
+
+  it("404s while ops has the account suspended", async () => {
+    const act = await makePerformer({ name: "Suspended Act", bio: "Was here." });
+    sessionUserId.mockResolvedValue(null);
+    expect(await render(act.id)).toContain("Suspended Act");
+
+    await setProfileVisibility(act.ownerUserId, "suspended");
+
+    await expect(render(act.id)).rejects.toThrow(NOT_FOUND);
   });
 });

@@ -1,6 +1,14 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { newId } from "@gigit/domain";
-import { closeDb, createOffer, db, runBookingTransition, schema } from "@gigit/db";
+import {
+  closeDb,
+  createOffer,
+  db,
+  deactivateAccount,
+  runBookingTransition,
+  schema,
+  suspendAccount,
+} from "@gigit/db";
 
 const sessionUserId = vi.fn<() => Promise<string | null>>();
 vi.mock("@/lib/session", () => ({ sessionUserId: () => sessionUserId() }));
@@ -96,5 +104,66 @@ describe("calendar feed", () => {
     expect(
       (await GET(new Request("http://test/api/calendar?token=ey.forged.token"))).status,
     ).toBe(401);
+  });
+
+  /**
+   * The reason assertAccountActive exists as its own function (auth.ts): the
+   * feed token is good for 365 days and there is no revocation short of
+   * rotating SESSION_SECRET, so moderating an account has to bite on the NEXT
+   * fetch of a token minted before it. Each event carries the venue's street
+   * address and the pay, so a feed that keeps serving after a suspension is a
+   * data leak, not a stale calendar.
+   *
+   * These two run last in the file: both mutate account status for good, and
+   * suspension winds the confirmed booking down with it.
+   */
+  const mint = async (uid: string) => {
+    as(uid);
+    const minted = await POST();
+    expect(minted.status).toBe(200);
+    const { url } = await minted.json();
+    return `http://test/api/calendar?token=${new URL(url).searchParams.get("token")}`;
+  };
+
+  it("stops serving a suspended account's feed while other accounts keep theirs", async () => {
+    // Both tokens are minted BEFORE any status change: the token has to keep
+    // working until its own account is moderated, which is what makes the
+    // re-check on every fetch the only lever there is.
+    const bandFeed = await mint(uBand);
+    const venueFeed = await mint(uVenue);
+    const before = await GET(new Request(bandFeed));
+    expect(before.status).toBe(200);
+    const leaked = await before.text();
+    expect(leaked).toContain("1 Test St");
+    expect(leaked).toContain("$150 — booked on EightGig");
+
+    expect(await suspendAccount(uBand, "usr_admin_calendar")).toBe("updated");
+
+    const after = await GET(new Request(bandFeed));
+    expect(after.status).toBe(403);
+    expect(await after.clone().json()).toMatchObject({
+      error: { message: "This account is suspended. Contact support." },
+    });
+    // Belt and braces: a 403 that still shipped the ICS body would leak the
+    // address anyway.
+    expect(await after.text()).not.toContain("1 Test St");
+
+    // The gate is per-account, not a blanket failure — the venue's own feed
+    // for the same booking is untouched by the act's suspension.
+    expect((await GET(new Request(venueFeed))).status).toBe(200);
+  });
+
+  it("stops serving a deactivated account's feed", async () => {
+    const venueFeed = await mint(uVenue);
+    expect((await GET(new Request(venueFeed))).status).toBe(200);
+
+    await deactivateAccount(uVenue);
+
+    const after = await GET(new Request(venueFeed));
+    expect(after.status).toBe(403);
+    expect(await after.clone().json()).toMatchObject({
+      error: { message: "This account has been deactivated." },
+    });
+    expect(await after.text()).not.toContain("1 Test St");
   });
 });

@@ -18,6 +18,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { pick, renderJoin, stages, synthesize, type Template } from "./synth-template.js";
+// Reached for by relative path on purpose: @gigit/infra depends on nothing in
+// the app workspace, and this is the ONE thing the stack and the worker have to
+// agree on letter-for-letter. See apps/worker/src/metric-names.ts.
+import { WORKER_METRICS, WORKER_METRIC_NAMES } from "../../../apps/worker/src/metric-names.js";
 
 /**
  * Every ingress rule attached to a security group, from BOTH places CDK puts
@@ -58,9 +62,11 @@ const expectedAlarms: Record<string, { namespace: string; metricName: string }> 
   DbStorageAlarm: { namespace: "AWS/RDS", metricName: "FreeStorageSpace" },
   HostStatusAlarm: { namespace: "AWS/EC2", metricName: "StatusCheckFailed" },
   AlbUnhealthyAlarm: { namespace: "AWS/ApplicationELB", metricName: "UnHealthyHostCount" },
-  OutboxDeadLetterAlarm: { namespace: "Gigit", metricName: "DeadLetteredEvents" },
-  OutboxLagAlarm: { namespace: "Gigit", metricName: "OutboxLagMs" },
-  MoneyMismatchAlarm: { namespace: "Gigit", metricName: "MoneyMismatches" },
+  // The three Gigit-namespace names come from the worker's own constant, not
+  // from a second copy of the literal — see the import at the top of the file.
+  OutboxDeadLetterAlarm: { namespace: "Gigit", metricName: WORKER_METRICS.deadLetteredEvents },
+  OutboxLagAlarm: { namespace: "Gigit", metricName: WORKER_METRICS.outboxLagMs },
+  MoneyMismatchAlarm: { namespace: "Gigit", metricName: WORKER_METRICS.moneyMismatches },
 };
 
 for (const stage of stages) {
@@ -127,6 +133,31 @@ for (const stage of stages) {
         `${logicalId} is dimensioned for the wrong stage`,
       );
     }
+  });
+
+  test(`[${stage}] every Gigit alarm watches a metric the worker actually publishes`, () => {
+    const template = synthesize(stage);
+    // Both directions, because each is a different silent failure:
+    //
+    //  - alarm -> worker: an alarm naming a metric nothing emits never leaves
+    //    INSUFFICIENT_DATA. It looks provisioned, it looks green-ish, and it
+    //    pages nobody for the rest of its life.
+    //  - worker -> alarm: a metric published with no alarm is a number in
+    //    CloudWatch that no human will ever look at, which is the same as not
+    //    publishing it.
+    //
+    // The set on the worker side is the constant the worker's putMetrics calls
+    // are built from (apps/worker/src/metric-names.ts), so this is a real join
+    // across the two repos-in-one, not a restatement of the stack's literals.
+    const watched = pick(template, "AWS::CloudWatch::Alarm")
+      .filter(([, a]) => a.Properties.Namespace === "Gigit")
+      .map(([, a]) => a.Properties.MetricName as string)
+      .sort();
+    assert.deepEqual(
+      watched,
+      [...WORKER_METRIC_NAMES].sort(),
+      "the Gigit alarms and the worker's published metric names have drifted apart",
+    );
   });
 }
 
