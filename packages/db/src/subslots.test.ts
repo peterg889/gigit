@@ -383,6 +383,86 @@ describe("tech sub-slot runner (integration)", () => {
     expect(cancelledTech!.strikes).toBe(1);
   });
 
+  /**
+   * The passed-over applicants are the half of a reopen that nobody watches.
+   * Reopening used to leave their `submitted` rows behind (the delete lived in
+   * the cancel ROUTE, after the transition committed), and the apply route's
+   * unique index then answered every one of them with "You've already applied"
+   * — permanently, on a listing the product had just told them was open again.
+   * The reopen assertion above passes with that bug fully restored: it looks at
+   * the ledger, the state and the strike, never at the application table.
+   */
+  it("clears every applicant on reopen so a passed-over tech can apply again", async () => {
+    // Far enough out that no other test's booking overlaps either tech's
+    // calendar — assertTechIsAvailable would otherwise reject the booking for
+    // the wrong reason.
+    const job = await seedOpenTechJob(
+      new Date(Date.now() + 200 * 86_400_000),
+      techId,
+    );
+    // The second tech applies for real: this is the row the regression
+    // stranded. Selecting the first tech auto-declines it, so what survives the
+    // booking is a `declined` row — and the unique index doesn't care about
+    // status, so that row wedges this tech out of the reopened round just as a
+    // `submitted` one would.
+    await applyToOpenTechSubslot({
+      subslotId: job.subslotId,
+      techId: techId2,
+      actor: userT2,
+      note: "Can bring a second console",
+    });
+    await bookTechApplicant({
+      subslotId: job.subslotId,
+      techId,
+      actor: userV,
+    });
+    const beforeCancel = await db()
+      .select({
+        techId: techSubslotApplications.techId,
+        status: techSubslotApplications.status,
+      })
+      .from(techSubslotApplications)
+      .where(eq(techSubslotApplications.subslotId, job.subslotId));
+    expect(beforeCancel).toHaveLength(2);
+    expect(beforeCancel).toContainEqual({ techId, status: "booked" });
+    expect(beforeCancel).toContainEqual({ techId: techId2, status: "declined" });
+
+    const cancelled = await runSubslotTransition(
+      job.subslotId,
+      { kind: "TECH_CANCELLED" },
+      userT,
+    );
+    expect(cancelled.to).toBe("open");
+
+    // Zero, not "the booked one is gone": the stale loser row is exactly what
+    // wedges that tech out, and it survives a state-only assertion.
+    const afterCancel = await db()
+      .select({ id: techSubslotApplications.id })
+      .from(techSubslotApplications)
+      .where(eq(techSubslotApplications.subslotId, job.subslotId));
+    expect(afterCancel).toEqual([]);
+
+    // The point of clearing them: the tech who lost the first round can enter
+    // the second one. Through the real apply path — the duplicate guard is what
+    // used to throw here.
+    await expect(
+      applyToOpenTechSubslot({
+        subslotId: job.subslotId,
+        techId: techId2,
+        actor: userT2,
+        note: "Second round",
+      }),
+    ).resolves.toMatch(/^app/);
+    const reapplied = await db()
+      .select({
+        techId: techSubslotApplications.techId,
+        status: techSubslotApplications.status,
+      })
+      .from(techSubslotApplications)
+      .where(eq(techSubslotApplications.subslotId, job.subslotId));
+    expect(reapplied).toEqual([{ techId: techId2, status: "submitted" }]);
+  });
+
   it("applies, withdraws, and books a submitted tech as one atomic lifecycle", async () => {
     await applyToOpenTechSubslot({
       subslotId,

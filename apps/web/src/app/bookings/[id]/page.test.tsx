@@ -38,6 +38,26 @@ describe("booking detail sound history and actionability", () => {
   const applicationId = newId("application");
   const startsAt = new Date(Date.now() + 10 * 86_400_000);
 
+  // A second, untouched booking that has NO sub-slot yet — the only state in
+  // which the page offers to post one. The fixture above always has an active
+  // child, so it can only ever exercise the absence of the form.
+  let postableVenue: Awaited<ReturnType<typeof makeVenue>>;
+  let postablePerformer: Awaited<ReturnType<typeof makePerformer>>;
+  const postableSlotId = newId("slot");
+  const postableBookingId = newId("booking");
+
+  // Two more untouched bookings, one per end of the verdict colour scale. Both
+  // need their own room and act because the verdict is computed from the room's
+  // PA and the act's input list, so the fixture IS the assertion.
+  let unknownVenue: Awaited<ReturnType<typeof makeVenue>>;
+  let unknownPerformer: Awaited<ReturnType<typeof makePerformer>>;
+  const unknownSlotId = newId("slot");
+  const unknownBookingId = newId("booking");
+  let coveredVenue: Awaited<ReturnType<typeof makeVenue>>;
+  let coveredPerformer: Awaited<ReturnType<typeof makePerformer>>;
+  const coveredSlotId = newId("slot");
+  const coveredBookingId = newId("booking");
+
   beforeAll(async () => {
     venue = await makeVenue({
       name: "Complete Sound History Room",
@@ -113,6 +133,110 @@ describe("booking detail sound history and actionability", () => {
       note: "I can cover it",
       status: "submitted",
     });
+
+    // Real numbers, not a hand-written verdict: a house desk two channels short
+    // and nobody on it is what `soundPlan` turns into "Needs a tech" plus two
+    // named gaps. Deliberately NOT a rig shortfall — the two verdicts differ by
+    // three words, and only a fixture that can produce one and not the other
+    // can tell them apart.
+    postableVenue = await makeVenue({
+      name: "Postable Sound Room",
+      paInventory: { hasPA: true, mixerChannels: 4, hasOperator: false },
+    });
+    postablePerformer = await makePerformer({
+      name: "Postable Sound Act",
+      techNeeds: { inputs: 6 },
+    });
+    await d.insert(schema.slots).values({
+      id: postableSlotId,
+      venueId: postableVenue.id,
+      metro: "postable-sound-history",
+      startsAt,
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 50_000,
+      status: "filled",
+    });
+    await d.insert(schema.bookings).values({
+      id: postableBookingId,
+      slotId: postableSlotId,
+      performerId: postablePerformer.id,
+      venueId: postableVenue.id,
+      state: "confirmed",
+      terms: {
+        amountCents: 50_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+      },
+      offerExpiresAt: new Date(startsAt.getTime() - 86_400_000),
+    });
+
+    // A room that answered every equipment question except who runs the desk,
+    // and an act whose needs the gear covers. Nothing is short — the only thing
+    // wrong is that nobody has said, which is the whole `unknown` verdict.
+    unknownVenue = await makeVenue({
+      name: "Unanswered Sound Room",
+      paInventory: { hasPA: true, mixerChannels: 8, micsAvailable: 4, monitors: 2 },
+    });
+    unknownPerformer = await makePerformer({
+      name: "Unanswered Sound Act",
+      techNeeds: { inputs: 4, micsNeeded: 2 },
+    });
+    // The same room with the operator question answered yes. One field apart
+    // from the fixture above, so the two verdicts cannot both be a coincidence.
+    coveredVenue = await makeVenue({
+      name: "Settled Sound Room",
+      paInventory: {
+        hasPA: true,
+        mixerChannels: 8,
+        micsAvailable: 4,
+        monitors: 2,
+        hasOperator: true,
+      },
+    });
+    coveredPerformer = await makePerformer({
+      name: "Settled Sound Act",
+      techNeeds: { inputs: 4, micsNeeded: 2 },
+    });
+    await d.insert(schema.slots).values(
+      [
+        { id: unknownSlotId, venueId: unknownVenue.id, metro: "unanswered-sound" },
+        { id: coveredSlotId, venueId: coveredVenue.id, metro: "settled-sound" },
+      ].map((s) => ({
+        ...s,
+        startsAt,
+        durationMinutes: 120,
+        format: "music",
+        budgetCents: 50_000,
+        status: "filled",
+      })),
+    );
+    await d.insert(schema.bookings).values(
+      [
+        {
+          id: unknownBookingId,
+          slotId: unknownSlotId,
+          performerId: unknownPerformer.id,
+          venueId: unknownVenue.id,
+        },
+        {
+          id: coveredBookingId,
+          slotId: coveredSlotId,
+          performerId: coveredPerformer.id,
+          venueId: coveredVenue.id,
+        },
+      ].map((b) => ({
+        ...b,
+        state: "confirmed",
+        terms: {
+          amountCents: 50_000,
+          startsAt: startsAt.toISOString(),
+          endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+        },
+        offerExpiresAt: new Date(startsAt.getTime() - 86_400_000),
+      })),
+    );
+
     sessionUserId.mockResolvedValue(venue.ownerUserId);
   });
 
@@ -255,5 +379,78 @@ describe("booking detail sound history and actionability", () => {
       openSubslotId,
     ])
       expect(closedParent).toContain(`/sound/${subslotId}`);
+  });
+
+  /**
+   * The positive counterpart to the `not.toContain("Post the sound job")`
+   * assertions above. Those pass just as happily when the whole sound card is
+   * deleted, which is exactly how the differentiator could ship switched off:
+   * a confirmed gig with a gap in its sound plan and no way to hire anyone.
+   */
+  it("offers the sound job and names the gaps when the plan needs a tech", async () => {
+    sessionUserId.mockResolvedValue(postableVenue.ownerUserId);
+    const html = renderToStaticMarkup(
+      await BookingPage({ params: Promise.resolve({ id: postableBookingId }) }),
+    );
+
+    expect(html).toContain("Post the sound job");
+    expect(html).toContain("Who pays the tech");
+    expect(html).toContain("Tech pay, in dollars");
+    // The verdict the engine actually produced from the room and the act, not
+    // the neighbouring one: "Needs a tech" is a PREFIX of "Needs a tech and a
+    // rig", so the absence assertion is the half that carries the meaning.
+    expect(html).toContain("Needs a tech");
+    expect(html).not.toContain("Needs a tech and a rig");
+    // Both gaps, in the engine's own words. A tech deciding whether to take the
+    // night needs to know it is a channel shortfall AND an empty desk.
+    expect(html).toContain(
+      "mixer has 4 channels, act needs 6; no one to run sound",
+    );
+  });
+
+  /**
+   * The verdict badge carries its meaning in its colour, and `soundVerdictClass`
+   * was imported by no test at all. An `unknown` plan rendered as a bare `badge`
+   * reads as a settled answer, so the one gig on the calendar whose sound nobody
+   * has actually agreed looks identical to the ones that are handled — and the
+   * gap line is the only place the venue is told which question is open.
+   */
+  it("flags an unanswered sound plan as a warning and names the open question", async () => {
+    sessionUserId.mockResolvedValue(unknownVenue.ownerUserId);
+    const html = renderToStaticMarkup(
+      await BookingPage({ params: Promise.resolve({ id: unknownBookingId }) }),
+    );
+
+    expect(html).toContain('<span class="badge warn">Sound not confirmed</span>');
+    expect(html).toContain("the room hasn&#x27;t said whether anyone runs sound");
+    // Not a shortfall: nothing on the gear list is short, so the two "needed"
+    // verdicts must not appear — this is uncertainty, not a job spec.
+    expect(html).not.toContain("Needs a tech");
+    // Uncertainty still gets the hire route. "Nobody has said" is exactly when a
+    // venue wants the option, and it is the one verdict that could plausibly be
+    // treated as good enough to hide it.
+    expect(html).toContain("Post the sound job");
+  });
+
+  /**
+   * The other end of the same scale. A covered plan is the only one that earns
+   * `badge good`, and it must not carry a gap list or a hire form — offering to
+   * post a job for a night that needs nobody is how the differentiator turns
+   * into noise the venue learns to ignore.
+   */
+  it("marks a covered sound plan good with no gaps and no job to post", async () => {
+    sessionUserId.mockResolvedValue(coveredVenue.ownerUserId);
+    const html = renderToStaticMarkup(
+      await BookingPage({ params: Promise.resolve({ id: coveredBookingId }) }),
+    );
+
+    expect(html).toContain('<span class="badge good">Sound covered</span>');
+    expect(html).not.toContain("badge warn");
+    // No gap list at all: the gaps render as a muted span welded to the badge,
+    // so this catches a gap block that stops being conditional as well as a
+    // verdict that starts reporting phantom shortfalls.
+    expect(html).not.toMatch(/Sound covered<\/span>\s*<span class="muted">/);
+    expect(html).not.toContain("Post the sound job");
+    expect(html).not.toContain("Tech pay, in dollars");
   });
 });

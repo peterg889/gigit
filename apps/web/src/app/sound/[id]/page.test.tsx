@@ -24,6 +24,7 @@ vi.mock("next/navigation", () => ({
 }));
 
 import SoundBookingPage from "./page";
+import { DELETE as withdrawApplication } from "@/app/api/tech-subslots/[id]/applications/route";
 
 describe("sound detail parent eligibility", () => {
   let venue: Awaited<ReturnType<typeof makeVenue>>;
@@ -196,7 +197,12 @@ describe("sound detail parent eligibility", () => {
     expect(stalePayerView).toContain("PRIVATE LOAD IN NOTE");
   });
 
-  it("renders withdrawn, declined, and closed application outcomes truthfully", async () => {
+  /**
+   * This used to open by hand-writing `status: "withdrawn"`, a value the schema
+   * does not define and no code path writes — withdrawal DELETEs the row. The
+   * real withdrawal is exercised at the end of this file instead.
+   */
+  it("renders declined and closed application outcomes truthfully", async () => {
     await db()
       .update(schema.bookings)
       .set({ state: "confirmed" })
@@ -205,13 +211,6 @@ describe("sound detail parent eligibility", () => {
       .update(schema.techSubslots)
       .set({ state: "open" })
       .where(eq(schema.techSubslots.id, subslotId));
-    await db()
-      .update(schema.techSubslotApplications)
-      .set({ status: "withdrawn" })
-      .where(eq(schema.techSubslotApplications.id, applicationId));
-    const withdrawn = await renderAs(techOwnerId);
-    expect(withdrawn).toContain("You withdrew this application.");
-    expect(withdrawn).not.toContain("filled by another tech");
 
     await db()
       .update(schema.techSubslotApplications)
@@ -306,5 +305,71 @@ describe("sound detail parent eligibility", () => {
     const afterDownbeat = await renderAs(techOwnerId);
     expect(afterDownbeat).not.toContain("Cancel sound booking");
     expect(afterDownbeat).toContain("cannot reopen");
+  });
+
+  /**
+   * The state the old `withdrawn` assertions were reaching for, driven through
+   * the route a tech actually clicks. `withdrawTechSubslotApplication` DELETEs
+   * the row rather than flagging it, so there is no "Withdrawn" card to render:
+   * the tech loses the application, the operational details and the page itself,
+   * and the payer's shortlist loses them too. Asserting a stored `withdrawn`
+   * status could never have caught a withdrawal that failed to delete.
+   */
+  it("removes the tech's application, and their access, when they withdraw", async () => {
+    const futureStart = new Date(Date.now() + 12 * 86_400_000);
+    await db()
+      .update(schema.bookings)
+      .set({
+        state: "confirmed",
+        terms: {
+          amountCents: 45_000,
+          startsAt: futureStart.toISOString(),
+          endsAt: new Date(
+            futureStart.getTime() + 2 * 3_600_000,
+          ).toISOString(),
+        },
+      })
+      .where(eq(schema.bookings.id, bookingId));
+    await db()
+      .update(schema.techSubslots)
+      .set({ state: "open", techId: null })
+      .where(eq(schema.techSubslots.id, subslotId));
+    await db()
+      .update(schema.techSubslotApplications)
+      .set({ status: "submitted" })
+      .where(eq(schema.techSubslotApplications.id, applicationId));
+
+    const pending = await renderAs(techOwnerId);
+    expect(pending).toContain("Application sent");
+    expect(pending).toContain("Withdraw application");
+    const shortlisted = await renderAs(venue.ownerUserId);
+    expect(shortlisted).toContain("Eligibility Detail Tech");
+    expect(shortlisted).toContain("Application received");
+
+    sessionUserId.mockResolvedValue(techOwnerId);
+    const response = await withdrawApplication(
+      new Request("http://test/api/tech-subslots/" + subslotId + "/applications", {
+        method: "DELETE",
+      }),
+      { params: Promise.resolve({ id: subslotId }) },
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ withdrawn: true });
+
+    // Deleted, not flagged — the row the old fixture used to relabel is gone.
+    const remaining = await db()
+      .select({ id: schema.techSubslotApplications.id })
+      .from(schema.techSubslotApplications)
+      .where(eq(schema.techSubslotApplications.subslotId, subslotId));
+    expect(remaining).toEqual([]);
+
+    // No application, no booking party, no assignment: the page is not theirs
+    // to read any more, load-in note and address included.
+    await expect(renderAs(techOwnerId)).rejects.toThrow("not found");
+
+    const afterWithdrawal = await renderAs(venue.ownerUserId);
+    expect(afterWithdrawal).not.toContain("Eligibility Detail Tech");
+    expect(afterWithdrawal).not.toContain("Application received");
+    expect(afterWithdrawal).not.toContain("Book this tech");
   });
 });

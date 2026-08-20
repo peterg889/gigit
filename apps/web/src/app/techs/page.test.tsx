@@ -6,11 +6,12 @@ import {
   db,
   makePerformer,
   makeTech,
+  makeUser,
   makeVenue,
   schema,
 } from "@gigit/db";
 import { newId } from "@gigit/domain";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 
 vi.stubGlobal("React", React);
 
@@ -30,6 +31,55 @@ describe("sound job marketplace eligibility", () => {
   const performerIds: string[] = [];
   const techIds: string[] = [];
   const userIds: string[] = [];
+
+  const directoryLiveTechId = newId("tech");
+  const directoryHiddenTechId = newId("tech");
+  const directoryInactiveOwnerTechId = newId("tech");
+
+  /**
+   * The directory query takes the 100 OLDEST live techs, and the development
+   * database already holds ~2,000 of them — so a fixture created now sorts off
+   * the end of the page and every absence assertion below would pass because
+   * nothing rendered at all. Dating these before the oldest real row (2022-01)
+   * puts all three inside the cap, so a row is missing only when the WHERE
+   * clause excluded it.
+   */
+  const DIRECTORY_EPOCH = new Date("2021-01-01T00:00:00.000Z");
+
+  async function seedDirectoryTech(
+    id: string,
+    name: string,
+    options: {
+      status?: string;
+      ownerStatus?: string;
+      gear?: string;
+      bio?: string;
+      rateLaborCents?: number;
+      rateWithRigCents?: number;
+      travelRadiusMiles?: number;
+    } = {},
+  ) {
+    const ownerUserId = await makeUser();
+    userIds.push(ownerUserId);
+    techIds.push(id);
+    if (options.ownerStatus)
+      await db()
+        .update(schema.users)
+        .set({ status: options.ownerStatus })
+        .where(eq(schema.users.id, ownerUserId));
+    await db().insert(schema.techs).values({
+      id,
+      ownerUserId,
+      name,
+      bio: options.bio ?? "",
+      gear: options.gear ?? "full_rig",
+      rateLaborCents: options.rateLaborCents ?? null,
+      rateWithRigCents: options.rateWithRigCents ?? null,
+      travelRadiusMiles: options.travelRadiusMiles ?? 30,
+      status: options.status ?? "live",
+      createdAt: DIRECTORY_EPOCH,
+    });
+  }
 
   async function seedJob(
     label: string,
@@ -117,6 +167,21 @@ describe("sound job marketplace eligibility", () => {
     await seedJob("SUSPENDED OWNER SOUND JOB", {
       performerOwnerStatus: "suspended",
     });
+    await seedDirectoryTech(directoryLiveTechId, "DIRECTORY LIVE TECH", {
+      gear: "partial",
+      bio: "DIRECTORY LIVE BIO",
+      rateLaborCents: 12_500,
+      rateWithRigCents: 30_000,
+      travelRadiusMiles: 42,
+    });
+    await seedDirectoryTech(directoryHiddenTechId, "DIRECTORY HIDDEN TECH", {
+      status: "hidden",
+    });
+    await seedDirectoryTech(
+      directoryInactiveOwnerTechId,
+      "DIRECTORY INACTIVE OWNER TECH",
+      { ownerStatus: "suspended" },
+    );
   });
 
   afterAll(async () => {
@@ -150,6 +215,37 @@ describe("sound job marketplace eligibility", () => {
     expect(html).not.toContain("PAST SOUND JOB");
     expect(html).not.toContain("HIDDEN VENUE SOUND JOB");
     expect(html).not.toContain("SUSPENDED OWNER SOUND JOB");
+  });
+
+  /**
+   * The half of this page a venue or act actually came for. Everything above
+   * asserts the sound-JOB panel, so the entire `techs.map(...)` block could be
+   * deleted without turning this file red — a directory that renders nobody is
+   * the failure mode a cold market cannot afford to ship silently.
+   */
+  it("renders a live tech's name, gear, rates and travel range, and no one else's", async () => {
+    sessionUserId.mockResolvedValue(null);
+    const html = renderToStaticMarkup(await TechsPage());
+
+    const cardStart = html.indexOf(`href="/t/${directoryLiveTechId}"`);
+    expect(cardStart).toBeGreaterThan(-1);
+    // Scope every fact to this tech's own card: the 100 real rows beside it
+    // carry the same gear labels and travel distances, so a page-wide
+    // `toContain` would be satisfied by somebody else's profile.
+    const card = html.slice(cardStart, html.indexOf("</div>", cardStart));
+    expect(card).toContain("DIRECTORY LIVE TECH");
+    expect(card).toContain("Partial rig");
+    expect(card).toContain("DIRECTORY LIVE BIO");
+    expect(card).toContain("Travels 42 miles");
+    // Both rates, each against its own label — the two columns are adjacent,
+    // same-typed and swappable, and a bare "$125" cannot tell them apart.
+    expect(card).toMatch(/Labor:\s*<span class="money">\$125<\/span>/);
+    expect(card).toMatch(/With rig:\s*<span class="money">\$300<\/span>/);
+
+    // Both exclusions are dated into the cap alongside the row above, so these
+    // fail the moment either half of the directory's WHERE clause is dropped.
+    expect(html).not.toContain("DIRECTORY HIDDEN TECH");
+    expect(html).not.toContain("DIRECTORY INACTIVE OWNER TECH");
   });
 
   /**

@@ -303,3 +303,171 @@ describe("slot detail effective expiry", () => {
     }
   });
 });
+
+/**
+ * The applicant card is where a venue actually chooses an act, and the three
+ * things it exists to say — show-up history, whether this act's needs fit this
+ * room, and what the act wrote — were untested: the file above never mentions
+ * "sound", "plan" or "verdict" and never asserts a reliability label or a note.
+ * Every one of them can be deleted with the suite green.
+ *
+ * Two applicants on ONE slot, because all three facts are per-applicant. A card
+ * that rendered the first act's verdict, or a constant "New to EightGig", or the
+ * slot's own notes in place of the act's, passes any single-applicant fixture.
+ */
+describe("slot applicant cards", () => {
+  let venue: Awaited<ReturnType<typeof makeVenue>>;
+  let coveredAct: Awaited<ReturnType<typeof makePerformer>>;
+  let bigAct: Awaited<ReturnType<typeof makePerformer>>;
+  const slotId = newId("slot");
+  const playedSlotId = newId("slot");
+  const playedBookingId = newId("booking");
+  const coveredApplicationId = newId("application");
+  const bigApplicationId = newId("application");
+
+  const COVERED_NOTE = "We bring our own in-ear mixes and a spare DI box.";
+  const BIG_NOTE = "Twenty inputs — seven horns, and we need the whole desk.";
+
+  beforeAll(async () => {
+    // The `afterAll` above drops the React global before this block's fixtures
+    // run; without re-stubbing it every render here throws "React is not
+    // defined", which reads as a page bug rather than a harness one.
+    vi.stubGlobal("React", React);
+    // A fully-answered room: PA, eight channels, four mics, a house operator.
+    // Nothing here is short in the abstract — only relative to a given act.
+    venue = await makeVenue({
+      name: "Applicant Card Room",
+      paInventory: {
+        hasPA: true,
+        mixerChannels: 8,
+        micsAvailable: 4,
+        monitors: 2,
+        hasOperator: true,
+      },
+    });
+    coveredAct = await makePerformer({
+      name: "Applicant Card Duo",
+      techNeeds: { inputs: 4, micsNeeded: 2 },
+    });
+    // Twenty inputs against an eight-channel desk is more than double, which is
+    // what separates "needs a tech" from "needs a tech AND a rig" — the same
+    // room, the same night, a different answer.
+    bigAct = await makePerformer({
+      name: "Applicant Card Big Band",
+      techNeeds: { inputs: 20, micsNeeded: 2 },
+    });
+    await db().insert(schema.slots).values([
+      {
+        id: slotId,
+        venueId: venue.id,
+        metro: "applicant-card",
+        startsAt: new Date(Date.now() + 30 * 86_400_000),
+        durationMinutes: 120,
+        format: "music",
+        budgetCents: 40_000,
+      },
+      {
+        id: playedSlotId,
+        venueId: venue.id,
+        metro: "applicant-card",
+        startsAt: new Date(Date.now() - 30 * 86_400_000),
+        durationMinutes: 120,
+        format: "music",
+        budgetCents: 40_000,
+        status: "filled",
+      },
+    ]);
+    // A real released booking, because `performerReliabilityStats` counts
+    // released bookings — the badge has to be derived, not decorative.
+    await db().insert(schema.bookings).values({
+      id: playedBookingId,
+      slotId: playedSlotId,
+      venueId: venue.id,
+      performerId: coveredAct.id,
+      state: "released",
+      terms: {
+        amountCents: 40_000,
+        startsAt: new Date(Date.now() - 30 * 86_400_000).toISOString(),
+        endsAt: new Date(Date.now() - 30 * 86_400_000 + 7_200_000).toISOString(),
+      },
+      offerExpiresAt: new Date(Date.now() - 31 * 86_400_000),
+    });
+    await db()
+      .update(schema.performers)
+      .set({ reliabilityStrikes: 2 })
+      .where(eq(schema.performers.id, bigAct.id));
+    await db().insert(schema.applications).values([
+      {
+        id: coveredApplicationId,
+        slotId,
+        performerId: coveredAct.id,
+        note: COVERED_NOTE,
+      },
+      { id: bigApplicationId, slotId, performerId: bigAct.id, note: BIG_NOTE },
+    ]);
+  });
+
+  afterAll(async () => {
+    await db()
+      .delete(schema.applications)
+      .where(inArray(schema.applications.slotId, [slotId]));
+    await db()
+      .delete(schema.bookings)
+      .where(inArray(schema.bookings.id, [playedBookingId]));
+    await db()
+      .delete(schema.slots)
+      .where(inArray(schema.slots.id, [slotId, playedSlotId]));
+    await db()
+      .delete(schema.performers)
+      .where(inArray(schema.performers.id, [coveredAct.id, bigAct.id]));
+    await db().delete(schema.venues).where(inArray(schema.venues.id, [venue.id]));
+    await db()
+      .delete(schema.users)
+      .where(
+        inArray(schema.users.id, [
+          venue.ownerUserId,
+          coveredAct.ownerUserId,
+          bigAct.ownerUserId,
+        ]),
+      );
+    vi.unstubAllGlobals();
+    await closeDb();
+  });
+
+  it("gives each applicant its own show-up history, sound verdict and note", async () => {
+    sessionUserId.mockResolvedValue(venue.ownerUserId);
+    const html = renderToStaticMarkup(
+      await SlotPage({ params: Promise.resolve({ id: slotId }) }),
+    );
+
+    // Show-up history, in the numbers the badge promises to say out loud. Both
+    // labels are derived — one from a released booking, one from the strike
+    // counter — so a hardcoded or dropped badge cannot satisfy both.
+    expect(html).toContain(
+      '<span class="badge" title="show-up history">1 gig played · no cancellations</span>',
+    );
+    expect(html).toContain(
+      '<span class="badge" title="show-up history">0 gigs played · 2 cancellations</span>',
+    );
+    expect(html).not.toContain("New to EightGig");
+
+    // The sound verdict, computed per applicant against this room. The duo is
+    // covered and green; the big band overruns the desk by more than double and
+    // is the rig verdict, not merely the tech one.
+    expect(html).toContain('<span class="badge good">Sound covered</span>');
+    expect(html).toContain(
+      '<span class="badge">Needs a tech and a rig</span>',
+    );
+    expect(html).toContain("Sound gaps: mixer has 8 channels, act needs 20");
+    // Exactly one card carries gaps and exactly one offers the tech route: if
+    // the plan were computed once for the slot instead of once per applicant,
+    // both cards would agree and these counts would be 0 or 2.
+    expect(html.match(/Sound gaps:/g)).toHaveLength(1);
+    expect(html.match(/Find a tech for the night/g)).toHaveLength(1);
+
+    // And what each act actually wrote — the only part of an application a
+    // venue reads that the act controls.
+    expect(html).toContain(`<span class="user-text">${COVERED_NOTE}</span>`);
+    expect(html).toContain(`<span class="user-text">${BIG_NOTE}</span>`);
+  });
+});

@@ -114,17 +114,29 @@ describe("onboarding account capabilities", () => {
   });
 
   /**
-   * A sound tech has no bookings the moment they sign up and cannot have any —
-   * a sound job only exists once a booking is confirmed and a party posts one.
-   * Sending them to /bookings guaranteed an empty page.
+   * The RETURNING branch, which is the only one a tech ever reaches here: unlike
+   * the act and venue forms, `/api/techs` redirects to `/techs` rather than back
+   * with `welcome=1`, so this page only ever sees a tech who navigated to it
+   * again. (This test used to pass `welcome=1` — a state the tech creation path
+   * cannot produce, which made it a test of a screen nobody sees.)
+   *
+   * A sound tech has no bookings and cannot have any until somebody else's
+   * booking is confirmed and a party posts sound work, so the one call to
+   * action has to be the job board, not an empty booking list.
    */
-  it("sends a sound tech to the board they can actually act on", async () => {
-    const tech = { name: "Fresh Tech", status: "live" };
+  it("sends a returning sound tech to the board they can actually act on", async () => {
+    const tech = { name: "Returning Tech", status: "live" };
     controls.capabilities.owned.tech = tech;
     controls.capabilities.live.tech = tech;
 
-    const html = await renderOnboarding("tech", { welcome: "1" });
+    const html = await renderOnboarding("tech");
+    // Pin the returning branch itself: the welcome copy is what the redirect
+    // never produces, so seeing it here would mean the test drifted back.
+    expect(html).toContain("You’re set up");
+    expect(html).not.toContain("You’re in");
+    expect(html).toContain("Your sound tech profile is ready.");
     expect(html).toContain('href="/techs"');
+    expect(html).toContain("View sound work");
     expect(html).not.toContain('href="/bookings"');
   });
 });

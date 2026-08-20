@@ -20,7 +20,13 @@ async function postSoundJob(
   jobMarker: string,
 ): Promise<{ id: string; url: string }> {
   await page.goto(bookingUrl);
-  await expect(page.getByText(/Needs a tech/i).first()).toBeVisible();
+  // Exact, not a substring: "Needs a tech" is a PREFIX of "Needs a tech and a
+  // rig", so the old regex matched either verdict. This scenario's seed (house
+  // desk of 8 channels, act needing 10) is specifically the tech-only verdict —
+  // a plan that silently escalated to demanding a rig would have gone unnoticed.
+  await expect(
+    page.getByText("Needs a tech", { exact: true }).first(),
+  ).toBeVisible();
   await page.getByLabel("Who pays the tech").selectOption("venue");
   await page.getByLabel("Tech pay, in dollars").fill(techPay);
   await page.getByLabel("Anything the tech should know").fill(jobMarker);

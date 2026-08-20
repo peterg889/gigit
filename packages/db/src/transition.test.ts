@@ -1,4 +1,8 @@
-import { AGREEMENT_TEMPLATE_VERSION, newId } from "@gigit/domain";
+import {
+  AGREEMENT_TEMPLATE_VERSION,
+  newId,
+  performerReliability,
+} from "@gigit/domain";
 import { asc, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, db } from "./client.js";
@@ -16,6 +20,7 @@ import {
   createOffer,
   runBookingTransition,
 } from "./transition.js";
+import { performerReliabilityStats } from "./reliability.js";
 import {
   applications,
   bookings,
@@ -921,6 +926,106 @@ describe("booking transition runner (integration)", () => {
       .from(performers)
       .where(eq(performers.id, performerId));
     expect(after!.s).toBe((before!.s ?? 0) + 1); // exactly one strike
+  });
+
+  /**
+   * A dispute resolved against the act is the ONLY way a no-show gets on an
+   * act's record when the act never pressed cancel — the act played badly, or
+   * didn't play, and the venue escalated. The reducer's `reliability_strike`
+   * emission is unit-tested in @gigit/domain, but emitting an effect nobody
+   * applies changes nothing a venue can see: the strike counter is what
+   * `performerReliabilityStats` reads and what turns the /p/{id} badge from
+   * "reliable" to "mixed". Deleting the runner's write leaves the emission
+   * test, the ledger dispute test and the machine's property tests all green.
+   *
+   * A dedicated act (not the shared `performerId`, which earlier tests have
+   * already struck) so the 0 → 1 step is literal rather than relative.
+   */
+  it("writes a performer strike when a dispute is resolved against the act", async () => {
+    const d = db();
+    const disputedUserId = newId("user");
+    const disputedPerformerId = newId("performer");
+    await d
+      .insert(users)
+      .values({ id: disputedUserId, email: `${disputedUserId}@t.test` });
+    await d.insert(performers).values({
+      id: disputedPerformerId,
+      ownerUserId: disputedUserId,
+      kind: "solo",
+      name: "Disputed Act",
+      homeMetro: "testville",
+    });
+
+    const { slotId, startsAt } = await makeSlotWithApplications();
+    const disputedAppId = newId("application");
+    await d
+      .insert(applications)
+      .values({ id: disputedAppId, slotId, performerId: disputedPerformerId });
+
+    const [beforeAct] = await d
+      .select({ s: performers.reliabilityStrikes })
+      .from(performers)
+      .where(eq(performers.id, disputedPerformerId));
+    expect(beforeAct!.s).toBe(0);
+    const [beforeVenue] = await d
+      .select({ s: venues.reliabilityStrikes })
+      .from(venues)
+      .where(eq(venues.id, venueId));
+
+    const bookingId = await createOffer({
+      applicationId: disputedAppId,
+      slotId,
+      performerId: disputedPerformerId,
+      venueId,
+      actor: userVenue,
+      terms: {
+        amountCents: 50_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+      },
+    });
+    await runBookingTransition(bookingId, { kind: "PERFORMER_ACCEPTED" }, disputedUserId);
+    await runBookingTransition(bookingId, { kind: "PAYMENT_SUCCEEDED" }, "worker");
+    await runBookingTransition(bookingId, { kind: "GIG_ENDED" }, "worker");
+    await runBookingTransition(
+      bookingId,
+      { kind: "DISPUTE_OPENED", openedBy: "venue", reason: "played 20 of 90 minutes" },
+      userVenue,
+    );
+    const resolved = await runBookingTransition(
+      bookingId,
+      {
+        kind: "DISPUTE_RESOLVED",
+        resolution: { kind: "release_full", fault: "performer" },
+      },
+      "admin",
+    );
+    expect(resolved.to).toBe("released");
+
+    const [afterAct] = await d
+      .select({ s: performers.reliabilityStrikes })
+      .from(performers)
+      .where(eq(performers.id, disputedPerformerId));
+    expect(afterAct!.s).toBe(1);
+    // `against` has to be honoured, not treated as "strike somebody": the venue
+    // that WON the dispute must not be marked unreliable by it.
+    const [afterVenue] = await d
+      .select({ s: venues.reliabilityStrikes })
+      .from(venues)
+      .where(eq(venues.id, venueId));
+    expect(afterVenue!.s).toBe(beforeVenue!.s);
+
+    // The two facts the /p/{id} badge is computed from, read back through the
+    // real stats query and the real pure helper the page calls: one released
+    // booking and one strike is exactly the "mixed" tier.
+    const stats = (await performerReliabilityStats([disputedPerformerId])).get(
+      disputedPerformerId,
+    );
+    expect(stats).toEqual({ gigsCompleted: 1, cancellations: 1 });
+    expect(performerReliability(stats!)).toMatchObject({
+      tier: "mixed",
+      label: "1 gig played · 1 cancellation",
+    });
   });
 
   it("drives the full happy lifecycle to 'released' under the null gateway", async () => {

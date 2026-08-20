@@ -10,6 +10,7 @@ import {
   payerSoundCancellationConfirmation,
   soundApplicationMessage,
   soundAssignmentMessage,
+  soundVerdictClass,
 } from "./sound-display";
 
 describe("sound fact display", () => {
@@ -19,6 +20,21 @@ describe("sound fact display", () => {
     );
     expect(equipmentCount(0, "microphone")).toBe("0 microphones");
     expect(equipmentCount(1, "monitor")).toBe("1 monitor");
+  });
+
+  /**
+   * `soundVerdictClass` is the only thing that colours the verdict, and until
+   * now nothing in the repo imported it — collapsing `unknown` to the neutral
+   * `badge` is a one-word edit that no test noticed. That edit puts "nobody has
+   * said" in the same grey as a settled answer, which is precisely the
+   * confusion the `unknown` verdict was introduced to end.
+   */
+  it("warns on an unanswered sound plan and reserves good for a covered one", () => {
+    expect(soundVerdictClass("unknown")).toBe("badge warn");
+    expect(soundVerdictClass("covered")).toBe("badge good");
+    // A known shortfall is neutral: it is a job to post, not a thing to chase.
+    expect(soundVerdictClass("tech_needed")).toBe("badge");
+    expect(soundVerdictClass("tech_and_rig_needed")).toBe("badge");
   });
 
   it("keeps an unanswered operator question distinct from no", () => {
@@ -164,14 +180,16 @@ describe("sound fact display", () => {
     ).toBe(false);
   });
 
-  it("distinguishes withdrawn, not-selected, and closed applications", () => {
-    expect(
-      soundApplicationMessage({
-        applicationStatus: "withdrawn",
-        subslotState: "open",
-        jobIsActionable: true,
-      }),
-    ).toBe("You withdrew this application.");
+  /**
+   * The `withdrawn` case that used to open this test asserted a status the
+   * schema does not define and no writer produces: `tech_subslot_applications`
+   * holds submitted | booked | declined, and withdrawal DELETEs the row
+   * (`withdrawTechSubslotApplication`), including the account-deactivation
+   * sweep that reuses it. A tech who withdraws has no application card at all —
+   * covered for real in `app/sound/[id]/page.test.tsx`. See the report note on
+   * the dead `withdrawn` branch in `soundApplicationMessage` and its label.
+   */
+  it("distinguishes a job filled by someone else from one that closed first", () => {
     expect(
       soundApplicationMessage({
         applicationStatus: "declined",
