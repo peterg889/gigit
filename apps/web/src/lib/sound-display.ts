@@ -1,4 +1,3 @@
-import { ACTIVE_SUBSLOT_STATES } from "@gigit/domain";
 import { startsInFuture } from "./date-time";
 
 export function equipmentCount(
@@ -109,13 +108,32 @@ export function isTechSoundCancellationActionable(
  * work. Keep it available on a confirmed parent even after downbeat or a profile
  * suspension so the payer can close the obligation and settle directly. A
  * closed parent remains stale and is left to its cascade.
+ *
+ * Spelled out rather than read from ACTIVE_SUBSLOT_STATES, which now also holds
+ * `awaiting_payer`: the payer of a proposal it has not accepted has nothing to
+ * cancel — it declines instead, and PAYER_CANCELLED is illegal from that state,
+ * so inheriting the domain's active set would render a Cancel button whose only
+ * possible outcome is a 409.
  */
 export function isPayerSoundCancellationActionable(
   job: SoundJobAvailability,
 ): boolean {
   return (
-    (ACTIVE_SUBSLOT_STATES as readonly string[]).includes(job.subslotState) &&
+    (job.subslotState === "open" || job.subslotState === "booked") &&
     job.bookingState === "confirmed"
+  );
+}
+
+/**
+ * The consent gate's two controls, kept together so the page cannot offer one
+ * side both. Only the named payer answers; only the proposer withdraws; and
+ * both disappear the moment the proposal is answered.
+ */
+export function isSoundConsentActionable(
+  job: SoundJobAvailability,
+): boolean {
+  return (
+    job.subslotState === "awaiting_payer" && job.bookingState === "confirmed"
   );
 }
 

@@ -58,6 +58,14 @@ describe("booking detail sound history and actionability", () => {
   const coveredSlotId = newId("slot");
   const coveredBookingId = newId("booking");
 
+  // A sound job the ACT posted and billed to the VENUE. Its own booking,
+  // because a pending proposal holds the booking's one sound slot.
+  let proposalVenue: Awaited<ReturnType<typeof makeVenue>>;
+  let proposalPerformer: Awaited<ReturnType<typeof makePerformer>>;
+  const proposalSlotId = newId("slot");
+  const proposalBookingId = newId("booking");
+  const proposalSubslotId = newId("slot");
+
   beforeAll(async () => {
     venue = await makeVenue({
       name: "Complete Sound History Room",
@@ -237,6 +245,46 @@ describe("booking detail sound history and actionability", () => {
       })),
     );
 
+    proposalVenue = await makeVenue({
+      name: "Proposed Sound Room",
+      paInventory: { hasPA: false },
+    });
+    proposalPerformer = await makePerformer({
+      name: "Proposed Sound Act",
+      techNeeds: { inputs: 6 },
+    });
+    await d.insert(schema.slots).values({
+      id: proposalSlotId,
+      venueId: proposalVenue.id,
+      metro: "proposed-sound",
+      startsAt,
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 50_000,
+      status: "filled",
+    });
+    await d.insert(schema.bookings).values({
+      id: proposalBookingId,
+      slotId: proposalSlotId,
+      performerId: proposalPerformer.id,
+      venueId: proposalVenue.id,
+      state: "confirmed",
+      terms: {
+        amountCents: 50_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+      },
+      offerExpiresAt: new Date(startsAt.getTime() - 86_400_000),
+    });
+    await d.insert(schema.techSubslots).values({
+      id: proposalSubslotId,
+      bookingId: proposalBookingId,
+      payer: "venue",
+      budgetCents: 44_400,
+      needs: { verdict: "tech_needed", gaps: ["operator"], inputs: 6 },
+      state: "awaiting_payer",
+    });
+
     sessionUserId.mockResolvedValue(venue.ownerUserId);
   });
 
@@ -245,10 +293,14 @@ describe("booking detail sound history and actionability", () => {
     await closeDb();
   });
 
-  async function render() {
+  async function renderBooking(id: string) {
     return renderToStaticMarkup(
-      await BookingPage({ params: Promise.resolve({ id: bookingId }) }),
+      await BookingPage({ params: Promise.resolve({ id }) }),
     );
+  }
+
+  async function render() {
+    return renderBooking(bookingId);
   }
 
   it("does not create a missing conversation while rendering a booking", async () => {
@@ -452,5 +504,46 @@ describe("booking detail sound history and actionability", () => {
     expect(html).not.toMatch(/Sound covered<\/span>\s*<span class="muted">/);
     expect(html).not.toContain("Post the sound job");
     expect(html).not.toContain("Tech pay, in dollars");
+  });
+
+  /**
+   * The consent gate, on the only screen either party will look at.
+   *
+   * A proposal the payer never sees is the same silence as no gate at all: the
+   * job simply never opens. And the two sides need opposite things from the
+   * same card — one has a decision to make, the other has to know it is waiting
+   * on someone else — so each half is asserted along with the absence of the
+   * other's controls.
+   */
+  it("puts the accept and decline on the payer's card and nowhere else", async () => {
+    sessionUserId.mockResolvedValue(proposalVenue.ownerUserId);
+    const html = await renderBooking(proposalBookingId);
+
+    expect(html).toContain("Waiting on the payer");
+    expect(html).toContain("put it on your tab");
+    // The amount is on the button: a consent control that hides what it costs
+    // is not consent to anything in particular.
+    expect(html).toContain("Accept — pay $444 for sound");
+    expect(html).toContain(">Decline</button>");
+    // The payer does not withdraw someone else's proposal, and it has nothing
+    // to cancel yet — PAYER_CANCELLED is illegal from this state, so a Cancel
+    // button here could only ever return a 409.
+    expect(html).not.toContain("Withdraw the proposal");
+    expect(html).not.toContain("Cancel sound job");
+  });
+
+  it("shows the proposer that it is waiting, with only a way to take it back", async () => {
+    sessionUserId.mockResolvedValue(proposalPerformer.ownerUserId);
+    const html = await renderBooking(proposalBookingId);
+
+    expect(html).toContain("Waiting on the venue to agree to the cost");
+    expect(html).toContain("Withdraw the proposal");
+    // The side that proposed the bill must not be able to answer for the side
+    // paying it — that is the whole bug, moved from the API to the page.
+    expect(html).not.toContain("Accept — pay");
+    expect(html).not.toContain(">Decline</button>");
+    // And the pending job still holds the booking's sound slot, so neither
+    // party is offered a second one.
+    expect(html).not.toContain("Post the sound job");
   });
 });

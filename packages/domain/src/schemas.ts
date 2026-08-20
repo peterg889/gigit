@@ -196,6 +196,14 @@ export const techSubslotCreateSchema = z.object({
 export const techSubslotBookSchema = z.object({
   techId: z.string().min(1),
 });
+/**
+ * The named payer's answer to a sound job someone else proposed in its name.
+ * One endpoint rather than two so the "only the payer may answer" check cannot
+ * exist in one route and be forgotten in the other.
+ */
+export const techSubslotConsentSchema = z.object({
+  decision: z.enum(["accept", "decline"]),
+});
 
 // Saved-search alert (PRD F2.3): all fields optional — empty = "any new slot".
 export const savedSearchCreateSchema = z.object({

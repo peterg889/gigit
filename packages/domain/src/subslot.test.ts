@@ -70,6 +70,97 @@ describe("tech sub-slot machine", () => {
     expect(r.effects.some((e) => e.kind.startsWith("subslot_"))).toBe(false);
   });
 
+  it("awaiting_payer + PAYER_ACCEPTED → open, and only then can a tech see it", () => {
+    const r = decideSubslot(snap("awaiting_payer"), { kind: "PAYER_ACCEPTED" }, new Date());
+    expect(r.next).toBe("open");
+    // Consent creates no obligation by itself — the charge still waits for a
+    // tech to actually be booked.
+    expect(r.effects.some((e) => e.kind === "subslot_charge")).toBe(false);
+    expect(r.effects).toContainEqual({
+      kind: "notify",
+      template: "subslot_proposal_accepted",
+      to: "proposer",
+    });
+  });
+
+  it("awaiting_payer + PAYER_DECLINED is terminal and is NOT a payer cancellation", () => {
+    const r = decideSubslot(snap("awaiting_payer"), { kind: "PAYER_DECLINED" }, new Date());
+    // The distinction is the whole point: cancelled_by_payer means the payer
+    // walked away from a job it had agreed to fund. Declining means it never
+    // agreed, so no fee schedule and no money effect can apply.
+    expect(r.next).toBe("declined_by_payer");
+    expect(r.next).not.toBe("cancelled_by_payer");
+    expect(r.effects.some((e) => e.kind.startsWith("subslot_"))).toBe(false);
+    expect(r.effects).toContainEqual({
+      kind: "notify",
+      template: "subslot_proposal_declined",
+      to: "proposer",
+    });
+    // Terminal: a declined proposal cannot be revived into a live job.
+    for (const ev of SUBSLOT_EVENTS)
+      expect(() =>
+        decideSubslot(
+          snap("declined_by_payer"),
+          (ev === "TECH_BOOKED"
+            ? { kind: ev, techId: "tec_x" }
+            : { kind: ev }) as SubslotEvent,
+          new Date(),
+        ),
+      ).toThrow(IllegalSubslotTransitionError);
+  });
+
+  it("awaiting_payer + PROPOSAL_WITHDRAWN is terminal and tells the payer to stop", () => {
+    const r = decideSubslot(
+      snap("awaiting_payer"),
+      { kind: "PROPOSAL_WITHDRAWN" },
+      new Date(),
+    );
+    expect(r.next).toBe("withdrawn_by_proposer");
+    expect(r.effects).toContainEqual({
+      kind: "notify",
+      template: "subslot_proposal_withdrawn",
+      to: "payer",
+    });
+    for (const ev of SUBSLOT_EVENTS)
+      expect(() =>
+        decideSubslot(
+          snap("withdrawn_by_proposer"),
+          (ev === "TECH_BOOKED"
+            ? { kind: ev, techId: "tec_x" }
+            : { kind: ev }) as SubslotEvent,
+          new Date(),
+        ),
+      ).toThrow(IllegalSubslotTransitionError);
+  });
+
+  it("never books or charges from a proposal the payer has not accepted", () => {
+    // The gate is worthless if the reducer will still take a booking straight
+    // out of `awaiting_payer` — that would charge a party that never agreed.
+    expect(() =>
+      decideSubslot(
+        snap("awaiting_payer"),
+        { kind: "TECH_BOOKED", techId: "tec_1" },
+        new Date(),
+      ),
+    ).toThrow(IllegalSubslotTransitionError);
+    // And the payer's live-job cancellation is not a back door to the same
+    // terminal state a decline uses.
+    expect(() =>
+      decideSubslot(snap("awaiting_payer"), { kind: "PAYER_CANCELLED" }, new Date()),
+    ).toThrow(IllegalSubslotTransitionError);
+  });
+
+  it("closes an unanswered proposal with its parent, either outcome, quietly", () => {
+    // Both cascade branches must land somewhere legal: `awaiting_payer` is an
+    // ACTIVE state, so the worker's parent fan-out WILL reach it, and an
+    // illegal-transition throw there dead-letters the parent's own cascade.
+    for (const kind of ["PARENT_CANCELLED", "PARENT_RELEASED"] as const) {
+      const r = decideSubslot(snap("awaiting_payer"), { kind }, new Date());
+      expect(r.next).toBe("cancelled_with_parent");
+      expect(r.effects).toEqual([]);
+    }
+  });
+
   it("rejects illegal transitions", () => {
     expect(() =>
       decideSubslot(snap("released"), { kind: "PARENT_RELEASED" }, new Date()),
@@ -83,6 +174,13 @@ describe("tech sub-slot machine", () => {
 // Every state×event pair either transitions to a known state or throws — no
 // crash, no undefined, no dead 'cancelled_by_tech' state (which is gone).
 const LEGAL: Record<SubslotState, Partial<Record<(typeof SUBSLOT_EVENTS)[number], SubslotState>>> = {
+  awaiting_payer: {
+    PAYER_ACCEPTED: "open",
+    PAYER_DECLINED: "declined_by_payer",
+    PROPOSAL_WITHDRAWN: "withdrawn_by_proposer",
+    PARENT_CANCELLED: "cancelled_with_parent",
+    PARENT_RELEASED: "cancelled_with_parent",
+  },
   open: {
     TECH_BOOKED: "booked",
     PARENT_CANCELLED: "cancelled_with_parent",
@@ -97,6 +195,8 @@ const LEGAL: Record<SubslotState, Partial<Record<(typeof SUBSLOT_EVENTS)[number]
   released: {},
   cancelled_by_payer: {},
   cancelled_with_parent: {},
+  declined_by_payer: {},
+  withdrawn_by_proposer: {},
 };
 
 describe("tech sub-slot machine — exhaustive state×event table", () => {

@@ -33,6 +33,7 @@ import {
 import { bookingWasConfirmed } from "@/lib/booking-history";
 import {
   isSoundApplicantBookable,
+  isSoundConsentActionable,
   isSoundJobActionable,
   isPayerSoundCancellationActionable,
   isSoundParentActionable,
@@ -389,7 +390,9 @@ export default async function BookingPage({
               <>
                 <p className="muted">
                   Post a sound job for this night — techs see the room, the
-                  input list, and the pay before they say yes.
+                  input list, and the pay before they say yes. Name the other
+                  side as the payer and it waits for them to accept before any
+                  tech sees it.
                 </p>
                 <ApiForm
                   endpoint={`/api/bookings/${id}/tech-subslot`}
@@ -433,6 +436,10 @@ export default async function BookingPage({
         const cancellationIsActionable =
           isPayerSoundCancellationActionable(soundAvailability);
         const amPayer = payerSubslotIds.has(subslot.id);
+        // A proposal can only have been posted by the party that is not paying
+        // for it, so on this booking the other party IS the proposer.
+        const consentIsActionable = isSoundConsentActionable(soundAvailability);
+        const payerLabel = friendlyLabel(PARTY_LABELS, subslot.payer);
         return (
           <div className="card" key={subslot.id}>
             <h2>Sound job</h2>
@@ -444,7 +451,7 @@ export default async function BookingPage({
                 ${(subslot.budgetCents / 100).toFixed(0)}
               </span>{" "}
               <span className="muted">
-                / paid by the {friendlyLabel(PARTY_LABELS, subslot.payer)}
+                / paid by the {payerLabel}
               </span>
             </p>
             {subslot.needs.gaps.length > 0 && (
@@ -452,6 +459,44 @@ export default async function BookingPage({
                 Gaps: {subslot.needs.gaps.join("; ")}
               </p>
             )}
+            {subslot.state === "awaiting_payer" &&
+              (amPayer ? (
+                <>
+                  <p>
+                    The other side posted this and put it on your tab. Nothing
+                    goes out to techs unless you say yes.
+                  </p>
+                  {accountActive && consentIsActionable && (
+                    <p>
+                      <ActionButton
+                        endpoint={`/api/tech-subslots/${subslot.id}/consent`}
+                        label={`Accept — pay $${(subslot.budgetCents / 100).toFixed(0)} for sound`}
+                        body={{ decision: "accept" }}
+                      />{" "}
+                      <ActionButton
+                        endpoint={`/api/tech-subslots/${subslot.id}/consent`}
+                        label="Decline" variant="quiet"
+                        body={{ decision: "decline" }}
+                        confirm="Decline this sound job? It never goes out to techs and the other side is told."
+                      />
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="muted">
+                    Waiting on the {payerLabel} to agree to the cost. Techs
+                    don&rsquo;t see this job until they do.
+                  </p>
+                  {accountActive && consentIsActionable && (
+                    <ActionButton
+                      endpoint={`/api/tech-subslots/${subslot.id}/cancel`}
+                      label="Withdraw the proposal" variant="quiet"
+                      confirm="Withdraw this sound job? The other side is told it no longer needs an answer."
+                    />
+                  )}
+                </>
+              ))}
             {amPayer &&
               applicants.map(({ application, tech, techOwnerStatus }) => {
                 const applicantIsBookable = isSoundApplicantBookable({

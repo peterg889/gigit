@@ -15,7 +15,39 @@ describe("create sound job route", () => {
   const performerId = newId("performer");
   const slotId = newId("slot");
   const bookingId = newId("booking");
+  // A booking may hold only one active sound job, and a pending proposal counts
+  // as active — so each consent case needs a night of its own.
+  const billedBookingId = newId("booking");
+  const ownBookingId = newId("booking");
   const startsAt = new Date(Date.now() + 10 * 86_400_000);
+
+  /** Another confirmed night for the same room and act. */
+  async function seedConfirmedBooking(id: string) {
+    const seededSlotId = newId("slot");
+    await db().insert(schema.slots).values({
+      id: seededSlotId,
+      venueId,
+      metro: "create-sound",
+      startsAt,
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 40_000,
+      status: "filled",
+    });
+    await db().insert(schema.bookings).values({
+      id,
+      slotId: seededSlotId,
+      performerId,
+      venueId,
+      state: "confirmed",
+      terms: {
+        amountCents: 40_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+      },
+      offerExpiresAt: new Date(startsAt.getTime() - 86_400_000),
+    });
+  }
 
   beforeAll(async () => {
     const d = db();
@@ -69,6 +101,8 @@ describe("create sound job route", () => {
       },
       offerExpiresAt: new Date(startsAt.getTime() - 86_400_000),
     });
+    await seedConfirmedBooking(billedBookingId);
+    await seedConfirmedBooking(ownBookingId);
   });
 
   afterAll(async () => {
@@ -84,6 +118,51 @@ describe("create sound job route", () => {
       }),
       { params: Promise.resolve({ id: bookingId }) },
     );
+
+  /**
+   * The reported bug, at the route that had it: this endpoint checks `isParty`
+   * and then takes `payer` straight off the request body, so the act really can
+   * post a job billed to the venue. What it can no longer do is make that job
+   * real — it waits in `awaiting_payer` until the venue accepts, so no tech
+   * ever sees a bill the room never agreed to.
+   */
+  it("parks a job the act billed to the venue until the venue accepts", async () => {
+    sessionUserId.mockResolvedValue(performerOwnerId);
+    const created = await POST(
+      new Request(`http://test/api/bookings/${billedBookingId}/tech-subslot`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ payer: "venue", budgetCents: 15_000 }),
+      }),
+      { params: Promise.resolve({ id: billedBookingId }) },
+    );
+    expect(created.status).toBe(201);
+    const { subslotId } = await created.json();
+    const [row] = await db()
+      .select({ state: schema.techSubslots.state })
+      .from(schema.techSubslots)
+      .where(eq(schema.techSubslots.id, subslotId));
+    expect(row!.state).toBe("awaiting_payer");
+  });
+
+  it("posts the act's own sound job live, because posting it is consent", async () => {
+    sessionUserId.mockResolvedValue(performerOwnerId);
+    const created = await POST(
+      new Request(`http://test/api/bookings/${ownBookingId}/tech-subslot`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ payer: "performer", budgetCents: 12_000 }),
+      }),
+      { params: Promise.resolve({ id: ownBookingId }) },
+    );
+    expect(created.status).toBe(201);
+    const { subslotId } = await created.json();
+    const [row] = await db()
+      .select({ state: schema.techSubslots.state })
+      .from(schema.techSubslots)
+      .where(eq(schema.techSubslots.id, subslotId));
+    expect(row!.state).toBe("open");
+  });
 
   it("returns one clean conflict and never emits a second creation event", async () => {
     sessionUserId.mockResolvedValue(venueOwnerId);

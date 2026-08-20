@@ -90,7 +90,7 @@ describe("notification copy", () => {
  * SUPPLIED is the union of what the notifiers actually pass:
  *   notifySlotVenue -> slotId            notifyApplicationPerformer -> slotId
  *   notifyBookingParties -> bookingId, performerName, venueName, autoConfirmHours
- *   notifySubslotParties -> subslotId    notifyOtp -> code
+ *   notifySubslotParties -> subslotId, bookingId   notifyOtp -> code
  *   review prompt -> bookingId, days     new_act -> performerId
  *   thread notifies -> threadId          support -> requestId
  */
@@ -127,6 +127,14 @@ describe("every template resolves", () => {
       new_application: "/slots/slt_1",
       subslot_new_application: "/sound/sub_1",
       new_inquiry: "/inbox/thr_1",
+      // The consent gate's controls live on the parent booking's page, so
+      // every message about a proposal has to land there. /sound/{subslotId}
+      // renders the job but has no accept on it, and the bookings LIST leaves
+      // the payer hunting for the night in question.
+      subslot_proposed: "/bookings/bkg_1",
+      subslot_proposal_accepted: "/bookings/bkg_1",
+      subslot_proposal_declined: "/bookings/bkg_1",
+      subslot_proposal_withdrawn: "/bookings/bkg_1",
       slot_match: "/slots/slt_1",
       new_act: "/p/prf_1",
       // The welcome's whole job is getting media onto the page; /me is the

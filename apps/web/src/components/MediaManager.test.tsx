@@ -8,7 +8,13 @@ vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
 }));
 
-import { ACCEPTED_SERVICES, MediaManager, submitMediaLink } from "./MediaManager";
+import {
+  ACCEPTED_SERVICES,
+  MediaManager,
+  type MediaItem,
+  removeMediaLink,
+  submitMediaLink,
+} from "./MediaManager";
 
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -23,14 +29,14 @@ afterEach(() => {
  */
 describe("attaching media by link", () => {
   it("offers no file picker anywhere on the form", () => {
-    const html = renderToStaticMarkup(<MediaManager subjectType="performer" />);
+    const html = renderToStaticMarkup(<MediaManager subjectType="performer" items={[]} />);
 
     expect(html).not.toContain('type="file"');
     expect(html).not.toMatch(/accept="image/);
   });
 
   it("names every accepted service, grouped by what it holds", () => {
-    const html = renderToStaticMarkup(<MediaManager subjectType="venue" />);
+    const html = renderToStaticMarkup(<MediaManager subjectType="venue" items={[]} />);
 
     // Derived from the domain allow-list, so this also fails if a provider is
     // added there and never surfaces to the person doing the pasting.
@@ -94,6 +100,112 @@ describe("attaching media by link", () => {
     expect(result).toEqual({
       ok: false,
       message: "That link isn't from a site we support.",
+    });
+  });
+});
+
+/**
+ * The manager was add-only, which made the quota refusal ("Remove one to add
+ * another") advice about rows the owner could not see, and left a link that was
+ * still being screened indistinguishable from one that never attached.
+ */
+describe("seeing and removing what is attached", () => {
+  const items: MediaItem[] = [
+    {
+      id: "med_ready",
+      kind: "video",
+      title: "Live at the Cactus Club",
+      embedUrl: "https://youtu.be/aaa",
+      status: "ready",
+    },
+    {
+      id: "med_held",
+      kind: "audio",
+      title: null,
+      embedUrl: "https://soundcloud.com/act/untitled",
+      status: "held",
+    },
+    {
+      id: "med_blocked",
+      kind: "photo",
+      title: "Room shot",
+      embedUrl: "https://flickr.com/photos/act/1",
+      status: "blocked",
+    },
+  ];
+
+  it("lists every attached link with a way to remove each one", () => {
+    const html = renderToStaticMarkup(
+      <MediaManager subjectType="performer" items={items} />,
+    );
+
+    expect(html).toContain("Live at the Cactus Club");
+    // No oEmbed title came back for this one, so the link itself is the label —
+    // otherwise two untitled tracks are the same row twice and the owner cannot
+    // tell which they are about to remove.
+    expect(html).toContain("https://soundcloud.com/act/untitled");
+    expect(html).toContain("Room shot");
+    expect(html.match(/>Remove</g) ?? []).toHaveLength(items.length);
+  });
+
+  it("says why a link is not on the public page yet", () => {
+    const html = renderToStaticMarkup(
+      <MediaManager subjectType="performer" items={items} />,
+    );
+
+    expect(html).toContain("being checked — not on your page yet");
+    expect(html).toContain("not shown — our review turned this one down");
+  });
+
+  it("does not claim an empty profile when the list simply has rows", () => {
+    const empty = renderToStaticMarkup(
+      <MediaManager subjectType="tech" items={[]} />,
+    );
+    const full = renderToStaticMarkup(
+      <MediaManager subjectType="tech" items={items} />,
+    );
+
+    expect(empty).toContain("Nothing attached yet");
+    expect(full).not.toContain("Nothing attached yet");
+  });
+
+  it("DELETEs the asset by id", async () => {
+    const fetchMock = vi.fn<(url: string, init: RequestInit) => Promise<Response>>(
+      async () =>
+        new Response(JSON.stringify({ deleted: true, id: "med_held" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await removeMediaLink("med_held");
+
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe("/api/media/med_held");
+    expect(init.method).toBe("DELETE");
+    expect(result).toEqual({ ok: true, message: "Removed" });
+  });
+
+  it("repeats the server's reason for a refused removal", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            error: { code: "forbidden", message: "That link isn't on a profile you own." },
+          }),
+          { status: 403, headers: { "content-type": "application/json" } },
+        ),
+      ),
+    );
+
+    const result = await removeMediaLink("med_someone_else");
+
+    expect(result).toEqual({
+      ok: false,
+      message: "That link isn't on a profile you own.",
     });
   });
 });

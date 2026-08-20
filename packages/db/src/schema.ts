@@ -470,7 +470,14 @@ export const messages = pgTable(
 
 // ── ai task log (engineering-spec K9: every model call recorded) ────────────
 // Fraud flags (PRD F7.5): screening output, consumed by the ops moderation
-// queue. `state`: open | cleared | upheld.
+// queue. `state`: open | cleared | upheld | moot.
+//
+// `moot` is the state of a flag whose subject stopped existing — an owner
+// deleted the media the flag was raised about. It is kept distinct from the two
+// human verdicts because both of those assert that a moderator looked: `cleared`
+// publishes held media and `upheld` blocks it, and recording either for a row
+// nobody ever opened would put a decision in the audit trail that no person made.
+// The queue only reads `open`, so any of the three terminal states removes it.
 export const fraudFlags = pgTable(
   "fraud_flags",
   {
@@ -579,9 +586,15 @@ export const techSubslots = pgTable(
     // A booking can have sound-job history, but only one live selection round.
     // The partial unique index is the final concurrency backstop; creation also
     // locks the parent so callers receive a deliberate domain conflict.
+    //
+    // `awaiting_payer` counts: a proposal already holds the booking's one sound
+    // slot. Left out, a booking could carry a pending proposal AND a live job,
+    // and createTechSubslot's ACTIVE_SUBSLOT_STATES guard would refuse writes
+    // this index still allowed. migrations.test.ts asserts these two lists match
+    // element for element, so the order here is the domain's order.
     uniqueIndex("tech_subslots_active_booking_uq")
       .on(t.bookingId)
-      .where(sql`state in ('open','booked')`),
+      .where(sql`state in ('awaiting_payer','open','booked')`),
   ],
 );
 

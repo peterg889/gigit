@@ -2,7 +2,7 @@ import { ACTIVE_SUBSLOT_STATES, newId } from "@gigit/domain";
 import { and, eq, inArray } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { closeDb, db } from "./client.js";
-import { createOffer, runBookingTransition } from "./transition.js";
+import { createOffer, pgErrorCode, runBookingTransition } from "./transition.js";
 import {
   applyToOpenTechSubslot,
   bookTechApplicant,
@@ -11,6 +11,7 @@ import {
   runSubslotTransition,
   TechSubslotAlreadyActiveError,
   TechSubslotApplicationError,
+  TechSubslotNotOpenError,
   TechSubslotParentUnavailableError,
   TechUnavailableError,
   withdrawTechSubslotApplication,
@@ -246,6 +247,157 @@ describe("tech sub-slot runner (integration)", () => {
         ),
       );
     expect(creationEvents).toHaveLength(1);
+  });
+
+  /**
+   * The consent gate (a party must agree before it is made to pay). Posting a
+   * sound job names who funds it, and until this existed the act could name the
+   * venue: the venue's first notice of the bill was its own booking page. The
+   * derivation lives in createTechSubslot, from the payer PROFILE's owner, so
+   * these drive the real writer rather than a route's opinion of who is who.
+   */
+  it("posts a job live for its own payer and pending for anyone else", async () => {
+    const ownBookingId = await seedConfirmedBooking();
+    const own = await createTechSubslot({
+      bookingId: ownBookingId,
+      payer: "performer",
+      budgetCents: 8_000,
+      actor: userP, // the act, funding its own sound
+    });
+    const [ownRow] = await db()
+      .select({ state: techSubslots.state })
+      .from(techSubslots)
+      .where(eq(techSubslots.id, own));
+    expect(ownRow!.state).toBe("open");
+
+    const proposedBookingId = await seedConfirmedBooking();
+    const proposed = await createTechSubslot({
+      bookingId: proposedBookingId,
+      payer: "venue", // the act billing the ROOM — the case that had no gate
+      budgetCents: 9_500,
+      actor: userP,
+    });
+    const [proposedRow] = await db()
+      .select({ state: techSubslots.state })
+      .from(techSubslots)
+      .where(eq(techSubslots.id, proposed));
+    expect(proposedRow!.state).toBe("awaiting_payer");
+
+    // …and the payer is told, or the gate just means the job never happens.
+    const [creation] = await db()
+      .select({ payload: events.payload })
+      .from(events)
+      .where(
+        and(eq(events.subjectId, proposed), eq(events.kind, "subslot.created")),
+      );
+    expect(creation!.payload).toMatchObject({
+      state: "awaiting_payer",
+      effects: [{ kind: "notify", template: "subslot_proposed", to: "payer" }],
+    });
+    // The payer's own post is not news to the payer.
+    const [ownCreation] = await db()
+      .select({ payload: events.payload })
+      .from(events)
+      .where(and(eq(events.subjectId, own), eq(events.kind, "subslot.created")));
+    expect(ownCreation!.payload).not.toHaveProperty("effects");
+  });
+
+  it("lets no tech near a job nobody has agreed to pay for", async () => {
+    const pendingBookingId = await seedConfirmedBooking();
+    const pending = await createTechSubslot({
+      bookingId: pendingBookingId,
+      payer: "venue",
+      budgetCents: 7_000,
+      actor: userP,
+    });
+    await expect(
+      applyToOpenTechSubslot({
+        subslotId: pending,
+        techId: techId3,
+        actor: userT3,
+      }),
+    ).rejects.toBeInstanceOf(TechSubslotNotOpenError);
+
+    // Accepting is the only way in, and it is the payer's own transition.
+    await runSubslotTransition(pending, { kind: "PAYER_ACCEPTED" }, userV);
+    const applicationId = await applyToOpenTechSubslot({
+      subslotId: pending,
+      techId: techId3,
+      actor: userT3,
+    });
+    expect(applicationId).toMatch(/^app/);
+  });
+
+  it("holds the booking's one sound slot while it waits for an answer", async () => {
+    // Both halves matter and they are different mechanisms: the domain guard
+    // in createTechSubslot, and the partial unique index behind it. If
+    // `awaiting_payer` were missing from either, a booking could carry a
+    // pending proposal AND a live job — and the two would disagree about which
+    // writes are legal.
+    const heldBookingId = await seedConfirmedBooking();
+    await createTechSubslot({
+      bookingId: heldBookingId,
+      payer: "venue",
+      budgetCents: 6_000,
+      actor: userP,
+    });
+    await expect(
+      createTechSubslot({
+        bookingId: heldBookingId,
+        payer: "venue",
+        budgetCents: 6_500,
+        actor: userV,
+      }),
+    ).rejects.toBeInstanceOf(TechSubslotAlreadyActiveError);
+
+    // Straight past the guard, at the index: a direct writer must fail too.
+    // Drizzle wraps the driver error, so read the SQLSTATE the way production
+    // does rather than asserting a wrapper's shape.
+    const direct = await db()
+      .insert(techSubslots)
+      .values({
+        id: newId("slot"),
+        bookingId: heldBookingId,
+        payer: "venue",
+        budgetCents: 6_500,
+        needs: { verdict: "tech_needed", gaps: [], inputs: 4 },
+        state: "open",
+      })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect(pgErrorCode(direct)).toBe("23505");
+    expect(String((direct as { cause?: { constraint?: string } })?.cause?.constraint)).toBe(
+      "tech_subslots_active_booking_uq",
+    );
+  });
+
+  it("closes an unanswered proposal with its parent instead of dead-lettering", async () => {
+    // `awaiting_payer` is an ACTIVE state, so the worker's parent fan-out finds
+    // it. Whichever way the parent ended, the cascade has to have a legal
+    // transition to make — an illegal one throws inside the worker and takes
+    // the parent's whole cascade to the dead-letter table with it.
+    for (const outcome of ["released", "cancelled"] as const) {
+      const cascadeBookingId = await seedConfirmedBooking();
+      const pending = await createTechSubslot({
+        bookingId: cascadeBookingId,
+        payer: "venue",
+        budgetCents: 5_500,
+        actor: userP,
+      });
+      await cascadeParentToSubslots(cascadeBookingId, outcome, "worker");
+      const [row] = await db()
+        .select({ state: techSubslots.state })
+        .from(techSubslots)
+        .where(eq(techSubslots.id, pending));
+      expect(row!.state).toBe("cancelled_with_parent");
+      const ledger = await db()
+        .select({ id: ledgerEntries.id })
+        .from(ledgerEntries)
+        .where(eq(ledgerEntries.bookingId, cascadeBookingId));
+      expect(ledger).toEqual([]);
+    }
   });
 
   it("rejects positive interval overlap but allows exact end/start adjacency", async () => {

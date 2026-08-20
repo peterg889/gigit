@@ -484,7 +484,7 @@ async function dispatchEvent(
             await notifySubslotParties(
               row.subject_id,
               fx.template,
-              fx.to as "payer" | "tech" | "both",
+              fx.to as "payer" | "tech" | "both" | "proposer",
             );
         }
         else if (row.subject_type === "auth")

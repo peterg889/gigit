@@ -136,6 +136,16 @@ describe("the open sound-job feed excludes what the page excludes", () => {
     ["an act suspended by ops", { performerStatus: "suspended" }],
     ["a venue owner who is no longer active", { venueOwnerStatus: "suspended" }],
     ["an act owner who is no longer active", { performerOwnerStatus: "deleted" }],
+    // The consent gate leans on this filter rather than adding one of its own:
+    // a job in `awaiting_payer` names a payer who has not agreed to fund it, so
+    // publishing it would invite techs to apply for a bill that may never
+    // exist. `state = 'open'` already excludes it — this asserts that instead
+    // of assuming it, because a feed that widened to "any active state" would
+    // do exactly the wrong thing.
+    [
+      "a sound job nobody has agreed to pay for yet",
+      { subslotState: "awaiting_payer" },
+    ],
   ])("does not publish %s", async (label, opts) => {
     const { venueName } = await soundJob(
       label.replace(/[^a-z]/gi, "").toUpperCase().slice(0, 12),

@@ -88,6 +88,7 @@ describe("sound job marketplace eligibility", () => {
       startsAt?: Date;
       venueStatus?: string;
       performerOwnerStatus?: string;
+      subslotState?: string;
     } = {},
   ) {
     const venue = await makeVenue({
@@ -147,7 +148,7 @@ describe("sound job marketplace eligibility", () => {
         inputs: 4,
         notes: label,
       },
-      state: "open",
+      state: options.subslotState ?? "open",
     });
   }
 
@@ -166,6 +167,17 @@ describe("sound job marketplace eligibility", () => {
     await seedJob("HIDDEN VENUE SOUND JOB", { venueStatus: "hidden" });
     await seedJob("SUSPENDED OWNER SOUND JOB", {
       performerOwnerStatus: "suspended",
+    });
+    // Proposed by one party and billed to the other, with no answer yet. The
+    // board is where a tech decides to spend a night, so a job whose payer has
+    // not agreed to fund it must not be on it.
+    // Minutes out, like the eligible control: the board caps at 50 rows
+    // ordered by downbeat, and a fixture two weeks away in a long-lived dev
+    // database never reaches the page at all — the absence assertion would
+    // then pass without the state filter doing any work.
+    await seedJob("UNCONSENTED SOUND JOB", {
+      subslotState: "awaiting_payer",
+      startsAt: new Date(Date.now() + 6 * 60_000),
     });
     await seedDirectoryTech(directoryLiveTechId, "DIRECTORY LIVE TECH", {
       gear: "partial",
@@ -215,6 +227,7 @@ describe("sound job marketplace eligibility", () => {
     expect(html).not.toContain("PAST SOUND JOB");
     expect(html).not.toContain("HIDDEN VENUE SOUND JOB");
     expect(html).not.toContain("SUSPENDED OWNER SOUND JOB");
+    expect(html).not.toContain("UNCONSENTED SOUND JOB");
   });
 
   /**

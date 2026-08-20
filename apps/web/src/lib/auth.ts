@@ -253,12 +253,25 @@ export async function loadSubslotForActor(subslotId: string, userId: string) {
     techOwnedBy(userId),
   ]);
   const isPayer = isSubslotPayer(row.subslot, row.booking, { performer, venue });
+  const isBookingParty =
+    venue?.id === row.booking.venueId ||
+    performer?.id === row.booking.performerId;
   return {
     ...row,
     performer,
     venue,
     tech,
     isPayer,
+    /**
+     * A party to the parent booking who is NOT the one funding this job.
+     *
+     * For a job in `awaiting_payer` this is precisely its proposer: a job
+     * posted by its own payer starts `open`, so the only way to reach the
+     * pending state is the other side asking. That is why withdrawal needs no
+     * proposer column — but it does mean callers must check the state as well,
+     * since on a LIVE job this same person has no authority at all.
+     */
+    isNonPayerParty: isBookingParty && !isPayer,
     isBookedTech: !!tech && row.subslot.techId === tech.id,
   };
 }

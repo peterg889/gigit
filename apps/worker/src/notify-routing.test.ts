@@ -6,11 +6,13 @@ import {
   closeDb,
   createOffer,
   createOpenSlot,
+  createTechSubslot,
   db,
   getPool,
   makePerformer,
   makeTech,
   makeVenue,
+  runSubslotTransition,
   schema,
 } from "@gigit/db";
 import { eq } from "drizzle-orm";
@@ -622,6 +624,99 @@ describe("worker notification routing", () => {
       venue.ownerUserId,
       tech.ownerUserId,
     ]);
+  });
+
+  /**
+   * The consent gate is only a gate if the person being asked to pay hears
+   * about it. A proposal nobody is told about does not protect the payer — it
+   * just means the sound job silently never opens, and the act waits on an
+   * answer that was never requested.
+   *
+   * Driven through the real create path, because the notify effect is written
+   * by createTechSubslot itself: an assertion against a hand-written event
+   * would still pass if that producer stopped emitting one.
+   */
+  it("tells the venue when an act posts a sound job on the venue's tab", async () => {
+    const venue = await makeVenue({ name: "Proposal Room", metro: "route-proposal" });
+    const act = await makePerformer({
+      name: "Proposal Act",
+      homeMetro: "route-proposal",
+    });
+    const startsAt = new Date(Date.now() + 21 * 86_400_000);
+    const proposalSlot = newId("slot");
+    const proposalBooking = newId("booking");
+    await db().insert(schema.slots).values({
+      id: proposalSlot,
+      venueId: venue.id,
+      metro: "route-proposal",
+      startsAt,
+      durationMinutes: 120,
+      format: "music",
+      budgetCents: 30_000,
+      status: "filled",
+    });
+    await db().insert(schema.bookings).values({
+      id: proposalBooking,
+      slotId: proposalSlot,
+      performerId: act.id,
+      venueId: venue.id,
+      state: "confirmed",
+      terms: {
+        amountCents: 30_000,
+        startsAt: startsAt.toISOString(),
+        endsAt: new Date(startsAt.getTime() + 2 * 3_600_000).toISOString(),
+      },
+      offerExpiresAt: new Date(startsAt.getTime() - 86_400_000),
+    });
+
+    await parkOutboxBacklog();
+    const proposedSubslot = await createTechSubslot({
+      bookingId: proposalBooking,
+      payer: "venue",
+      budgetCents: 15_000,
+      actor: act.ownerUserId,
+    });
+    const sinks = await captureDrainSinks();
+
+    const proposals = sinks.filter((s) => s.template === "subslot_proposed");
+    // Only the payer: telling the act it has been asked to pay for its own ask
+    // is noise, and telling nobody is the silence this exists to fix.
+    expect(proposals.map((s) => s.userId)).toEqual([venue.ownerUserId]);
+    expect(proposals[0].subject).toBe("Someone's asking you to cover sound");
+
+    // And the payer accepting routes back the other way, to the act that asked.
+    await parkOutboxBacklog();
+    await runSubslotTransition(
+      proposedSubslot,
+      { kind: "PAYER_ACCEPTED" },
+      venue.ownerUserId,
+    );
+    const acceptance = await captureDrainSinks();
+    expect(
+      acceptance
+        .filter((s) => s.template === "subslot_proposal_accepted")
+        .map((s) => s.userId),
+    ).toEqual([act.ownerUserId]);
+  });
+
+  it("sends a decline to the side that proposed it, never back to the payer", async () => {
+    // "proposer" is derived — it is whichever party is NOT the payer — so a
+    // lookup that fell back to the payer would mail the decline to the person
+    // who wrote it and tell the act nothing at all.
+    const sinks = await drainAndCaptureSinks([
+      {
+        kind: "subslot.transition",
+        subjectType: "tech_subslot",
+        subjectId: subslotId,
+        actor: venueOwner,
+        payload: notify("subslot_proposal_declined", "proposer"),
+      },
+    ]);
+    const declines = sinks.filter(
+      (s) => s.template === "subslot_proposal_declined",
+    );
+    // The fixture sub-slot is payer:"venue", so the act is the proposer.
+    expect(declines.map((s) => s.userId)).toEqual([bandOwner]);
   });
 
   it("alerts a saved-search subscriber about a slot the real create path posted", async () => {

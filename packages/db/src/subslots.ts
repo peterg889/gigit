@@ -112,7 +112,17 @@ function parentIsAvailable(
   );
 }
 
-/** Create the sub-slot from the parent booking's real context (F6.3). */
+/**
+ * Create the sub-slot from the parent booking's real context (F6.3).
+ *
+ * The initial state is the consent gate: a job posted BY its named payer is
+ * live immediately, because posting it is agreeing to fund it. Posted by the
+ * other party it starts `awaiting_payer` and no tech sees it until the payer
+ * accepts. Derived HERE from the payer profile's owner rather than taken from
+ * the caller, because "who is the payer" is exactly the fact an act could
+ * previously misstate — a route that forgot to pass it, or passed the actor's
+ * own side, would recreate the bug this state exists to close.
+ */
 export async function createTechSubslot(input: {
   bookingId: string;
   payer: "venue" | "performer";
@@ -160,12 +170,20 @@ export async function createTechSubslot(input: {
         .limit(1);
       if (active) throw new TechSubslotAlreadyActiveError(input.bookingId);
 
+      const payerOwnerUserId =
+        input.payer === "venue"
+          ? row.venue.ownerUserId
+          : row.performer.ownerUserId;
+      const postedByPayer = payerOwnerUserId === input.actor;
+      const state: SubslotState = postedByPayer ? "open" : "awaiting_payer";
+
       const plan = soundPlan(row.venue.paInventory, row.performer.techNeeds);
       await tx.insert(techSubslots).values({
         id,
         bookingId: input.bookingId,
         payer: input.payer,
         budgetCents: input.budgetCents,
+        state,
         needs: {
           verdict: plan.verdict,
           gaps: plan.gaps,
@@ -178,7 +196,22 @@ export async function createTechSubslot(input: {
         kind: "subslot.created",
         subjectType: "tech_subslot",
         subjectId: id,
-        payload: { bookingId: input.bookingId, payer: input.payer, budgetCents: input.budgetCents },
+        payload: {
+          bookingId: input.bookingId,
+          payer: input.payer,
+          budgetCents: input.budgetCents,
+          state,
+          // A consent gate nobody is told about is just a job that never goes
+          // live: the payer has to learn a bill has been proposed in its name,
+          // or the proposal sits in `awaiting_payer` until the gig passes.
+          ...(postedByPayer
+            ? {}
+            : {
+                effects: [
+                  { kind: "notify", template: "subslot_proposed", to: "payer" },
+                ],
+              }),
+        },
       });
     });
   } catch (e) {

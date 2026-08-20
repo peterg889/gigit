@@ -6,6 +6,7 @@ import { sessionUserId } from "@/lib/session";
 import { ActionButton, ApiForm, RedirectButton } from "@/components/ApiForm";
 import { GearExtractWidget, ProfileIngestWidget } from "@/components/AiAssist";
 import { MediaManager } from "@/components/MediaManager";
+import { ownedMedia } from "@/lib/media";
 import {
   formatAddress,
   friendlyTimeZoneName,
@@ -77,6 +78,14 @@ export default async function MePage() {
     );
 
   const series = venue ? await seriesForVenue(db(), venue.id) : [];
+  // Loaded per profile rather than per user: an asset belongs to the profile it
+  // hangs on, and the DELETE route authorizes on that same pairing — so a list
+  // gathered by owner id would offer a Remove button the route then refuses.
+  const [performerMedia, venueMedia, techMedia] = await Promise.all([
+    performer ? ownedMedia("performer", performer.id) : [],
+    venue ? ownedMedia("venue", venue.id) : [],
+    tech ? ownedMedia("tech", tech.id) : [],
+  ]);
   const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
   const WEEK = ["", "first", "second", "third", "fourth", "last"];
   const US_TIME_ZONES = [
@@ -156,7 +165,7 @@ export default async function MePage() {
               ]}
             />
           </details>
-          <MediaManager subjectType="performer" />
+          <MediaManager subjectType="performer" items={performerMedia} />
           </>
         ) : (
           <>
@@ -351,7 +360,7 @@ export default async function MePage() {
             />
           </details>
           <GearExtractWidget venueId={venue.id} />
-          <MediaManager subjectType="venue" />
+          <MediaManager subjectType="venue" items={venueMedia} />
           </>
         ) : (
           <>
@@ -443,7 +452,7 @@ export default async function MePage() {
               ]}
             />
           </details>
-          <MediaManager subjectType="tech" />
+          <MediaManager subjectType="tech" items={techMedia} />
           </>
         ) : (
           <ApiForm

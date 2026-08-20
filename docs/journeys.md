@@ -2252,14 +2252,17 @@ street address and the pay, so a stale feed is a data leak, not just a stale cal
 
 Named here so they are not mistaken for missing coverage and handed to someone to test:
 
-1. **Media has no list and no delete.** `MediaManager` is add-only, no DELETE route exists, and the
-   quota error literally says *"Remove one to add another"* — an action the product does not implement.
-   An act who pastes a wrong link, or fills the 5-video quota, is stuck with it permanently. Nothing
-   tests this because there is nothing to test.
-2. **A held link is invisible to its owner.** `media.ts` notifies only on `embed_dead`;
+1. ~~**Media has no list and no delete.**~~ **Built.** `DELETE /api/media/{id}` removes one link —
+   authorized on the same profile-ownership pairing `POST /api/media/embed` establishes, from any
+   status (a `held` or `blocked` link spends quota while showing nothing, so it is the main case),
+   closing any open `fraud_flags` row on it as `moot` so the ops queue is not left holding a card for
+   a subject that no longer exists. `MediaManager` now lists what is attached, with a Remove on each.
+2. **A held link is invisible to its owner.** *Partly closed:* `MediaManager`'s new list labels a
+   `held` link "being checked" and a `blocked` one "not shown", so the owner can at least see it
+   exists. Nothing still **reaches** them: `media.ts` notifies only on `embed_dead`, and
    `apps/worker/src/notify.test.ts:66-69` affirmatively asserts that `media_rejected` was **deleted**
-   and nothing replaced it — so **silence is the tested-in behaviour**. The act sees an empty EPK, no
-   status and no explanation, while the owner prompt keeps asking for media they already added.
+   and nothing replaced it — so for anyone not looking at /me, silence is still the tested-in
+   behaviour.
 
 ---
 

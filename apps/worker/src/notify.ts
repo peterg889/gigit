@@ -138,6 +138,27 @@ const TEMPLATES: Record<string, { subject: string; body: string }> = {
     subject: "A sound tech applied",
     body: "A tech applied to cover this sound job. Review their profile and application: {url}/sound/{subslotId}",
   },
+  // The consent gate's four messages. A sound job names who pays for it, and
+  // the other side can propose one — so the person on the hook has to hear
+  // about the ask, and whoever asked has to hear the answer. Without these the
+  // gate is silent in both directions: a proposal nobody is told about simply
+  // expires with the gig.
+  subslot_proposed: {
+    subject: "Someone's asking you to cover sound",
+    body: "The other side of a booking wants a sound tech on the night and named you as the one paying. Nothing is posted to techs until you accept: {url}/bookings/{bookingId}",
+  },
+  subslot_proposal_accepted: {
+    subject: "Sound job is live",
+    body: "The paying side agreed to cover the tech, so the job is on the board now. Techs can apply: {url}/bookings/{bookingId}",
+  },
+  subslot_proposal_declined: {
+    subject: "They passed on paying for sound",
+    body: "The side you named as payer said no, so the sound job never went out to techs. Post it again on your own dime, or sort the sound out between you: {url}/bookings/{bookingId}",
+  },
+  subslot_proposal_withdrawn: {
+    subject: "That sound job was withdrawn",
+    body: "The sound job you were asked to pay for was taken back before you answered. Nothing needed from you: {url}/bookings/{bookingId}",
+  },
   subslot_cancelled: {
     subject: "The sound booking was cancelled",
     body: "The cancellation policy decides what's owed, and it's already processing: {url}/bookings",
@@ -298,15 +319,24 @@ export async function pendingReviewAudience(
   return null;
 }
 
-/** Sub-slot parties: payer = whichever side funds it; tech if assigned. */
+/**
+ * Sub-slot parties: payer = whichever side funds it; tech if assigned;
+ * proposer = the booking party that is NOT the payer.
+ *
+ * "proposer" needs no stored column because a job posted by its own payer goes
+ * straight to `open` — only the other side can create the pending state, so on
+ * the consent-gate transitions that address it, the non-payer party IS the
+ * proposer.
+ */
 export async function notifySubslotParties(
   subslotId: string,
   template: string,
-  to: "payer" | "tech" | "both",
+  to: "payer" | "tech" | "both" | "proposer",
 ): Promise<void> {
   const d = db();
   const [row] = await d
     .select({
+      bookingId: schema.techSubslots.bookingId,
       payer: schema.techSubslots.payer,
       techId: schema.techSubslots.techId,
       venueOwner: schema.venues.ownerUserId,
@@ -320,8 +350,11 @@ export async function notifySubslotParties(
   if (!row) return;
 
   const payerUser = row.payer === "venue" ? row.venueOwner : row.performerOwner;
+  const proposerUser =
+    row.payer === "venue" ? row.performerOwner : row.venueOwner;
   const userIds: string[] = [];
   if (to === "payer" || to === "both") userIds.push(payerUser);
+  if (to === "proposer") userIds.push(proposerUser);
   if ((to === "tech" || to === "both") && row.techId) {
     const [tech] = await d
       .select({ owner: schema.techs.ownerUserId })
@@ -330,9 +363,12 @@ export async function notifySubslotParties(
     if (tech) userIds.push(tech.owner);
   }
   // The subject's own id, so a template can deep-link. Without this any
-  // {subslotId} rendered as the literal string.
+  // {subslotId} rendered as the literal string. The parent booking's id comes
+  // too: the consent gate's accept/decline controls live on the booking page,
+  // and a "please answer this" email that lands on a page with no answer on it
+  // is the same silence it was written to fix.
   for (const userId of userIds)
-    await notifyUser(userId, template, { subslotId });
+    await notifyUser(userId, template, { subslotId, bookingId: row.bookingId });
 }
 
 /**

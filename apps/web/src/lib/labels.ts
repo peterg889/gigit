@@ -19,11 +19,18 @@ export const BOOKING_STATE_LABELS: Record<string, string> = {
 };
 
 export const SOUND_STATE_LABELS: Record<string, string> = {
+  // Names the person being waited on, not the machine: "Pending" would read to
+  // the payer as something already settled that it just has to sit through.
+  awaiting_payer: "Waiting on the payer",
   open: "Open",
   booked: "Tech booked",
   released: "Completed",
   cancelled_by_payer: "Cancelled",
   cancelled_with_parent: "Cancelled with gig",
+  // Kept apart from "Cancelled" on purpose: nobody ever agreed to fund this
+  // one, so it is not a commitment anyone walked away from.
+  declined_by_payer: "Payer declined",
+  withdrawn_by_proposer: "Withdrawn",
 };
 
 /** The tech's view of their own sub-slot application. */
